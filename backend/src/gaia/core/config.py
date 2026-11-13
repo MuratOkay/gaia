@@ -126,6 +126,11 @@ class RetryConfig(BaseModel):
     # 429 on this gateway means "concurrency ceiling reached", which clears on
     # its own; give it more room than a hard failure.
     max_attempts_rate_limit: int = 8
+    # Read timeouts get their own, smaller budget. A non-streaming thinking call
+    # that blows through ``llm.timeout_s`` has usually already spent half an
+    # hour; retrying it the full ``max_attempts`` times would multiply the worst
+    # case by three. One retry covers a genuinely transient stall.
+    max_attempts_timeout: int = 2
     backoff_base_s: float = 2.0
     max_backoff_s: float = 60.0
     retry_on_blank_content: bool = True
@@ -142,8 +147,10 @@ class LLMConfig(BaseModel):
     concurrency: int = 4
     # Read timeout for one completion. Non-streaming thinking-mode calls send
     # nothing until the whole answer is ready, so this must cover the slowest
-    # table bundle, not a typical one.
-    timeout_s: int = 600
+    # table bundle, not a typical one. 1800s covers the widest bundle observed
+    # (~718s) with thinking-mode headroom; the current provider is slow by
+    # nature and this will be re-assessed on provider change.
+    timeout_s: int = 1800
     thinking: ThinkingConfig = Field(default_factory=ThinkingConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
 

@@ -348,29 +348,45 @@ persistence behaviour changed. Measured gateway limits: 4 concurrent requests
 per model, 1200 requests and 2.5M tokens per window, 15M per day. Concurrency,
 not volume, was binding.
 
-### Open limitation carried into Phase 3
+### Closed in the Phase 2 addendum (2026-11-13)
 
-`dbo.transactions` (18 columns, the widest bundle) cannot complete in thinking
-mode: it failed once with 503 and once with a 600 s read timeout, then succeeded
-with `--no-thinking` in ~718 s. Latency, not payload size, is the cause.
+Both items that were going to be carried into Phase 3 are resolved here.
 
-Phase 3 re-reasons many tables and cannot absorb ~718 s each, so this needs a
-decision before Phase 3 starts:
+**1. Wide bundles exceeded the read timeout — resolved by raising it.**
 
-| Option | Trade-off |
-|---|---|
-| Auto-fall back to non-thinking above N columns | Degrades gracefully; lower reasoning depth on wide tables |
-| Raise `llm.timeout_s` | Waits longer; still ~12 min per wide table |
-| Split large bundles | More calls, but each fits the latency budget |
+`llm.timeout_s` went from 600 s to **1800 s**. The provider is slow by nature;
+the observed worst case for the widest bundle (18 columns) was ~718 s without
+thinking, so 1800 s leaves headroom for thinking mode. This will be re-assessed
+when the provider changes.
 
-Also noted: `thinking` is **not** part of the skip key, so a table reasoned with
-thinking disabled is skipped by a later thinking-enabled run. Enabling thinking
-will not upgrade existing results without `--force`.
+Raising the timeout alone would have tripled the worst-case run time, because a
+`ReadTimeout` was retried under the general `max_attempts: 3` budget — up to
+3 × 1800 s for a single call. Read timeouts therefore now have their own budget,
+`retry.max_attempts_timeout: 2` (one retry), and produce a distinct error message
+so a slow provider is not mistaken for an unhealthy gateway:
+
+```
+completion timed out after 2 attempt(s) at llm.timeout_s=1800s;
+consider a narrower bundle or --no-thinking
+```
+
+**2. `thinking` is not in the skip key — accepted, not changed.**
+
+The default workflow always reasons with thinking enabled, so a table is only
+ever stored without it when someone deliberately passes `--no-thinking`. Adding
+`thinking` to the skip key would force a re-reason of every table on each toggle,
+which costs far more than the edge case it protects against.
+
+The consequence is recorded rather than hidden: `table_semantic.thinking` stores
+how each answer was produced, and a later thinking-enabled run will still skip a
+table that was stored without thinking. Use `--force` to upgrade such a table.
 
 ### Gate
 
 - [x] **Approved to start Phase 2**, scope (c) one table + FK neighbours
 - [x] **Phase 2 complete** — committed as `3585eba`
+- [x] **Phase 2 addendum** — timeout raised, timeout retry budget separated,
+      thinking skip-key behaviour documented and accepted
 
 ---
 
@@ -433,8 +449,10 @@ never `ORDER BY NEWID()` on large tables.
 | 8 | Is masking required before samples reach the LLM | **yes, mask by default**; raw samples stay local |
 | 9 | Sample size per table (default 200 rows) | 200 |
 | 10 | Run profiling on all low-score columns or top-N first | **top 50 by information gain**, then re-assess |
-| 11 | Wide-bundle reasoning (>12 columns) — carried from Phase 2 | **auto-fall back to non-thinking**, record it on the row |
 | 12 | Profiling for >10 M-row tables | **approximate** (`APPROX_COUNT_DISTINCT`, `TABLESAMPLE`) by default |
+
+Decision 11 (wide-bundle fallback) is no longer needed: the Phase 2 addendum
+raised `llm.timeout_s` to 1800 s instead of changing reasoning behaviour.
 
 ### Known input from Phase 2
 
@@ -466,6 +484,10 @@ return an answer.
 - `api/chat.py` — SSE streaming endpoint
 - `db/models/chat.py`, `alembic/versions/0005_chat.py`
 - `tools/ask.py` CLI
+- **Data source management** (see OUTLINE §24): encrypted credentials on
+  `catalog.data_sources` (`0004`), a `TargetResolver` that reads targets from the
+  database, the onboarding probe reused from `tools/check_target.py`, per-target
+  limits, and an audit table for connection changes
 
 ### Validation rules (non-negotiable)
 
@@ -496,6 +518,8 @@ never the only guardrail.
 | 12 | Answer style: numbers only, or narrative + table | narrative + table + SQL |
 | 13 | Default row limit | 1000 |
 | 14 | Clarify vs best-guess on ambiguity | **clarify** |
+| 15 | Admin-supplied connections: in Phase 4 or Phase 5 | **Phase 4** — the query path needs a target resolver anyway, and Phase 5's UI must not invent credentials storage |
+| 16 | Credential encryption | **application-level AES-GCM**, master key in `.env`; `pgcrypto` is the fallback if key rotation outside the DB proves awkward |
 
 ### Gate
 
@@ -618,6 +642,8 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D18 | Status bands | `auto_approved` ≥ `accept_at`, else `draft`; abstain band flagged for SME; tunable |
 | D19 | LLM concurrency | **3**, one below the gateway's hard ceiling of 4 per model |
 | D20 | Retry policy | Transient capacity (`429/502/503/504`) gets 8 attempts, 60 s cap, jitter, `Retry-After`; hard errors stay at 3 |
+| D21 | Wide-bundle timeout | `llm.timeout_s` = **1800 s**; read timeouts retry once (`max_attempts_timeout: 2`); re-assess on provider change |
+| D22 | `thinking` in skip key | **Deliberately excluded** — the default path always uses thinking; `--force` upgrades a table stored without it |
 
 ## Definition of done (per phase)
 
@@ -632,18 +658,17 @@ A phase is done only when all of the following hold:
 
 ## Open questions blocking Phase 3
 
-Phase 2 is closed. Three things need an answer before Phase 3 starts:
+Phase 2 is closed, including the addendum. One item remains:
 
-1. **Thinking mode on wide bundles.** `dbo.transactions` (18 columns) needs
-   ~718 s and exceeds the 600 s timeout in thinking mode. Phase 3 re-reasons many
-   tables, so this must be resolved. Options: auto-fall back to non-thinking above
-   N columns (my recommendation — degrades gracefully), raise `llm.timeout_s`, or
-   split large bundles.
-2. **Is `thinking` part of the skip key?** Currently it is not, so toggling it
-   will not upgrade existing answers without `--force`. Add it to the key (costs
-   a re-reason on every toggle) or accept the current behaviour and document it.
-3. **Profiling budget.** Default is 120 s per table with samples of 200 rows.
+1. **Profiling budget.** Default is 120 s per table with samples of 200 rows.
    Several tables hold 24–26 M rows (`dw.fact_sales`, `dbo.transaction_lines`,
    `dw.sales_wide`). Confirm the budget, or approve approximate statistics
    (`APPROX_COUNT_DISTINCT`, `TABLESAMPLE`) for anything above a row threshold.
+
+Previously open and now answered in the Phase 2 addendum:
+
+| Was | Resolution |
+|---|---|
+| Thinking mode on wide bundles | `llm.timeout_s` 600 → 1800; read timeouts have their own retry budget |
+| Is `thinking` part of the skip key? | No, and it stays that way — the default path always uses thinking, so the gap is deliberate |
 

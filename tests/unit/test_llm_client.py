@@ -149,3 +149,50 @@ def test_client_error_raises_with_body():
     with pytest.raises(LLMError) as excinfo:
         client.complete([Message("user", "hi")])
     assert excinfo.value.status == 401
+
+
+def test_read_timeout_uses_its_own_smaller_budget():
+    """A timeout already burned llm.timeout_s; do not retry it 3 times."""
+    calls = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        raise httpx.ReadTimeout("too slow", request=request)
+
+    client = DeepSeekClient(
+        _config(
+            retry={
+                "max_attempts": 3,
+                "max_attempts_rate_limit": 8,
+                "max_attempts_timeout": 2,
+                "backoff_base_s": 0.0,
+                "max_backoff_s": 0.0,
+                "retry_on_blank_content": True,
+            }
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LLMError) as excinfo:
+        client.complete([Message("user", "hi")])
+
+    assert calls["n"] == 2
+    assert "timed out" in str(excinfo.value)
+    assert "llm.timeout_s" in str(excinfo.value)
+
+
+def test_timeout_message_is_distinct_from_gateway_errors():
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("slow", request=request)
+
+    client = DeepSeekClient(
+        _config(),
+        client=httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    with pytest.raises(LLMError) as excinfo:
+        client.complete([Message("user", "hi")])
+
+    # Not a concurrency/5xx message: the operator needs to tell these apart.
+    assert "gateway capacity" not in str(excinfo.value)
+    assert excinfo.value.status is None

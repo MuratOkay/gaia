@@ -1068,7 +1068,8 @@ self-reported confidence is stored separately.
 * Two additions: `semantics.reasoning_run`, so the cost report can be rebuilt
   and query runs can pin a version, and `audit.llm_call` from §8, for raw
   payloads.
-* `llm.timeout_s` (default 600) was added. Non-streaming thinking calls send
+* `llm.timeout_s` was added (600 s when Phase 2 shipped, raised to **1800 s** in
+  the addendum). Non-streaming thinking calls send
   nothing until they finish, and the previous hard-coded 300 s could cut off
   wide tables.
 
@@ -1116,12 +1117,13 @@ the binding constraint.
 
 ### Known limitations / for review
 
-* **Wide bundles and thinking mode.** `dbo.transactions` (18 columns) exceeds
-  the 600 s timeout with thinking on; it completed with `--no-thinking` in
-  ~718 s. Latency, not payload size, dominates. Phase 3 must resolve this
-  (auto-fallback, higher timeout, or bundle splitting).
-* **`thinking` is not in the skip key.** Toggling it does not upgrade existing
-  answers without `--force`.
+* **Wide bundles and thinking mode — resolved.** `llm.timeout_s` is now 1800 s
+  and read timeouts retry once rather than three times, so the widest bundle has
+  headroom. The provider is slow by nature; re-assess on provider change.
+* **`thinking` is not in the skip key — deliberate.** The default path always
+  reasons with thinking, so only an explicit `--no-thinking` can store a
+  non-thinking answer. `table_semantic.thinking` records which, and `--force`
+  upgrades such a table. See PHASES D22.
 * One-column-change isolation is exercised only at table granularity; a
   dedicated test that a single column edit re-reasons exactly one bundle is
   still missing.
@@ -1130,3 +1132,88 @@ the binding constraint.
 * View semantics rely on column names only (`sys.sql_modules` not captured).
 * The trigram indexes in `0003` were not executed in the sandbox (no
   `pg_trgm` there); they are present in the real store.
+* Target connections come from `config/gaia.yaml` today. Runtime, admin-supplied
+  connections are a Phase 4 concern — see §24.
+
+---
+
+## 24. Data source management (admin-supplied connections)
+
+Raised during the Phase 2 addendum: administrators will add database
+connections through the UI, so targets cannot live in `config/gaia.yaml`
+forever. This section records the design so Phase 3 does not harden an
+assumption we already know will change.
+
+### Two different things, easily confused
+
+| Connection | Direction | Where it lives today | Status |
+|---|---|---|---|
+| **Metadata store** | Gaia → PostgreSQL 18 | `GAIA_METADATA_URL` in `.env` | Fine as-is; single, operational, not user-facing |
+| **Target** | Gaia → SQL Server | `targets.*` in `config/gaia.yaml` | **Must move to the database** |
+
+The current design already opens two distinct connections with two distinct
+drivers (`asyncpg` for metadata, `pyodbc` for the target). That part was never a
+gap and does not change.
+
+The real gap is **N targets, added at runtime by admins, with credentials that
+cannot live in a file an operator edits**.
+
+### Why this is contained rather than a rewrite
+
+Phase 1 and Phase 2 were built around `data_source_id` from the start:
+
+* `catalog.data_sources` already has `name`, `dialect`, `database_name`,
+  `server_version`.
+* Every dependent row carries `data_source_id` — `tables`, `snapshots`,
+  `table_semantic`, `column_semantic`, `join_hint`, `glossary_term`,
+  `reasoning_run`.
+* `run_introspection(..., target_name=...)` and `--target` already accept a name.
+* `settings.target(name)` already resolves by name rather than assuming one.
+
+So adding targets is an **addition**, not a migration of meaning. That was
+deliberate, and it is why this is Phase 4 work and not an emergency.
+
+### What has to change (Phase 4)
+
+1. **Credential storage.** `catalog.data_sources` gains an encrypted secret:
+   either `pgp_sym_encrypt` with a master key from `.env`, or application-level
+   AES-GCM with the key outside the database. Encryption at rest, not just
+   access control.
+2. **A `TargetResolver`.** Reads targets from the database and returns a
+   `TargetConfig`; `config/gaia.yaml targets` becomes a bootstrap seed (useful
+   for development and for the first admin). Config and database must not
+   silently disagree — config-seeded rows are marked as such.
+3. **Onboarding probe.** `tools/check_target.py` becomes the "test connection"
+   action in the admin UI. This matters more than it looks: today read-only is
+   *guaranteed by provisioning*. With admin-supplied credentials we cannot assume
+   it, so read-only has to be **proven** — and that probe already attempts a DDL
+   statement and asserts it fails.
+4. **Per-target limits.** Statement timeout, lock timeout, max sample rows,
+   concurrency and pool size become per-target settings rather than globals.
+5. **Audit.** Who added or changed a connection, and when. `audit` already exists
+   for LLM calls; this is a second table there.
+
+### Non-negotiables
+
+* Credentials are never logged, never returned by an API, never echoed in an
+  error body. `/api/meta` already redacts the password; the same rule applies to
+  every new endpoint.
+* **Read-only is proven at onboarding and re-proven periodically.** A connection
+  that fails the probe is stored as unusable rather than trusted.
+* Every cache key and every `query_run` keeps carrying `data_source_id` /
+  `snapshot_id`. Multi-target makes a missing key a cross-tenant data leak, not
+  just a wrong answer.
+* Deleting a data source **tombstones** it; history stays resolvable, exactly as
+  with tables in Phase 1.
+
+### What we deliberately do not do now
+
+* No admin UI, no credential API, no migration `0004` for secrets. Phase 3 is
+  profiling and is unaffected: it profiles whichever single target is configured.
+* No attempt to make the current config path multi-tenant. It stays the
+  bootstrap path.
+
+The cost of deferring is low precisely because the keys already exist. The cost
+of *not* recording the decision would be discovering, in Phase 5, that the UI
+needs credentials the schema has nowhere to put.
+

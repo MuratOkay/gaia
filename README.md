@@ -75,8 +75,9 @@ Four non-obvious facts worth remembering:
 * The LLM gateway allows at most **4 concurrent requests per model**, so
   `llm.concurrency` is 3 — one slot is kept free for retries.
 * Thinking mode costs roughly 4–5× the latency of a non-thinking call, and a
-  single wide-table critique has taken 495 s. Keep it for semantics and
-  critique, and use `--no-thinking` for wide bundles.
+  single wide-table critique has taken 495 s. `llm.timeout_s` is set to 1800 s
+  to cover that; read timeouts retry only once so a slow provider cannot triple
+  the worst case.
 * The target has **zero** `MS_Description` comments, so meaning must come from
   names, keys and profiled data. That is why no column currently reaches the
   `accepted` band.

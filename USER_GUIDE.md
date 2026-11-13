@@ -302,7 +302,7 @@ All in `config/gaia.yaml`; secrets stay in `.env`.
 | Setting | Default | When to change |
 |---|---|---|
 | `llm.concurrency` | 3 | **Never raise above 3.** The gateway caps at 4 per model; a retry needs a free slot |
-| `llm.timeout_s` | 600 | Raise if wide tables time out; see §10 |
+| `llm.timeout_s` | 1800 | Read timeout per completion. Sized for the widest bundle plus thinking-mode headroom |
 | `llm.thinking.semantics` / `.critique` | true | Turn off to trade depth for speed (~4–5× faster) |
 | `llm.retry.max_attempts_rate_limit` | 8 | Raise only if the gateway gets flakier |
 | `llm.max_output_tokens` | 16000 | Raise if you see truncation errors on wide tables |
@@ -357,16 +357,20 @@ If you see persistent 429s:
 * check nothing else is using the same API key in parallel
 * check the remaining-quota headers on any successful call
 
-### A wide table times out (`read operation timed out`)
+### A wide table times out
 
-Thinking mode is slow — a single 12-column critique has taken 495 s, and an
-18-column table exceeded the 600 s timeout. Workaround today:
+The read timeout is 1800 s, which covers the widest bundle observed (~718 s)
+with thinking-mode headroom. If it still trips, the table is wider than the
+provider can handle in one call:
 
 ```bash
 make reason ARGS="--table dbo.transactions --no-thinking"
 ```
 
-This is a known limitation; see §10.
+You will see a distinct error rather than a generic failure, so a slow provider
+is not mistaken for an unhealthy gateway. Read timeouts retry only once
+(`retry.max_attempts_timeout: 2`), because each attempt already costs the full
+timeout.
 
 ### `blank content returned`
 
@@ -407,8 +411,9 @@ State these honestly when showing Gaia to anyone:
 |---|---|
 | **No column comments in the target** | Meaning comes from names, types and keys only; scores cap near 0.70 |
 | **No profiling yet (Phase 3)** | `evidence_coverage` cannot earn its `profile` share, so nothing reaches `accepted` |
-| **Wide bundles + thinking mode** | 18-column tables exceed the 600 s timeout; use `--no-thinking` |
-| **`thinking` is not in the skip key** | Toggling it does not upgrade existing answers without `--force` |
+| **Slow LLM provider** | A wide bundle can take ~12 min; `llm.timeout_s` is 1800 s and read timeouts retry once. Re-assessed on provider change |
+| **`thinking` is not in the skip key** | Toggling it does not upgrade existing answers without `--force`; the default path always uses thinking |
+| **One target from config** | Admin-supplied connections are a Phase 4 item (OUTLINE §24); today a target comes from `config/gaia.yaml` |
 | **No question answering yet** | Phases 4–5 build SQL generation and the chat UI |
 | **No SME review UI yet** | Low-confidence items are stored and flagged, but reviewed by hand in SQL |
 | **SQL Server only** | The dialect seam exists; other engines are a Phase 7 task |

@@ -148,15 +148,27 @@ class DeepSeekClient:
         # gateway has no capacity right now". They clear on their own, so they
         # get more patience than a hard error — but not an unbounded loop.
         max_transient_attempts = max(1, self.config.retry.max_attempts_rate_limit)
+        # A read timeout is different again: the request already consumed
+        # ``llm.timeout_s`` of wall clock, so retrying it as often as a fast
+        # failure would multiply the worst case.
+        max_timeout_attempts = max(1, self.config.retry.max_attempts_timeout)
         last_error: Exception | None = None
         attempt = 0
         transient_attempts = 0
+        timeout_attempts = 0
 
         while True:
             attempt += 1
             started = time.perf_counter()
             try:
                 response = self._client.post(self._url, json=body, headers=headers)
+            except httpx.ReadTimeout as exc:
+                timeout_attempts += 1
+                last_error = exc
+                if timeout_attempts >= max_timeout_attempts:
+                    break
+                self._sleep(timeout_attempts)
+                continue
             except httpx.HTTPError as exc:
                 last_error = exc
                 if attempt >= max_attempts:
@@ -213,6 +225,15 @@ class DeepSeekClient:
 
             return result
 
+        # Make a timeout distinguishable in the report and in audit.llm_call:
+        # it usually means the bundle is too wide for the current provider,
+        # not that the gateway was unhealthy.
+        if isinstance(last_error, httpx.ReadTimeout):
+            raise LLMError(
+                f"completion timed out after {attempt} attempt(s) at "
+                f"llm.timeout_s={self.config.timeout_s}s; consider a narrower "
+                f"bundle or --no-thinking"
+            )
         raise LLMError(f"completion failed after {attempt} attempt(s): {last_error}")
 
     def _sleep(self, attempt: int, *, retry_after: float | None = None) -> None:
