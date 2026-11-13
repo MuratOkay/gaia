@@ -1,0 +1,129 @@
+# ---------------------------------------------------------------------------
+# Gaia configuration.
+#
+# Committed to version control. Describes *what* Gaia does.
+# Secrets are NOT here: ${VAR} placeholders are resolved from .env at load time
+# by pydantic-settings. Never hard-code a credential in this file.
+# ---------------------------------------------------------------------------
+
+app:
+  name: gaia
+  locale: en
+  default_target: demo_mssql
+  log_level: INFO
+
+targets:
+  demo_mssql:
+    dialect: mssql                # registry key -> MetadataReader/Profiler/SqlGuard
+    # Use the literal IPv4 address. "localhost" can resolve to ::1, while the
+    # SQL Server container publishes only on 127.0.0.1, so the ODBC handshake
+    # stalls and fails with HYT00 "Login timeout expired".
+    host: ${GAIA_TARGET_HOST}
+    port: 1433
+    database: ${GAIA_TARGET_DATABASE}
+    username: ${GAIA_TARGET_USER}
+    password: ${GAIA_TARGET_PASSWORD}
+    options:
+      driver: ODBC Driver 18 for SQL Server
+      encrypt: true
+      trust_server_certificate: true
+      app_name: gaia
+    limits:
+      # Applied by Gaia to every session it opens, in addition to the login's
+      # own restrictions.
+      connect_timeout_s: 15
+      statement_timeout_s: 30
+      lock_timeout_ms: 5000
+      max_sample_rows: 200
+      max_runtime_per_table_s: 120
+      max_rows_returned: 1000
+      isolation: read_uncommitted
+    capabilities:
+      extended_properties: true   # MS_Description comments readable
+      dmv_row_counts: true        # VIEW DATABASE STATE granted
+      show_statistics: false      # DBCC SHOW_STATISTICS needs elevation
+
+llm:
+  provider: deepseek              # deepseek | ollama
+  # OpenAI-compatible endpoint; the client appends /chat/completions.
+  base_url: ${GAIA_LLM_BASE_URL}
+  model: ${GAIA_LLM_MODEL}
+  api_key: ${DEEPSEEK_API_KEY}
+  json_mode: true
+  max_output_tokens: 16000
+  temperature: 0.1
+  concurrency: 4
+  thinking:
+    # Thinking is on by default in DeepSeek; disable where latency matters more
+    # than depth.
+    semantics: true
+    critique: true
+    sql_generation: false
+    repair: false
+    classification: false
+  retry:
+    max_attempts: 3
+    backoff_base_s: 1.5
+    retry_on_blank_content: true  # JSON mode can return whitespace only
+
+embeddings:
+  provider: ollama
+  base_url: ${GAIA_EMBEDDINGS_BASE_URL}
+  model: ${GAIA_EMBEDDINGS_MODEL}
+  dimensions: ${GAIA_EMBEDDINGS_DIMENSIONS}
+  # The 4 GB GPU is occupied by the coder model; keep embeddings on CPU.
+  num_gpu: 0
+  batch_size: 32
+  timeout_s: 120
+
+cache:
+  redis_url: ${GAIA_REDIS_URL}
+  ttl_s:
+    llm: 2592000          # 30 days
+    embedding: 2592000    # 30 days
+    profile: 604800       # 7 days
+    chat_answer: 900      # 15 minutes
+    lock: 600             # 10 minutes
+
+profiling:
+  # Confidence bands; see OUTLINE.md §12.
+  accept_at: 0.80
+  deep_profile_below: 0.60
+  review_required_below: 0.45
+  # Re-profile unchanged-but-grown tables when row count moves more than this.
+  row_count_delta_ratio: 0.20
+  sample:
+    rows_per_table: 200
+    max_values_per_column: 25
+    seed: 42
+
+scoring:
+  # Heuristic weights, sum = 1.0. Replace with a fitted calibrator once SME
+  # reviews exist; the weights version is stored with every score.
+  weights_version: heuristic-v1
+  weights:
+    evidence_coverage: 0.30
+    schema_coherence: 0.25
+    hypothesis_margin: 0.20
+    counter_evidence: 0.15
+    model_self_report: 0.10
+
+query:
+  max_repair_attempts: 2
+  row_limit: 1000
+  allowed_statements: [select, with]
+  forbid:
+    - xp_cmdshell
+    - openrowset
+    - opendatasource
+    - openquery
+    - bulk_insert
+    - exec
+    - insert
+    - update
+    - delete
+    - merge
+    - drop
+    - alter
+    - truncate
+    - create
