@@ -9,9 +9,8 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status: **Phase 0 and Phase 1 complete.** Phase 2 (semantic reasoning and
-> evidence scoring) is **implemented and awaiting live verification**; see
-> [PHASES.md](PHASES.md).
+> Status: **Phases 0, 1 and 2 complete and verified live.** Phase 3 (deep
+> profiling and re-reasoning) is awaiting approval; see [PHASES.md](PHASES.md).
 
 ---
 
