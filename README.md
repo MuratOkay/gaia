@@ -7,6 +7,7 @@ generating, validating and executing SQL.
 
 Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
+Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status: **Phase 0 and Phase 1 complete.** Phase 2 (semantic reasoning and
 > evidence scoring) is **implemented and awaiting live verification**; see
@@ -51,27 +52,35 @@ make dev-api                  # http://127.0.0.1:8000/health
 
 ## Status
 
-**Phase 0** and **Phase 1** are complete and verified end to end.
+**Phases 0, 1 and 2** are complete and verified end to end against the live
+target. Phase 3 (deep profiling) is awaiting approval.
 
 | Check | Result |
 |---|---|
 | Metadata DB + Redis | healthy; 6 extensions, 6 schemas |
-| Alembic | `0002 (head)` |
+| Alembic | `0003 (head)` |
 | `make check-target` | 7/7 PASS — `nge_small`, 68 tables, 607 columns, read-only proven |
 | `make check-embed` | `bge-m3`, 1024 dims |
 | `make check-llm` | plain + JSON mode + thinking + usage |
 | `make introspect` | 71 objects / 607 columns captured, idempotent on re-run |
 | comment-only change | detected via content hash (`modify_date` does not move) |
-| `pytest` | 51 passed |
+| `make reason` | 10 tables / 99 columns reasoned, 109 embeddings, 94 join hints |
+| re-run `make reason` | `calls=0` — zero LLM calls, 0.3 s |
+| score breakdown | 99/99 sum exactly to `raw_score` |
+| `pytest` | 131 passed, 1 skipped |
 
-Three non-obvious facts worth remembering:
+Four non-obvious facts worth remembering:
 
 * Use `127.0.0.1`, never `localhost`, for the SQL Server host — the container
   publishes only on IPv4 and ODBC otherwise stalls with `HYT00`.
-* Thinking mode costs roughly 4–5× the latency of a non-thinking call. Keep it
-  for semantics and critique only.
+* The LLM gateway allows at most **4 concurrent requests per model**, so
+  `llm.concurrency` is 3 — one slot is kept free for retries.
+* Thinking mode costs roughly 4–5× the latency of a non-thinking call, and a
+  single wide-table critique has taken 495 s. Keep it for semantics and
+  critique, and use `--no-thinking` for wide bundles.
 * The target has **zero** `MS_Description` comments, so meaning must come from
-  names, keys and profiled data.
+  names, keys and profiled data. That is why no column currently reaches the
+  `accepted` band.
 
 Alembic:
 
@@ -79,7 +88,7 @@ Alembic:
 cd backend && ../gaia-env/bin/alembic upgrade head
 ```
 
-## Phase 2: semantic reasoning (awaiting live verification)
+## Phase 2: semantic reasoning
 
 Reasoning runs over the **stored** snapshot, so introspect first:
 
@@ -197,7 +206,10 @@ Key decisions already fixed:
 
 ## Roadmap
 
-Phases 0 and 1 are done. Phase 2 (semantic reasoning, evidence scoring,
-embeddings) is implemented and awaiting live verification against `nge_small`;
-its acceptance checklist is in PHASES.md. Next: **Phase 3**, deep profiling and
-re-reasoning for columns below the thresholds. See OUTLINE.md §17.
+Phases 0, 1 and 2 are complete. Phase 2 (semantic reasoning, evidence scoring,
+embeddings) is verified against `nge_small` and committed as `3585eba`; its
+acceptance checklist and open items are in PHASES.md.
+
+Next: **Phase 3**, deep profiling and re-reasoning for columns below the
+thresholds. All 99 currently reasoned columns sit in the `deep_profile` band, so
+Phase 3 is where scores can actually move. See OUTLINE.md §17 and §23.

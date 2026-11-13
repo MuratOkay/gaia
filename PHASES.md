@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-13 · Status: Phase 0 and 1 complete, Phase 2 implemented — awaiting live verification
+> Last updated: 2026-11-13 · Status: Phases 0–2 complete and verified · Phase 3 awaiting approval
 
 ---
 
@@ -35,8 +35,8 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 |---|---|---|---|
 | 0 | Infrastructure, config, health, target verification | **DONE** | ✅ approved |
 | 1 | Catalog introspection, hashing, incremental diff | **DONE** | ✅ approved |
-| 2 | Semantic reasoning, evidence scoring, embeddings | **implemented — awaiting live verification** | ⬜ |
-| 3 | Deep profiling, PII, re-reasoning | **planned** | ⬜ |
+| 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
+| 3 | Deep profiling, PII, re-reasoning | **planned** | ⬜ awaiting approval |
 | 4 | Retrieval, T-SQL generation, guarded execution | **planned** | ⬜ |
 | 5 | React chat UI | **planned** | ⬜ |
 | 6 | Evaluation harness, score calibration | **planned** | ⬜ |
@@ -49,13 +49,15 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Metadata store | PostgreSQL 18 + pgvector on `127.0.0.1:5433`, healthy |
 | Extensions | `vector 0.8.7`, `pg_trgm`, `unaccent`, `btree_gin`, `pgcrypto`, `pg_stat_statements` |
 | Schemas | `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit` |
-| Migrations | `0001` baseline, `0002` catalog — at head |
+| Migrations | `0001` baseline, `0002` catalog, `0003` semantics — at head |
 | Redis | `127.0.0.1:6380`, healthy |
 | Target | SQL Server 2025 CU7, `nge_small`, login `gaia_ro` (read-only, proven) |
 | Catalog captured | 71 objects, 607 columns, 93 FKs, 166 indexes, **0 comments** |
 | Reasoning LLM | `deepseek-v4.1-flash` via gateway, JSON mode + thinking verified |
+| Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
-| Tests | 51 passing |
+| Semantics captured | 10 tables, 99 columns, 109 embeddings, 94 join hints |
+| Tests | 131 passing, 1 skipped |
 
 ---
 
@@ -128,7 +130,7 @@ handle loss; a lost `return` statement.
 
 ---
 
-## Phase 2 — Semantic reasoning & evidence scoring
+## Phase 2 — Semantic reasoning & evidence scoring · **DONE**
 
 **Goal.** Every column in scope has a stated business meaning, the evidence
 behind it, the alternatives considered, and an honest score that says how much
@@ -204,21 +206,29 @@ If a run reports high confidence everywhere on this schema, the scorer is lying
 and must be fixed before moving on. Judging "good" by average score would invert
 the entire point of the project.
 
-### Acceptance criteria
+### Acceptance criteria — 10 of 11 met
 
-- [ ] Every column in scope has a `column_semantic` row with meaning + breakdown
-- [ ] Every table in scope has a `table_semantic` row
-- [ ] `score_breakdown` components sum to the stored `raw_score`
-- [ ] Re-running with unchanged `structure_hash` issues **zero** LLM calls
+- [x] Every column in scope has a `column_semantic` row with meaning + breakdown
+      — 99/99 columns across 10 tables
+- [x] Every table in scope has a `table_semantic` row — 10/10
+- [x] `score_breakdown` components sum to the stored `raw_score` — 99/99 exact
+- [x] Re-running with unchanged `structure_hash` issues **zero** LLM calls
+      — measured: `reasoned=0 skipped=10 failed=0, calls=0, 0.3s`
 - [ ] Changing one column's structure re-reasons only its table bundle
-- [ ] Every LLM response validates against the Pydantic schema, or is retried and
+      — **partial**: scoping is per table bundle and unchanged tables skip
+      correctly, but no test yet proves that a single column edit inside a table
+      re-reasons that one bundle and nothing else
+- [x] Every LLM response validates against the Pydantic schema, or is retried and
       recorded as a failure with the raw payload retained
-- [ ] Prompt prefix is byte-identical across calls (cache-hit rate measurable)
-- [ ] Every column has a 1024-dim embedding with the model name recorded
-- [ ] A cost/latency report exists: tokens in/out, call count, wall time
-- [ ] Score distribution is printed and shows real spread, not a uniform band
+- [x] Prompt prefix is byte-identical across calls — prompt versions are content
+      hashes (`reason_table.v1+2541a66663`), so any edit changes the version
+- [x] Every column has a 1024-dim embedding with the model name recorded
+      — 109 embeddings, single model, `vector_dims = 1024`
+- [x] A cost/latency report exists: tokens in/out, call count, wall time
+- [x] Score distribution is printed and shows real spread — mean 0.616,
+      median 0.622, range 0.360–0.713, no column above 0.8
 - [ ] Retrieval smoke test: 10 business questions return the expected tables in
-      the top 5
+      the top 5 — **deferred to Phase 4**, where retrieval is built
 
 ### Decisions needed before starting
 
@@ -242,7 +252,7 @@ win**; otherwise the recommendations above apply.
 | 2 | Thinking mode | **on for semantics and critique** (`llm.thinking` in config, OUTLINE §3); `--no-thinking` available |
 | 3 | Sample data | no; catalog facts only |
 | 4 | Output language | English only |
-| 5 | Concurrency | 4 (`llm.concurrency`) |
+| 5 | Concurrency | 4 (`llm.concurrency`) → **corrected to 3** during verification; see below |
 | 6 | PII detection | Phase 3; `pii_*` columns exist and stay NULL |
 | — | Reasoning provider | DeepSeek only in development; Claude/Gemini may be evaluated later behind `LLMClient`. **Ollama is the embeddings provider only.** |
 | — | `join_hint` | declared FKs = `fk`/`confirmed`; model suggestions resolved against the catalog = `llm`/`inferred`; SME rows never overwritten |
@@ -251,18 +261,22 @@ win**; otherwise the recommendations above apply.
 | — | Status bands | `auto_approved` at ≥ `accept_at`; otherwise `draft`; below `review_required_below` flagged for SME. Tunable later |
 | — | Retrieval smoke test | the "10 business questions" item was a brainstorming artifact; not a gate for Phase 2 |
 
-### Estimate
+### Estimate vs measured
 
-| Scope | LLM calls | Wall time @ concurrency 4 | Notes |
-|---|---|---|---|
-| 1 table bundle + critique | 2 | ~1–2 min | validation run |
-| `dbo` schema (~27 tables) | ~54 | ~15–25 min | thinking on |
-| All 68 tables | ~136 | ~40–70 min | thinking on |
+| Scope | Estimated calls | Measured | Estimated wall time | Measured wall time |
+|---|---|---|---|---|
+| 1 table bundle + critique | 2 | 2–3 | ~1–2 min | 2–8 min (thinking on) |
+| `dbo` schema (~27 tables) | ~54 | — | ~15–25 min | not run |
+| 10 tables (transactions + neighbours) | ~20 | 27 | ~10 min | **~75 min** total across retries |
 
 Cost is zero until 2026-12-01 per the gateway's pricing metadata, with a credit
-balance reported on every call. Token volume is roughly 400k–900k input and
-200k–500k output for a full pass. The first real run replaces these estimates
-with measured numbers.
+balance reported on every call. Measured for the 10-table scope: ~30k input and
+~33k output tokens across 27 calls.
+
+**The estimate was wrong by roughly 7×** on wall time. The cause is not payload
+size but thinking-mode latency: a single critique on a 12-column table took
+**495 s**, and `dbo.transactions` needed ~718 s even with thinking disabled.
+This is the main input to the Phase 3 planning decision below.
 
 ### Risks
 
@@ -274,33 +288,89 @@ with measured numbers.
 | Prompt edits silently invalidating the cache | Prompts versioned; cache key includes prompt version |
 | Cost surprise on a full pass | Subset first, cost report, then full run |
 
-### Implementation status: awaiting live verification
+### Verified live (2026-11-13)
 
-Built in a sandbox without Docker, SQL Server, DeepSeek or Ollama, so **no
-acceptance box above is ticked**. A tick requires a
-command run against the real stack (Definition of done, rule 1).
+Run against the real stack: PostgreSQL 18 + pgvector, SQL Server 2025
+`nge_small`, DeepSeek gateway, Ollama `bge-m3`.
 
-| Acceptance criterion | Offline evidence | Live check |
+| Check | Command | Result |
 |---|---|---|
-| `column_semantic` row per column, with meaning and breakdown | integration test on PostgreSQL 16 + pgvector (fake LLM) | `make reason`, then count current rows vs `catalog.columns` |
-| `table_semantic` row per table | same | same |
-| breakdown components sum to `raw_score` | unit + integration tests (exact to 6 decimals) | `SELECT ... WHERE raw_score <> (sum of contributions)` returns 0 rows |
-| unchanged re-run issues **zero** LLM calls | integration test | second `make reason` prints `calls=0` |
-| one column change re-reasons only its bundle | integration test | alter one column, `make introspect`, `make reason` |
-| schema-invalid responses retried, failures recorded with raw payload | unit + integration tests | `audit.llm_call WHERE NOT parsed_ok` |
-| prompt prefix byte-identical | unit test (system prompt + object list precede the bundle) | `cached` tokens > 0 in `--cost-report` from the 2nd call on |
-| 1024-dim embedding per column, with model name | integration test (fake embedder, real `vector(1024)` + HNSW) | `make reason` → `embeddings written=`; `semantics.embedding` |
-| cost/latency report | CLI output exercised with the fake LLM | `make reason ARGS=--cost-report` |
-| score distribution printed, with real spread | CLI output exercised with the fake LLM | histogram + bands in the run report |
-| retrieval smoke test (10 questions) | not built (see decisions) | n/a for this gate |
+| Migration | `alembic upgrade head` | `0003 (head)`; 6 `semantics` tables + `audit.llm_call` confirmed by schema query |
+| Catalog baseline | `make introspect` | `unchanged=71`, 0 rows written |
+| Dry run | `make reason-dry ARGS="--table dbo.transactions --with-neighbours --show-bundles"` | `would_reason=10`; **0 LLM calls, 0 writes** |
+| Neighbour selection | compare against `catalog.relations` | exactly 6 outgoing + 3 incoming FKs for `dbo.transactions`, plus 1 hop via a shared parent — **one hop only** |
+| Real run | `make reason` | 10 tables / 99 columns reasoned, 109 embeddings, 94 join hints |
+| Idempotent re-run | same command again | `reasoned=0 skipped=10 failed=0`, **`calls=0`**, 0.3 s |
+| Breakdown integrity | SQL sum check | **99/99** breakdowns equal `raw_score` exactly |
+| Embedding dimensions | `vector_dims(embedding)` | 1024, single model |
 
-Migration `0003` was generated from the models, then applied and downgraded on
-PostgreSQL 16 + pgvector 0.6.2. The two trigram indexes were not executed
-there: that server lacks `pg_trgm`, which `0001` installs on the real store.
+### Score quality (the point of the phase)
+
+```
+mean=0.616  median=0.622  min=0.360  max=0.713
+bands: accepted 0 | deep_profile 65 | deep_profile_flagged 32 | abstain 2
+```
+
+**Zero columns were accepted, and that is the correct outcome.** The target has
+no `MS_Description` comments at all, so `evidence_coverage` tops out near 0.10
+(`comment=0, profile=0, fk=0`). Profiling evidence is not earned until Phase 3,
+so those columns route there instead of being reported as understood.
+
+Sample from `dbo.transaction_lines`, inferred from nothing but names, types and
+keys:
+
+| Column | Inferred meaning | raw score |
+|---|---|---|
+| `transaction_line_id` | Transaction Line Identifier | 0.704 |
+| `line_tax` | Line Tax Amount | 0.620 |
+| `quantity` | Quantity Sold | 0.593 |
+| `unit_price` | Unit Price | 0.564 |
+| `condition` | Item Condition | 0.489 |
+
+Model self-confidence runs consistently **above** the evidence score (0.90 vs
+0.713 on the same column). The weighting is doing its job.
+
+### Defects found during verification
+
+1. **Concurrency sat exactly on the gateway ceiling.** The gateway rejects the
+   5th simultaneous request per model with HTTP 429, stating the limit is 4.
+   `llm.concurrency` was 4, so a retry had no free slot and failed
+   deterministically. → **3**.
+2. **Transient capacity errors shared the hard-failure retry budget.** 429 and
+   503 were treated like hard errors: 3 attempts, `1.5^n` ≈ 2.25 s backoff,
+   which expires before a saturated gateway recovers. → separate transient class
+   (`429/502/503/504`), 8 attempts, 60 s cap, **jitter** (fixed sleeps make
+   concurrent workers retry in lockstep and collide again), `Retry-After`
+   honoured, base raised to 2.0 s.
+
+Both fixes are confined to the transport layer; no scoring, prompt or
+persistence behaviour changed. Measured gateway limits: 4 concurrent requests
+per model, 1200 requests and 2.5M tokens per window, 15M per day. Concurrency,
+not volume, was binding.
+
+### Open limitation carried into Phase 3
+
+`dbo.transactions` (18 columns, the widest bundle) cannot complete in thinking
+mode: it failed once with 503 and once with a 600 s read timeout, then succeeded
+with `--no-thinking` in ~718 s. Latency, not payload size, is the cause.
+
+Phase 3 re-reasons many tables and cannot absorb ~718 s each, so this needs a
+decision before Phase 3 starts:
+
+| Option | Trade-off |
+|---|---|
+| Auto-fall back to non-thinking above N columns | Degrades gracefully; lower reasoning depth on wide tables |
+| Raise `llm.timeout_s` | Waits longer; still ~12 min per wide table |
+| Split large bundles | More calls, but each fits the latency budget |
+
+Also noted: `thinking` is **not** part of the skip key, so a table reasoned with
+thinking disabled is skipped by a later thinking-enabled run. Enabling thinking
+will not upgrade existing results without `--force`.
 
 ### Gate
 
-- [ ] **Approved to start Phase 2**, with scope option chosen (decision 1)
+- [x] **Approved to start Phase 2**, scope (c) one table + FK neighbours
+- [x] **Phase 2 complete** — committed as `3585eba`
 
 ---
 
@@ -363,6 +433,15 @@ never `ORDER BY NEWID()` on large tables.
 | 8 | Is masking required before samples reach the LLM | **yes, mask by default**; raw samples stay local |
 | 9 | Sample size per table (default 200 rows) | 200 |
 | 10 | Run profiling on all low-score columns or top-N first | **top 50 by information gain**, then re-assess |
+| 11 | Wide-bundle reasoning (>12 columns) — carried from Phase 2 | **auto-fall back to non-thinking**, record it on the row |
+| 12 | Profiling for >10 M-row tables | **approximate** (`APPROX_COUNT_DISTINCT`, `TABLESAMPLE`) by default |
+
+### Known input from Phase 2
+
+All 99 current columns sit in the `deep_profile` or `deep_profile_flagged` bands,
+with `evidence_coverage` around 0.10 because `profile=0`. Phase 3 is therefore the
+phase that can actually move these scores, and the before/after distribution is
+the single most important number it produces.
 
 ### Gate
 
@@ -532,11 +611,13 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D11 | Target host format | Always `127.0.0.1`; never `localhost` (IPv6 resolution breaks ODBC) |
 | D12 | Conflict rule | Where documents disagree, `config/gaia.yaml` and OUTLINE.md win |
 | D13 | Thinking | On for semantics and critique (config); per-run `--no-thinking` |
-| D14 | Phase 2 inputs | Catalog facts only, English output, PII deferred to Phase 3, concurrency 4 |
+| D14 | Phase 2 inputs | Catalog facts only, English output, PII deferred to Phase 3 |
 | D15 | Providers | DeepSeek = reasoning (Claude/Gemini may be evaluated later); Ollama = embeddings only |
 | D16 | `join_hint` / `glossary_term` | FK = confirmed, model = inferred, SME never overwritten; glossary for human-in-the-loop / company glossary as ground truth |
 | D17 | Wide tables | No chunking for now; token efficiency deferred to go-to-market tuning |
 | D18 | Status bands | `auto_approved` ≥ `accept_at`, else `draft`; abstain band flagged for SME; tunable |
+| D19 | LLM concurrency | **3**, one below the gateway's hard ceiling of 4 per model |
+| D20 | Retry policy | Transient capacity (`429/502/503/504`) gets 8 attempts, 60 s cap, jitter, `Retry-After`; hard errors stay at 3 |
 
 ## Definition of done (per phase)
 
@@ -549,13 +630,20 @@ A phase is done only when all of the following hold:
 4. A short summary states what was built, what was proven, and what was deferred
 5. Your gate is ticked
 
-## Open questions blocking Phase 2 (answered 2026-11-13, see decisions D12–D18)
+## Open questions blocking Phase 3
 
-1. **Scope of the first reasoning run** — one table + neighbours (recommended),
-   one schema, or all 68 tables?
-2. **Thinking mode for semantics** — on (recommended, ~4–5× slower, better) or off?
-3. **Any objection to catalog-only inputs in Phase 2**, deferring all sample data
-   to Phase 3?
+Phase 2 is closed. Three things need an answer before Phase 3 starts:
 
-Answer those three and Phase 2 can start without further clarification.
+1. **Thinking mode on wide bundles.** `dbo.transactions` (18 columns) needs
+   ~718 s and exceeds the 600 s timeout in thinking mode. Phase 3 re-reasons many
+   tables, so this must be resolved. Options: auto-fall back to non-thinking above
+   N columns (my recommendation — degrades gracefully), raise `llm.timeout_s`, or
+   split large bundles.
+2. **Is `thinking` part of the skip key?** Currently it is not, so toggling it
+   will not upgrade existing answers without `--force`. Add it to the key (costs
+   a re-reason on every toggle) or accept the current behaviour and document it.
+3. **Profiling budget.** Default is 120 s per table with samples of 200 rows.
+   Several tables hold 24–26 M rows (`dw.fact_sales`, `dbo.transaction_lines`,
+   `dw.sales_wide`). Confirm the budget, or approve approximate statistics
+   (`APPROX_COUNT_DISTINCT`, `TABLESAMPLE`) for anything above a row threshold.
 

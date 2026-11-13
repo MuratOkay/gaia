@@ -760,7 +760,7 @@ environment and is excluded from version control.
 |---|---|---|
 | **0** | Compose stack (pg18+pgvector, redis), extensions, `gaia-env` provisioned, config loading, FastAPI `/health`, Alembic baseline, `make check-target` | metadata DB + Redis healthy; `check-target` passes against the restored SQL Server |
 | **1** | MSSQL catalog reader, canonical JSON snapshot, three-hash hashing, `catalog.*` tables, incremental diff + tombstoning | repeated introspection is idempotent; a comment-only change is detected **— DONE, see §22** |
-| **2** | LLM client (DeepSeek + Ollama), JSON-mode structured outputs with Pydantic retry, table + column reasoning, evidence-based scoring, embeddings, `semantics.*` | every column has meaning, evidence, alternatives, score breakdown |
+| **2** | LLM client (DeepSeek + Ollama), JSON-mode structured outputs with Pydantic retry, table + column reasoning, evidence-based scoring, embeddings, `semantics.*` | every column has meaning, evidence, alternatives, score breakdown **— DONE, see §23** |
 | **3** | Deep profiling loop, budget guard, sampling, FK cardinality, PII classification, Redis cache + locks, re-reasoning | low-confidence columns measurably improve |
 | **4** | Retrieval, planner, T-SQL generation, sqlglot guard, read-only execution, repair loop, streaming API | golden business questions return correct SQL and results |
 | **5** | React chat UI (pnpm + Vite), i18next wiring, SQL/result rendering | end-to-end question answered in the browser |
@@ -967,12 +967,13 @@ repaired with `ALTER USER ... WITH LOGIN`.
 
 
 
-## 23. Phase 2 implementation (awaiting live verification)
+## 23. Phase 2 implementation and results (complete)
 
-Built against PHASES.md Phase 2 and decisions D12–D18. Verified offline
-(unit tests, plus an end-to-end test on PostgreSQL 16 + pgvector with a fake
-LLM and embedder). **Not yet run against DeepSeek, Ollama or `nge_small`**, so
-no acceptance box is ticked.
+Built against PHASES.md Phase 2 and decisions D12–D18, then verified live on
+2026-11-13 against PostgreSQL 18 + pgvector, SQL Server 2025 `nge_small`, the
+DeepSeek gateway and Ollama `bge-m3`. All acceptance boxes that can be checked
+in this phase are ticked; two were deferred (one needs a test, one belongs to
+Phase 4). Committed as `3585eba`.
 
 ### Modules
 
@@ -1071,14 +1072,61 @@ self-reported confidence is stored separately.
   nothing until they finish, and the previous hard-coded 300 s could cut off
   wide tables.
 
+### Live verification results
+
+| Check | Result |
+|---|---|
+| Scope run | `--table dbo.transactions --with-neighbours` → 10 tables |
+| Neighbour selection | matches the FK graph exactly: 6 outgoing + 3 incoming for `dbo.transactions`, plus 1 via a shared parent; **one hop only** |
+| Dry run | `would_reason=10`, zero LLM calls, zero writes |
+| Real run | 10 tables, 99 columns, 109 embeddings (1024-d), 94 join hints (93 FK + 1 inferred) |
+| Re-run | `reasoned=0 skipped=10 failed=0`, `calls=0`, 0.3 s |
+| Breakdown integrity | 99/99 breakdowns sum exactly to `raw_score` |
+| Score distribution | mean 0.616, median 0.622, range 0.360–0.713 |
+| Bands | accepted 0, deep_profile 65, deep_profile_flagged 32, abstain 2 |
+| Tests | 131 passed, 1 skipped |
+
+Interpretation, stated plainly: **no column was accepted, and that is correct
+here.** With zero `MS_Description` comments, `evidence_coverage` is ~0.10
+(`comment=0, profile=0, fk=0`), so the four non-evidence components cap the
+score near 0.70 by construction — exactly the ceiling documented above. These
+columns become Phase 3's queue.
+
+Inference quality on `dbo.transaction_lines` (catalog facts only): `line_tax` →
+"Line Tax Amount", `quantity` → "Quantity Sold", `unit_price` → "Unit Price",
+`condition` → "Item Condition". Model self-confidence ran above the evidence
+score throughout (0.90 vs 0.713 on one column), which is the overconfidence the
+weighting exists to correct.
+
+### Defects found in live verification
+
+1. **`llm.concurrency` equalled the gateway's hard ceiling.** The gateway
+   rejects the 5th simultaneous request per model with HTTP 429 and states the
+   limit is 4. With `concurrency: 4`, a retry had no slot to land in and failed
+   deterministically. Now **3**.
+2. **Transient capacity errors shared the hard-failure retry budget.** 429/503
+   were retried 3× with `1.5^n` ≈ 2.25 s, expiring before the gateway recovered.
+   Now a separate transient class (`429/502/503/504`): 8 attempts, 60 s cap,
+   jitter, `Retry-After` honoured, base 2.0 s. Jitter matters because fixed
+   sleeps make concurrent workers retry in lockstep and collide again.
+
+Measured gateway limits for the record: 4 concurrent requests per model, 1200
+requests and 2.5M tokens per window, 15M per day. Concurrency, not volume, was
+the binding constraint.
+
 ### Known limitations / for review
 
-* The prompts and heuristics have not met the real model yet. The first live
-  run (`--table X --with-neighbours`) is expected to lead to prompt and
-  weight adjustments, tracked via the prompt version and `weights_version`.
-* Approved `glossary_term` rows are not yet fed into the bundle. Doing so
-  needs the glossary state in the skip key, so that a glossary edit
-  re-reasons the affected tables.
+* **Wide bundles and thinking mode.** `dbo.transactions` (18 columns) exceeds
+  the 600 s timeout with thinking on; it completed with `--no-thinking` in
+  ~718 s. Latency, not payload size, dominates. Phase 3 must resolve this
+  (auto-fallback, higher timeout, or bundle splitting).
+* **`thinking` is not in the skip key.** Toggling it does not upgrade existing
+  answers without `--force`.
+* One-column-change isolation is exercised only at table granularity; a
+  dedicated test that a single column edit re-reasons exactly one bundle is
+  still missing.
+* Approved `glossary_term` rows are not yet fed into the bundle; doing so needs
+  the glossary state in the skip key.
 * View semantics rely on column names only (`sys.sql_modules` not captured).
 * The trigram indexes in `0003` were not executed in the sandbox (no
-  `pg_trgm` there).
+  `pg_trgm` there); they are present in the real store.
