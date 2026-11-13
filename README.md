@@ -8,9 +8,9 @@ generating, validating and executing SQL.
 Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 
-> Status: **Phase 0 complete** — infrastructure, configuration, health checks and
-> target verification. Phase 1 (catalog introspection) is gated on the target
-> database being restored.
+> Status: **Phase 0 and Phase 1 complete.** Phase 2 (semantic reasoning and
+> evidence scoring) is **implemented and awaiting live verification**; see
+> [PHASES.md](PHASES.md).
 
 ---
 
@@ -79,6 +79,66 @@ Alembic:
 cd backend && ../gaia-env/bin/alembic upgrade head
 ```
 
+## Phase 2: semantic reasoning (awaiting live verification)
+
+Reasoning runs over the **stored** snapshot, so introspect first:
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head    # adds 0003_semantics
+make introspect
+make reason-dry ARGS="--table dbo.transactions --with-neighbours"   # no LLM calls, no writes
+make reason     ARGS="--table dbo.transactions --with-neighbours"   # PHASES decision 1 (c)
+make reason                                                          # then everything
+make reason     ARGS="--cost-report"                                 # per-call tokens/latency
+```
+
+Per table: one reasoning call and one critique call to DeepSeek (thinking per
+`llm.thinking.semantics` / `.critique`), Pydantic validation with one
+corrective retry, scoring, a new version in `semantics.table_semantic` /
+`column_semantic`, inferred joins in `join_hint`, and every call (including
+failures and raw payloads) in `audit.llm_call`. New semantics are then
+embedded with Ollama `bge-m3` into `semantics.embedding`.
+
+A re-run skips any table whose structure hash, prompt versions and model are
+unchanged, so it makes zero LLM calls. Other options: `--schema`, `--limit`,
+`--no-thinking`, `--force`, `--no-embed`, `--no-cache`, `--show-bundles`
+(with `--dry-run`, prints the exact prompt).
+
+### Embeddings client
+
+`gaia.llm.embeddings` wraps Ollama's `/api/embed` using the `embeddings`
+section of `config/gaia.yaml` (resolved from `GAIA_EMBEDDINGS_*` in `.env`).
+
+```python
+from gaia.core.config import get_settings
+from gaia.llm.cache import build_cache
+from gaia.llm.embeddings import build_embedding_client
+
+s = get_settings()
+with build_embedding_client(s.embeddings, cache=build_cache(s.cache.redis_url)) as client:
+    result = client.embed(["customer order total", "invoice due date"])
+    result.vectors        # list[list[float]], input order, len == embeddings.dimensions
+```
+
+Inputs are batched by `batch_size` and sent with `options.num_gpu`. Vectors
+are cached in Redis as `embed:{model}:{sha256(text)}`. Every vector is checked
+against `dimensions` and for NaN/Inf. A missing model raises an error naming
+the `ollama pull` command. `make check-embed` runs through this client,
+without the cache.
+
+### Tests against a real PostgreSQL
+
+`tests/integration/test_semantics_pipeline_pg.py` runs the full pipeline
+(with a fake LLM and a fake embedder) against a **disposable** database. It
+runs only when `GAIA_TEST_DATABASE_URL` is set and the database name contains
+`test`, because it drops and recreates the `catalog`, `semantics` and `audit`
+schemas:
+
+```bash
+docker exec gaia-metadata-db createdb -U gaia gaia_test
+GAIA_TEST_DATABASE_URL=postgresql+asyncpg://gaia:<password>@127.0.0.1:5433/gaia_test make test
+```
+
 ## Target database
 
 Gaia never creates or modifies the target database. The owner restores it and
@@ -132,9 +192,12 @@ Key decisions already fixed:
 | `make reset-db` | destroy and re-initialise the metadata DB |
 | `make psql` / `make redis-cli` | shells into the containers |
 | `make test` | run the test suite |
+| `make reason-dry` / `make reason` | Phase 2 reasoning over the stored snapshot (`ARGS=...`) |
 | `make pull-embed` | pull the embedding model |
 
 ## Roadmap
 
-Phase 0 is done. Next: **Phase 1** — SQL Server catalog reader, canonical JSON
-snapshot, three-hash incremental discovery, tombstoning. See OUTLINE.md §17.
+Phases 0 and 1 are done. Phase 2 (semantic reasoning, evidence scoring,
+embeddings) is implemented and awaiting live verification against `nge_small`;
+its acceptance checklist is in PHASES.md. Next: **Phase 3**, deep profiling and
+re-reasoning for columns below the thresholds. See OUTLINE.md §17.

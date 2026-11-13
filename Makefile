@@ -113,6 +113,14 @@ introspect-json: ## Dump the canonical snapshot document
 check-embed: ## Smoke-test the embedding endpoint
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_embeddings
 
+.PHONY: reason
+reason: ## Phase 2 reasoning over the stored snapshot (ARGS="--table dbo.x --with-neighbours")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason $(ARGS)
+
+.PHONY: reason-dry
+reason-dry: ## Show what reasoning would do; no LLM calls, no writes (ARGS=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --dry-run $(ARGS)
+
 .PHONY: check-llm
 check-llm: ## Smoke-test the reasoning LLM (plain, JSON mode, thinking)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_llm

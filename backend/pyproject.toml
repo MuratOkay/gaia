@@ -51,7 +51,7 @@ package-dir = { "" = "src" }
 where = ["src"]
 
 [tool.setuptools.package-data]
-gaia = ["prompts/*.txt", "prompts/*.md"]
+gaia = ["prompts/*.txt", "prompts/*.md", "semantics/prompts/*.md"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "auto"

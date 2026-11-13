@@ -965,3 +965,120 @@ repaired with `ALTER USER ... WITH LOGIN`.
   are inferred from columns and joins only.
 - Sequences, synonyms, and security predicates (row-level security) are not read.
 
+
+
+## 23. Phase 2 implementation (awaiting live verification)
+
+Built against PHASES.md Phase 2 and decisions D12–D18. Verified offline
+(unit tests, plus an end-to-end test on PostgreSQL 16 + pgvector with a fake
+LLM and embedder). **Not yet run against DeepSeek, Ollama or `nge_small`**, so
+no acceptance box is ticked.
+
+### Modules
+
+| Module | Purpose |
+|---|---|
+| `llm/structured.py` | JSON mode → Pydantic → caller checks → one corrective retry with the exact errors; every call returned as a `CallRecord` (raw payload kept); truncation fails fast |
+| `llm/cache.py` | Redis response cache `llm:{model}:{prompt_version}:{sha256}`; degrades to a miss if Redis is down |
+| `llm/embeddings.py` | Ollama `/api/embed` client: batching, `num_gpu`, dimension + NaN checks, retries, Redis cache `embed:{model}:{sha256(text)}` |
+| `semantics/bundle.py` | Table bundle (PHASES list) with stable evidence refs + per-column catalog facts; data-source object list |
+| `semantics/schemas.py` | Response models for reasoning and critique; coverage checks (every column exactly once) |
+| `semantics/prompts/` | `reason_table.v1.md`, `critique_table.v1.md`; version = `name.vN+sha256[:10]` of the file |
+| `semantics/reasoner.py` | One reasoning call + one critique call per table; join-hint resolution |
+| `semantics/critique.py` | Critique prompt; sees claims, not the reasoner's confidence or evidence |
+| `semantics/scoring.py` | Five-component score, breakdown, bands |
+| `semantics/service.py` | Scope, skip-by-hash, concurrency, versioned persistence, embedding, report |
+| `db/models/semantics.py`, `db/models/audit.py` | `reasoning_run`, `table_semantic`, `column_semantic`, `join_hint`, `glossary_term`, `embedding`; `audit.llm_call` |
+| `db/repositories/semantics_store.py` | Versioned writes, stale marking, FK/LLM join-hint upserts, embedding targets |
+| `tools/reason.py` | CLI: `--schema --table --with-neighbours --limit --no-thinking --dry-run --show-bundles --force --no-embed --no-cache --cost-report` |
+| `alembic/versions/0003_semantics.py` | Migration (generated from the models, applied and downgraded on PG 16) |
+
+### Prompt layout (provider prefix cache)
+
+```text
+[system] reasoning prompt                       byte-identical for every call
+[user]   object list: every table/view + its PK  identical within a run
+         table bundle (json)                      the only per-table part
+```
+
+The object list exists so the model can suggest joins for reference-like
+columns with no declared FK. Suggestions are kept only if every column and
+the target resolve in the catalog and they do not repeat a declared FK. The
+list is not part of the skip key, so adding a table elsewhere re-reasons
+nothing.
+
+### Evidence refs
+
+Constraints, indexes and FKs carry refs (`pk:`, `uq:`, `ck:`, `ix:`, `fk:` +
+name). Generic refs: `name`, `type`, `nullability`, `default`, `comment`,
+`identity`, `computed`, `table_name`, `table_comment`, `sibling_columns`,
+`row_estimate`. A cited ref is valid only if it exists *and* concerns the
+column (e.g. `default` only if the column has one). Check-constraint columns
+are recovered from the bracketed identifiers in the definition, because the
+Phase 1 reader does not store `parent_column_id`. Changing the reader would
+have changed every structure hash.
+
+### Scoring as implemented
+
+```text
+evidence_coverage  0.30  Σ evidence_signals over catalog facts ONLY:
+                         comment .30, foreign_key .15, key .10, check .10,
+                         default .05, identity/computed .05, profile .25 (Phase 3)
+                         untrusted/disabled FK or check earns half
+schema_coherence   0.25  mean of applicable checks: role↔type, FK role, FK domain,
+                         single-column PK role, check↔value domain, unit↔role,
+                         cited refs valid (fraction; none cited = 0)
+hypothesis_margin  0.20  (c − a) / c; a = best alternative, or 0.2 if none listed
+counter_evidence   0.15  critique verdict: supported 1.0, plausible .7,
+                         doubtful .35, contradicted 0, not assessed .5
+model_self_report  0.10  the model's confidence
+```
+
+All values are in `scoring` in `config/gaia.yaml`. Contributions are rounded
+to 6 decimals before summing, so the breakdown sums exactly to `raw_score`.
+The calibrator is the identity function. Without comments or profiles, the
+other four components can contribute at most 0.70. An uncommented identity PK
+with perfect answers therefore scores 0.745, and a plain column scores at most
+0.70, both below `accept_at` (0.80). Only a rare column carrying FK + key +
+check + default together could pass 0.80 (maximum 0.835). A missing critique
+also blocks `auto_approved`. This is the honest
+expectation in PHASES: the low scores become Phase 3's work queue.
+
+The table score is the mean of its column scores; the table's own
+self-reported confidence is stored separately.
+
+### Versioning and staleness
+
+* Skip key per table: `structure_hash` + reasoning prompt version + critique
+  prompt version + model. Row counts are not in it (OUTLINE §10).
+* Each reasoning inserts version N+1 for the table and all its columns.
+  Partial unique indexes keep exactly one `is_current` row per table and per
+  column.
+* At the start of each run, current rows whose table structure changed, or
+  whose table or column was tombstoned, are marked `stale`. A failed
+  re-reasoning therefore never leaves outdated meaning looking current.
+* Embeddings attach to a semantic *version*: a re-reasoned column gets a new
+  vector, and the old one stays with the old version.
+
+### Deviations from earlier text, and why
+
+* The Ollama client is `llm/embeddings.py`, as PHASES lists it.
+  `semantics/embeddings.py` only builds the text to embed.
+* Two additions: `semantics.reasoning_run`, so the cost report can be rebuilt
+  and query runs can pin a version, and `audit.llm_call` from §8, for raw
+  payloads.
+* `llm.timeout_s` (default 600) was added. Non-streaming thinking calls send
+  nothing until they finish, and the previous hard-coded 300 s could cut off
+  wide tables.
+
+### Known limitations / for review
+
+* The prompts and heuristics have not met the real model yet. The first live
+  run (`--table X --with-neighbours`) is expected to lead to prompt and
+  weight adjustments, tracked via the prompt version and `weights_version`.
+* Approved `glossary_term` rows are not yet fed into the bundle. Doing so
+  needs the glossary state in the skip key, so that a glossary edit
+  re-reasons the affected tables.
+* View semantics rely on column names only (`sys.sql_modules` not captured).
+* The trigram indexes in `0003` were not executed in the sandbox (no
+  `pg_trgm` there).

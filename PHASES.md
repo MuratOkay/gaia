@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-13 · Status: Phase 0 and 1 complete, Phase 2 awaiting approval
+> Last updated: 2026-11-13 · Status: Phase 0 and 1 complete, Phase 2 implemented — awaiting live verification
 
 ---
 
@@ -35,7 +35,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 |---|---|---|---|
 | 0 | Infrastructure, config, health, target verification | **DONE** | ✅ approved |
 | 1 | Catalog introspection, hashing, incremental diff | **DONE** | ✅ approved |
-| 2 | Semantic reasoning, evidence scoring, embeddings | **planned** | ⬜ awaiting approval |
+| 2 | Semantic reasoning, evidence scoring, embeddings | **implemented — awaiting live verification** | ⬜ |
 | 3 | Deep profiling, PII, re-reasoning | **planned** | ⬜ |
 | 4 | Retrieval, T-SQL generation, guarded execution | **planned** | ⬜ |
 | 5 | React chat UI | **planned** | ⬜ |
@@ -231,6 +231,26 @@ the entire point of the project.
 | 5 | **Concurrency** | 1 / 4 / 8 | **4** |
 | 6 | **PII detection: here or Phase 3** | here / Phase 3 | **Phase 3** — pattern matching needs sample values |
 
+### Decisions taken (2026-11-13)
+
+The owner's rule: where documents disagree, **`config/gaia.yaml` and OUTLINE.md
+win**; otherwise the recommendations above apply.
+
+| # | Decision | Taken |
+|---|---|---|
+| 1 | Scope of first run | (c) one table + FK neighbours (`--table X --with-neighbours`), then (a) |
+| 2 | Thinking mode | **on for semantics and critique** (`llm.thinking` in config, OUTLINE §3); `--no-thinking` available |
+| 3 | Sample data | no; catalog facts only |
+| 4 | Output language | English only |
+| 5 | Concurrency | 4 (`llm.concurrency`) |
+| 6 | PII detection | Phase 3; `pii_*` columns exist and stay NULL |
+| — | Reasoning provider | DeepSeek only in development; Claude/Gemini may be evaluated later behind `LLMClient`. **Ollama is the embeddings provider only.** |
+| — | `join_hint` | declared FKs = `fk`/`confirmed`; model suggestions resolved against the catalog = `llm`/`inferred`; SME rows never overwritten |
+| — | `glossary_term` | table only; filled by the human-in-the-loop step or imported from a company glossary, then treated as ground truth |
+| — | Wide tables | no chunking; token efficiency is a go-to-market tuning topic. Truncated output fails clearly with a hint to raise `llm.max_output_tokens` |
+| — | Status bands | `auto_approved` at ≥ `accept_at`; otherwise `draft`; below `review_required_below` flagged for SME. Tunable later |
+| — | Retrieval smoke test | the "10 business questions" item was a brainstorming artifact; not a gate for Phase 2 |
+
 ### Estimate
 
 | Scope | LLM calls | Wall time @ concurrency 4 | Notes |
@@ -253,6 +273,30 @@ with measured numbers.
 | JSON schema drift | Pydantic validation + bounded retry + raw payload on failure |
 | Prompt edits silently invalidating the cache | Prompts versioned; cache key includes prompt version |
 | Cost surprise on a full pass | Subset first, cost report, then full run |
+
+### Implementation status: awaiting live verification
+
+Built in a sandbox without Docker, SQL Server, DeepSeek or Ollama, so **no
+acceptance box above is ticked**. A tick requires a
+command run against the real stack (Definition of done, rule 1).
+
+| Acceptance criterion | Offline evidence | Live check |
+|---|---|---|
+| `column_semantic` row per column, with meaning and breakdown | integration test on PostgreSQL 16 + pgvector (fake LLM) | `make reason`, then count current rows vs `catalog.columns` |
+| `table_semantic` row per table | same | same |
+| breakdown components sum to `raw_score` | unit + integration tests (exact to 6 decimals) | `SELECT ... WHERE raw_score <> (sum of contributions)` returns 0 rows |
+| unchanged re-run issues **zero** LLM calls | integration test | second `make reason` prints `calls=0` |
+| one column change re-reasons only its bundle | integration test | alter one column, `make introspect`, `make reason` |
+| schema-invalid responses retried, failures recorded with raw payload | unit + integration tests | `audit.llm_call WHERE NOT parsed_ok` |
+| prompt prefix byte-identical | unit test (system prompt + object list precede the bundle) | `cached` tokens > 0 in `--cost-report` from the 2nd call on |
+| 1024-dim embedding per column, with model name | integration test (fake embedder, real `vector(1024)` + HNSW) | `make reason` → `embeddings written=`; `semantics.embedding` |
+| cost/latency report | CLI output exercised with the fake LLM | `make reason ARGS=--cost-report` |
+| score distribution printed, with real spread | CLI output exercised with the fake LLM | histogram + bands in the run report |
+| retrieval smoke test (10 questions) | not built (see decisions) | n/a for this gate |
+
+Migration `0003` was generated from the models, then applied and downgraded on
+PostgreSQL 16 + pgvector 0.6.2. The two trigram indexes were not executed
+there: that server lacks `pg_trgm`, which `0001` installs on the real store.
 
 ### Gate
 
@@ -486,6 +530,13 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D9 | Frontend | React + TypeScript + Vite + pnpm, i18next from the start |
 | D10 | Catalog re-read | Always full; cheapness recovered via hashing |
 | D11 | Target host format | Always `127.0.0.1`; never `localhost` (IPv6 resolution breaks ODBC) |
+| D12 | Conflict rule | Where documents disagree, `config/gaia.yaml` and OUTLINE.md win |
+| D13 | Thinking | On for semantics and critique (config); per-run `--no-thinking` |
+| D14 | Phase 2 inputs | Catalog facts only, English output, PII deferred to Phase 3, concurrency 4 |
+| D15 | Providers | DeepSeek = reasoning (Claude/Gemini may be evaluated later); Ollama = embeddings only |
+| D16 | `join_hint` / `glossary_term` | FK = confirmed, model = inferred, SME never overwritten; glossary for human-in-the-loop / company glossary as ground truth |
+| D17 | Wide tables | No chunking for now; token efficiency deferred to go-to-market tuning |
+| D18 | Status bands | `auto_approved` ≥ `accept_at`, else `draft`; abstain band flagged for SME; tunable |
 
 ## Definition of done (per phase)
 
@@ -498,7 +549,7 @@ A phase is done only when all of the following hold:
 4. A short summary states what was built, what was proven, and what was deferred
 5. Your gate is ticked
 
-## Open questions blocking Phase 2
+## Open questions blocking Phase 2 (answered 2026-11-13, see decisions D12–D18)
 
 1. **Scope of the first reasoning run** — one table + neighbours (recommended),
    one schema, or all 68 tables?

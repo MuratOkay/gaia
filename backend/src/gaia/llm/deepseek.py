@@ -15,6 +15,7 @@ Behavioural notes that matter for correctness, from the DeepSeek API docs:
 
 from __future__ import annotations
 
+import random
 import time
 from typing import Any
 
@@ -24,10 +25,24 @@ from gaia.core.config import LLMConfig
 from gaia.llm.base import LLMError, LLMResponse, Message, Usage
 
 
+def _retry_after(response: httpx.Response) -> float | None:
+    """Parse ``Retry-After`` (seconds form). Gateways rarely send it, so this
+    is a bonus rather than a dependency."""
+    raw = response.headers.get("retry-after")
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except ValueError:
+        return None
+
+
 class DeepSeekClient:
     def __init__(self, config: LLMConfig, *, client: httpx.Client | None = None) -> None:
         self.config = config
-        self._client = client or httpx.Client(timeout=httpx.Timeout(300.0, connect=20.0))
+        self._client = client or httpx.Client(
+            timeout=httpx.Timeout(float(config.timeout_s), connect=20.0)
+        )
         self._owns_client = client is None
 
     def close(self) -> None:
@@ -129,25 +144,48 @@ class DeepSeekClient:
         }
 
         max_attempts = max(1, self.config.retry.max_attempts)
+        # 429 (concurrency ceiling) and 503 (model overloaded) both mean "the
+        # gateway has no capacity right now". They clear on their own, so they
+        # get more patience than a hard error — but not an unbounded loop.
+        max_transient_attempts = max(1, self.config.retry.max_attempts_rate_limit)
         last_error: Exception | None = None
+        attempt = 0
+        transient_attempts = 0
 
-        for attempt in range(1, max_attempts + 1):
+        while True:
+            attempt += 1
             started = time.perf_counter()
             try:
                 response = self._client.post(self._url, json=body, headers=headers)
             except httpx.HTTPError as exc:
                 last_error = exc
+                if attempt >= max_attempts:
+                    break
                 self._sleep(attempt)
                 continue
 
             latency_ms = int((time.perf_counter() - started) * 1000)
 
-            if response.status_code == 429 or response.status_code >= 500:
+            if response.status_code in (429, 502, 503, 504):
+                transient_attempts += 1
+                last_error = LLMError(
+                    f"http {response.status_code} (gateway capacity)",
+                    status=response.status_code,
+                    body=response.text[:500],
+                )
+                if transient_attempts >= max_transient_attempts:
+                    break
+                self._sleep(transient_attempts, retry_after=_retry_after(response))
+                continue
+
+            if response.status_code >= 500:
                 last_error = LLMError(
                     f"http {response.status_code}",
                     status=response.status_code,
                     body=response.text[:500],
                 )
+                if attempt >= max_attempts:
+                    break
                 self._sleep(attempt)
                 continue
 
@@ -168,18 +206,38 @@ class DeepSeekClient:
             if result.is_blank and self.config.retry.retry_on_blank_content:
                 # JSON mode silently blanks unparseable output; retry.
                 last_error = LLMError("blank content returned")
+                if attempt >= max_attempts:
+                    break
                 self._sleep(attempt)
                 continue
 
             return result
 
-        raise LLMError(f"completion failed after {max_attempts} attempts: {last_error}")
+        raise LLMError(f"completion failed after {attempt} attempt(s): {last_error}")
 
-    def _sleep(self, attempt: int) -> None:
-        time.sleep(self.config.retry.backoff_base_s ** attempt)
+    def _sleep(self, attempt: int, *, retry_after: float | None = None) -> None:
+        """Exponential backoff with a cap and jitter.
+
+        Jitter matters here: with several workers hitting a 4-concurrency ceiling
+        at once, fixed sleeps make them retry in lockstep and collide again.
+        """
+        base = max(0.1, self.config.retry.backoff_base_s)
+        delay = min(base ** attempt, self.config.retry.max_backoff_s)
+        if retry_after is not None:
+            delay = max(delay, retry_after)
+        delay = min(delay, self.config.retry.max_backoff_s)
+        time.sleep(delay * (0.5 + random.random() * 0.5))
 
 
 def build_client(config: LLMConfig) -> DeepSeekClient:
-    if config.provider == "ollama":
-        raise NotImplementedError("ollama LLM provider arrives in Phase 2")
+    """Reasoning client for ``llm.provider``.
+
+    DeepSeek is the only reasoning provider. Ollama serves embeddings only
+    (``gaia.llm.embeddings``). Other providers plug in behind ``LLMClient``.
+    """
+    if config.provider != "deepseek":
+        raise NotImplementedError(
+            f"reasoning provider {config.provider!r} is not supported; "
+            "use 'deepseek' (Ollama is the embeddings provider only)"
+        )
     return DeepSeekClient(config)

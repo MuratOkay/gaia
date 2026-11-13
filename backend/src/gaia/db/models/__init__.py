@@ -1,10 +1,10 @@
-"""Model package.
+"""ORM models for the Gaia metadata store.
 
-Importing the modules here ensures ``Base.metadata`` is complete before
-Alembic autogenerate or ``create_all`` runs.
+All model modules are imported here so ``Base.metadata`` is complete for
+Alembic and for ``create_all`` in tests.
 """
 
+from gaia.db.models import audit, catalog, semantics  # noqa: F401
 from gaia.db.models.base import Base
-from gaia.db.models import catalog  # noqa: F401
 
-__all__ = ["Base", "catalog"]
+__all__ = ["Base", "audit", "catalog", "semantics"]

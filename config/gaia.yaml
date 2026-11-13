@@ -52,7 +52,12 @@ llm:
   json_mode: true
   max_output_tokens: 16000
   temperature: 0.1
-  concurrency: 4
+  # The gateway hard-limits this account to 4 concurrent requests per model.
+  # Stay one below it so a retry never has to fight for the last slot.
+  concurrency: 3
+  # Read timeout per completion. Thinking-mode calls return nothing until the
+  # full answer is ready, so size this for the widest table bundle.
+  timeout_s: 600
   thinking:
     # Thinking is on by default in DeepSeek; disable where latency matters more
     # than depth.
@@ -63,7 +68,9 @@ llm:
     classification: false
   retry:
     max_attempts: 3
-    backoff_base_s: 1.5
+    max_attempts_rate_limit: 8    # 429 = concurrency ceiling; clears on its own
+    backoff_base_s: 2.0
+    max_backoff_s: 60.0
     retry_on_blank_content: true  # JSON mode can return whitespace only
 
 embeddings:
@@ -107,6 +114,31 @@ scoring:
     hypothesis_margin: 0.20
     counter_evidence: 0.15
     model_self_report: 0.10
+  # Sub-weights of evidence_coverage, sum = 1.0. Earned from catalog facts
+  # about the column only. "profile" is earned by Phase 3 deep profiling, so in
+  # Phase 2 evidence_coverage tops out at 0.75 even for a commented column.
+  evidence_signals:
+    comment: 0.30
+    foreign_key: 0.15
+    key: 0.10
+    check_constraint: 0.10
+    default: 0.05
+    identity_or_computed: 0.05
+    profile: 0.25
+  # counter_evidence value per critique verdict.
+  critique_verdicts:
+    supported: 1.0
+    plausible: 0.7
+    doubtful: 0.35
+    contradicted: 0.0
+    not_assessed: 0.5     # critique failed or skipped the column
+  # Runner-up confidence assumed when the model lists no alternatives.
+  margin_prior_alternative: 0.2
+  calibrator: identity    # Phase 6 replaces this with a fitted calibrator
+
+semantics:
+  validation_retries: 1         # re-ask with the validation errors, then fail
+  embed_after_reasoning: true
 
 query:
   max_repair_attempts: 2

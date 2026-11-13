@@ -123,7 +123,11 @@ class ThinkingConfig(BaseModel):
 
 class RetryConfig(BaseModel):
     max_attempts: int = 3
-    backoff_base_s: float = 1.5
+    # 429 on this gateway means "concurrency ceiling reached", which clears on
+    # its own; give it more room than a hard failure.
+    max_attempts_rate_limit: int = 8
+    backoff_base_s: float = 2.0
+    max_backoff_s: float = 60.0
     retry_on_blank_content: bool = True
 
 
@@ -136,6 +140,10 @@ class LLMConfig(BaseModel):
     max_output_tokens: int = 16000
     temperature: float = 0.1
     concurrency: int = 4
+    # Read timeout for one completion. Non-streaming thinking-mode calls send
+    # nothing until the whole answer is ready, so this must cover the slowest
+    # table bundle, not a typical one.
+    timeout_s: int = 600
     thinking: ThinkingConfig = Field(default_factory=ThinkingConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
 
@@ -185,9 +193,51 @@ class ScoringWeights(BaseModel):
     model_self_report: float = 0.10
 
 
+class EvidenceSignals(BaseModel):
+    """Sub-weights of ``evidence_coverage`` (sum = 1.0).
+
+    Each is earned from catalog facts about the column, never from the model's
+    own claims. ``profile`` stays unearned until Phase 3 profiles exist.
+    """
+
+    comment: float = 0.30
+    foreign_key: float = 0.15
+    key: float = 0.10
+    check_constraint: float = 0.10
+    default: float = 0.05
+    identity_or_computed: float = 0.05
+    profile: float = 0.25
+
+
+class CritiqueVerdictValues(BaseModel):
+    """``counter_evidence`` component value per critique verdict."""
+
+    supported: float = 1.0
+    plausible: float = 0.7
+    doubtful: float = 0.35
+    contradicted: float = 0.0
+    # Used when the critique pass failed or did not cover the column: no
+    # falsification attempt was made, so it earns neither credit nor penalty.
+    not_assessed: float = 0.5
+
+
 class ScoringConfig(BaseModel):
     weights_version: str = "heuristic-v1"
     weights: ScoringWeights = Field(default_factory=ScoringWeights)
+    evidence_signals: EvidenceSignals = Field(default_factory=EvidenceSignals)
+    critique_verdicts: CritiqueVerdictValues = Field(default_factory=CritiqueVerdictValues)
+    # Confidence assumed for the runner-up when the model lists no
+    # alternatives; prevents "no alternatives" from reading as certainty.
+    margin_prior_alternative: float = 0.2
+    calibrator: Literal["identity"] = "identity"
+
+
+class SemanticsConfig(BaseModel):
+    # Extra attempts when a response fails schema validation; each retry feeds
+    # the validation errors back to the model.
+    validation_retries: int = 1
+    # Embed current semantics at the end of each reasoning run.
+    embed_after_reasoning: bool = True
 
 
 class QueryConfig(BaseModel):
@@ -205,6 +255,7 @@ class Settings(BaseModel):
     cache: CacheConfig = Field(default_factory=CacheConfig)
     profiling: ProfilingConfig = Field(default_factory=ProfilingConfig)
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
+    semantics: SemanticsConfig = Field(default_factory=SemanticsConfig)
     query: QueryConfig = Field(default_factory=QueryConfig)
     unresolved_env: list[str] = Field(default_factory=list)
 
