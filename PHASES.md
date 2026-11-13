@@ -433,26 +433,116 @@ never `ORDER BY NEWID()` on large tables.
 
 - [ ] Every triggered column has a `column_profile` with `method`, `seed`,
       `rows_scanned`, `runtime_ms`
+- [ ] **No `TOP N` query exists in the profiler** — sampling is
+      `TABLESAMPLE ... REPEATABLE(seed)`, enforced by test
+- [ ] `bit` columns are cast to `int` before `MIN`/`MAX`; decimal aggregates run
+      on a cast value and record the cast
+- [ ] Every metric records whether it was exact, approximate or skipped, and why
+- [ ] No profiling query exceeds its statement timeout; degradation is recorded
+- [ ] The widest table completes within the 180 s ceiling
 - [ ] Low-confidence columns show a measurable score increase after re-reasoning;
       report the before/after distribution
-- [ ] No profiling query exceeds its statement timeout; degradation is recorded
-- [ ] Table with 26M rows profiled within the per-table budget
 - [ ] PII classifications stored with evidence and confidence
 - [ ] Profiling is idempotent per `data_hash`; unchanged data reuses cached profiles
 - [ ] Total profiling wall time and rows scanned are reported
 
 ### Decisions needed
 
+> Decisions 7, 12 and 13 are already answered by measurement — see
+> **Measured profiling cost** below, which was run against `nge_small` first.
+
 | # | Decision | My recommendation |
 |---|---|---|
-| 7 | Profiling budget per table (default 120 s) | 120 s, degrades to sampling |
+| 7 | Profiling budget per table | **180 s ceiling**; measured cost is 10–30 s, so this is headroom, not a target |
 | 8 | Is masking required before samples reach the LLM | **yes, mask by default**; raw samples stay local |
-| 9 | Sample size per table (default 200 rows) | 200 |
-| 10 | Run profiling on all low-score columns or top-N first | **top 50 by information gain**, then re-assess |
-| 12 | Profiling for >10 M-row tables | **approximate** (`APPROX_COUNT_DISTINCT`, `TABLESAMPLE`) by default |
+| 9 | Sample size per table (default 200 rows) | 200 rows via `TABLESAMPLE ... REPEATABLE(seed)`, **never `TOP N`** |
+| 10 | Run profiling on all low-score columns or top-N first | **all low-score columns** — measurement shows exact profiling is affordable |
+| 12 | Profiling for >10 M-row tables | **exact, not approximate** — `APPROX_COUNT_DISTINCT` was slower and 2.3% wrong here; keep it only as a fallback for high-cardinality text |
+| 13 | Sampling strategy | `TABLESAMPLE SYSTEM` with a stored seed; `TOP N` is ruled out as unrepresentative |
 
 Decision 11 (wide-bundle fallback) is no longer needed: the Phase 2 addendum
 raised `llm.timeout_s` to 1800 s instead of changing reasoning behaviour.
+
+### Measured profiling cost (2026-11-13, `nge_small`)
+
+Measured on the two largest tables rather than estimated, because the estimate
+would have been wrong.
+
+| Operation | `dw.fact_sales` 24.6M (has NCCI) | `dbo.transaction_lines` 24.6M (rowstore) |
+|---|---|---|
+| `COUNT_BIG(*)` | 543 ms | 1,299 ms |
+| `MIN/MAX/COUNT` one column | 33 ms | 5,910 ms |
+| batched `MIN/MAX/COUNT`, 7 columns / 18 aggregates | **368 ms** | one scan, ~6 s |
+| `COUNT(DISTINCT)` low-cardinality (4 values) | 174 ms | 917 ms |
+| `COUNT(DISTINCT)` high-cardinality (24.6M values) | **11 ms** | 438 ms |
+| `APPROX_COUNT_DISTINCT` same column | 2,388 ms | 795 ms |
+| `AVG` + `STDEV` on decimal | **7,395 ms** | — |
+| `AVG` with `CAST(decimal AS float)` | 1,082 ms | — |
+| `TABLESAMPLE SYSTEM (1 PERCENT)` | 186 ms | 51 ms |
+
+**Conclusion: exact profiling is affordable.** A full exact pass over the largest
+rowstore table is roughly one scan (~6 s) plus a few distinct passes, so ~10 s;
+the largest columnstore table is under 1 s. The 120 s budget was not too small —
+it was roughly 10× larger than needed.
+
+### Five findings that change the implementation
+
+1. **`TOP (N)` is not a sample, and must not be used.** These tables are
+   clustered on their identity column, which is monotonic in arrival order. The
+   first 200 rows of `dw.fact_sales` are the *earliest transactions in the
+   dataset*, so `TOP 200` would report a minimum date, a maximum date, a distinct
+   count and a value distribution that are all wrong — while still looking
+   plausible. Sampling must be `TABLESAMPLE SYSTEM/BERNOULLI` with
+   `REPEATABLE(seed)`, which is also 3–100× faster than the full scan.
+
+2. **`APPROX_COUNT_DISTINCT` is both less accurate and slower here.** On
+   `transaction_line_id` it returned **25,225,206** against an exact
+   **24,653,642** — a 2.3% overestimate — and took 2.4 s where the exact count
+   took 11 ms, because the columnstore index is sorted on that column so the
+   exact aggregate streams. Default to exact; treat approximate as a fallback for
+   types where exact is genuinely expensive, and record which was used.
+
+3. **`MIN`/`MAX` fail on `bit`.** SQL Server raises *"Operand data type bit is
+   invalid for min operator"*. `bit` columns must be cast to `int`, or profiled
+   for value distribution instead of range.
+
+4. **`STDEV` on `decimal` is the single most expensive operation measured** —
+   7,395 ms, twice the cost of scanning the table. Casting to `float` first cuts
+   it to 1,082 ms. Numeric aggregate statistics should therefore run on a cast
+   value, with the cast recorded so the precision loss is visible.
+
+5. **Columnstore segment metadata cannot be trusted for profiling.**
+   `sys.column_store_segments.min_data_id`/`max_data_id` hold *encoded* ids, not
+   logical values: they reported `currency_code` as 0–1, `quantity` as 0–1, and
+   `has_nulls = 1` on all 44 segments of `date_key`, a column the catalog says is
+   `NOT NULL`. Free-looking shortcuts here produce confident nonsense.
+
+Statistics histograms *are* usable (`sys.dm_db_stats_histogram`): first and last
+`RANGE_HI_KEY` bound the range, and the sum of `distinct_range_rows` plus step
+count approximates cardinality. They only cover the leading column of each
+statistic, and sampled statistics are approximations, so they are a cheap
+*tier 0* seed rather than a replacement for measurement.
+
+### Revised approach: tiered, exact-first
+
+| Tier | Source | Cost | Used for |
+|---|---|---|---|
+| 0 | Statistics histograms, `sys.partitions`/DMV | free | Seed min/max/cardinality/null estimate; exact row count |
+| 1 | One batched scan per table | ~0.4 s (CS) / ~6 s (rowstore) | Exact count, null fraction, min/max per column |
+| 2 | Exact `COUNT(DISTINCT)` per column | 11 ms–1 s | Distinct count, where the type allows |
+| 3 | `TABLESAMPLE ... REPEATABLE(seed)` + top-k | 51–186 ms | Value distribution, top-k, patterns, PII, representative rows |
+
+Degradation is *per metric, not per table*: if tier 2 would exceed the remaining
+budget for a column, record `method='approximate'` (or `skipped` with a reason)
+and continue. Each metric stores its own `method`, so a wrong-looking number can
+always be traced to how it was obtained.
+
+### Budget decision
+
+Keep `profiling.max_runtime_per_table_s` as a **ceiling**, raised 120 → **180 s**
+for headroom, but expect 10–30 s in practice. Add `profiling.exact_scan_max_rows`
+(20M default) purely as a guard for a table far larger than anything measured
+here, and `profiling.sample_percent` with the existing `REPEATABLE` seed.
 
 ### Known input from Phase 2
 

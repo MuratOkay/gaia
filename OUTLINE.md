@@ -543,7 +543,7 @@ assume wide coverage rather than incidental top-ups.
 |---|---|
 | Column row count | `COUNT_BIG(*)` with `TABLESAMPLE` on large tables |
 | Not-null count / null fraction | `COUNT(col)`, `COUNT_BIG(*) - COUNT(col)` |
-| Distinct count | exact `COUNT(DISTINCT col)` under a size budget; `APPROX_COUNT_DISTINCT(col)` above it |
+| Distinct count | exact `COUNT(DISTINCT col)`; `APPROX_COUNT_DISTINCT(col)` only as a fallback for high-cardinality text, since it was measured as slower and less accurate here |
 | Numeric stats | `MIN`, `MAX`, `AVG`, `STDEV`, `PERCENTILE_CONT` |
 | Text length distribution | `MIN/MAX/AVG(LEN(col))`, length histogram |
 | Temporal granularity | `MIN`, `MAX`, datepart-difference distinctness |
@@ -557,18 +557,32 @@ assume wide coverage rather than incidental top-ups.
 
 ### Sampling and safety
 
-- Prefer existing statistics before running queries.
-- Small tables: full scan. Large tables: `TABLESAMPLE` with `REPEATABLE(seed)`.
+- Prefer existing statistics before running queries. `sys.dm_db_stats_histogram`
+  gives a free range and cardinality estimate for each statistic's leading
+  column.
+- Small tables: full scan. Large tables: **one batched scan** for
+  count/null/min/max, then `TABLESAMPLE SYSTEM ... REPEATABLE(seed)` for value
+  distribution and top-k.
+- **`TOP (N)` must never be used as sampling.** These tables are clustered on a
+  monotonic identity column, so `TOP 200` returns the earliest rows only —
+  wrong range, wrong distinct count, wrong distribution, and indistinguishable
+  from a correct answer. Measured on `nge_small`; see PHASES §Phase 3.
+- Prefer **exact** aggregates. `APPROX_COUNT_DISTINCT` was measured as both
+  slower and 2.3% inaccurate on a sorted columnstore column, so approximate is a
+  fallback, not a default.
+- Cast `bit` to `int` before `MIN`/`MAX` (SQL Server rejects the latter), and
+  cast `decimal` to `float` before `STDEV` (7.4 s → 1.1 s measured), recording
+  the cast.
 - Bounded sample volume: e.g. 50–200 rows per table, capped values per column.
 - Profile columns independently; do not assemble complete sensitive rows.
 - Mask/redact PII before storing samples or sending them to a model.
-- Record `method` (`exact`/`approximate`/`sampled`), `seed`, `rows_scanned`,
-  `runtime_ms`, `est_cost`.
+- Record `method` (`exact`/`approximate`/`sampled`/`skipped`), `seed`,
+  `rows_scanned`, `runtime_ms`, `est_cost` per metric, not per table.
 - Read-only session, `statement_timeout`, lock timeout, max rows, max runtime per
   table, concurrency limits per target, off-peak scheduling for bulk runs,
   prefer a read replica when available.
-- A **budget service** enforces ceilings and degrades gracefully (approximate
-  instead of timing out) rather than failing the run.
+- A **budget service** enforces ceilings and degrades **per metric** (approximate
+  or skip one measurement) rather than failing the table or the run.
 
 ---
 
