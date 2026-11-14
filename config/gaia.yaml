@@ -43,6 +43,30 @@ targets:
       dmv_row_counts: true        # VIEW DATABASE STATE granted
       show_statistics: false      # DBCC SHOW_STATISTICS needs elevation
 
+  # PostgreSQL development target (D25): a synthetic retail database generated
+  # by infra/pg-target/seed.py (`make pg-target-up pg-target-seed`). It is a
+  # separate server from Gaia's metadata store, never the same database.
+  # Select it per command with --target demo_pg (or TARGET=demo_pg in make).
+  demo_pg:
+    dialect: postgres             # alias: postgresql
+    host: ${GAIA_PG_TARGET_HOST:-127.0.0.1}
+    port: ${GAIA_PG_TARGET_PORT:-5434}
+    database: ${GAIA_PG_TARGET_DATABASE:-gaia_target_pg}
+    username: ${GAIA_PG_TARGET_USER:-gaia_ro}
+    password: ${GAIA_PG_TARGET_PASSWORD}
+    options:
+      sslmode: prefer             # libpq sslmode
+      app_name: gaia
+    limits:
+      connect_timeout_s: 15
+      statement_timeout_s: 30     # enforced per session (SET statement_timeout)
+      lock_timeout_ms: 5000
+      max_sample_rows: 200
+      max_runtime_per_table_s: 120
+      max_rows_returned: 1000
+      isolation: read_uncommitted # no PostgreSQL equivalent; catalog reads use REPEATABLE READ
+    # SQL Server capability flags; not used by the PostgreSQL dialect.
+
 llm:
   provider: deepseek              # deepseek | ollama
   # OpenAI-compatible endpoint; the client appends /chat/completions.

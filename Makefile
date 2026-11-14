@@ -11,6 +11,8 @@ VENV := $(ROOT)/gaia-env
 PY := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
 COMPOSE := docker compose
+# Optional target selection for target-facing commands, e.g. TARGET=demo_pg
+TARGET_ARG := $(if $(TARGET),--target $(TARGET),)
 
 .DEFAULT_GOAL := help
 
@@ -66,7 +68,7 @@ venv: ## Install backend dependencies into gaia-env
 
 .PHONY: check-env
 check-env: ## Verify gaia-env imports the dependency stack
-	$(PY) -c "import fastapi, sqlalchemy, asyncpg, pyodbc, httpx, sqlglot, redis, structlog, pgvector; print('deps ok')"
+	$(PY) -c "import fastapi, sqlalchemy, asyncpg, psycopg, pyodbc, httpx, sqlglot, redis, structlog, pgvector; print('deps ok')"
 	$(PY) -c "import pyodbc; print('ODBC drivers:', pyodbc.drivers())"
 
 .PHONY: dev-api
@@ -84,12 +86,38 @@ lint: ## Ruff check + format check
 # --- target database -------------------------------------------------------
 
 .PHONY: check-target
-check-target: ## Verify the read-only SQL Server connection
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_target
+check-target: ## Verify the read-only target connection (TARGET=demo_pg for PostgreSQL)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_target $(TARGET_ARG)
 
 .PHONY: target-info
-target-info: ## Print a catalog summary of the target database
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_target --summary
+target-info: ## Print a catalog summary of the target database (TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_target --summary $(TARGET_ARG)
+
+# --- PostgreSQL development target (D25) -------------------------------------
+
+.PHONY: pg-target-up
+pg-target-up: ## Start the PostgreSQL development target (127.0.0.1:5434)
+	$(COMPOSE) --profile target-pg up -d gaia-target-pg
+	@$(COMPOSE) --profile target-pg ps gaia-target-pg
+
+.PHONY: pg-target-seed
+pg-target-seed: ## (Re)create and populate the PostgreSQL target (ARGS="--scale 1 --seed 42")
+	$(PY) $(ROOT)/infra/pg-target/seed.py $(ARGS)
+
+.PHONY: pg-target-psql
+pg-target-psql: ## psql on the PostgreSQL target as the read-only role
+	@docker exec -it gaia-target-pg psql -U $${GAIA_PG_TARGET_USER:-gaia_ro} -d $${GAIA_PG_TARGET_DATABASE:-gaia_target_pg} -h 127.0.0.1
+
+.PHONY: pg-target-down
+pg-target-down: ## Stop the PostgreSQL target (keeps data)
+	$(COMPOSE) --profile target-pg stop gaia-target-pg
+
+.PHONY: pg-target-reset
+pg-target-reset: ## DESTROY the PostgreSQL target volume
+	@read -p "This deletes the PostgreSQL development target. Continue? [y/N] " a; \
+	  [[ "$$a" == "y" ]] || { echo "aborted"; exit 1; }
+	$(COMPOSE) --profile target-pg rm -sf gaia-target-pg
+	docker volume rm gaia-target-pgdata
 
 # --- embeddings ------------------------------------------------------------
 
@@ -98,28 +126,28 @@ pull-embed: ## Pull the embedding model into the Ollama container
 	docker exec ollama-code ollama pull $${GAIA_EMBEDDINGS_MODEL:-bge-m3}
 
 .PHONY: introspect
-introspect: ## Run a catalog introspection pass (read, diff, persist)
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect
+introspect: ## Run a catalog introspection pass (read, diff, persist; TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect $(TARGET_ARG)
 
 .PHONY: introspect-dry
-introspect-dry: ## Introspection without persisting
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect --dry-run
+introspect-dry: ## Introspection without persisting (TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect --dry-run $(TARGET_ARG)
 
 .PHONY: introspect-json
-introspect-json: ## Dump the canonical snapshot document
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect --dry-run --json /tmp/gaia-snapshot.json
+introspect-json: ## Dump the canonical snapshot document (TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect --dry-run --json /tmp/gaia-snapshot.json $(TARGET_ARG)
 
 .PHONY: check-embed
 check-embed: ## Smoke-test the embedding endpoint
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_embeddings
 
 .PHONY: reason
-reason: ## Phase 2 reasoning over the stored snapshot (ARGS="--table dbo.x --with-neighbours")
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason $(ARGS)
+reason: ## Phase 2 reasoning over the stored snapshot (ARGS="--table dbo.x --with-neighbours"; TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason $(TARGET_ARG) $(ARGS)
 
 .PHONY: reason-dry
-reason-dry: ## Show what reasoning would do; no LLM calls, no writes (ARGS=...)
-	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --dry-run $(ARGS)
+reason-dry: ## Show what reasoning would do; no LLM calls, no writes (ARGS=...; TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --dry-run $(TARGET_ARG) $(ARGS)
 
 .PHONY: check-llm
 check-llm: ## Smoke-test the reasoning LLM (plain, JSON mode, thinking)

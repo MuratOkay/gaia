@@ -458,7 +458,7 @@ async def run_reasoning(
     # -- decide what to reason -------------------------------------------------
     todo: list[tuple[TableSnapshot, TableBundle]] = []
     for table in scope:
-        bundle = build_bundle(table)
+        bundle = build_bundle(table, dialect=snapshot.dialect)
         cur = current.get(table_ids[(table.schema, table.name)])
         unchanged = (
             cur is not None

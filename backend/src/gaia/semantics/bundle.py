@@ -77,6 +77,8 @@ class ColumnFacts:
     checks: list[str] = field(default_factory=list)  # refs
     checks_trusted: bool = False  # at least one enabled, trusted check
     refs: set[str] = field(default_factory=set)  # every named ref involving it
+    dialect: str = "mssql"  # vocabulary for type checks (gaia.dialects.types)
+    type_definition: str | None = None  # enum/domain definition, PostgreSQL only
 
     def valid_generic_refs(self, table_has_comment: bool) -> set[str]:
         valid = {"name", "type", "nullability", "table_name", "sibling_columns", "row_estimate"}
@@ -185,7 +187,10 @@ def _drop_empty(entry: dict[str, Any]) -> dict[str, Any]:
     return {k: v for k, v in entry.items() if v not in (None, False, [], "")}
 
 
-def build_bundle(table: TableSnapshot) -> TableBundle:
+def build_bundle(table: TableSnapshot, dialect: str = "mssql") -> TableBundle:
+    """``dialect`` selects the type vocabulary the scorer uses; it does not
+    change the rendered document, so a SQL Server bundle is byte-identical to
+    Phase 2's."""
     table = table.sorted_view()
     names = {c.name.lower(): c.name for c in table.columns}
     facts: dict[str, ColumnFacts] = {
@@ -198,6 +203,8 @@ def build_bundle(table: TableSnapshot) -> TableBundle:
             is_identity=c.is_identity,
             is_computed=c.is_computed,
             is_rowguid=c.is_rowguidcol,
+            dialect=dialect,
+            type_definition=c.type_definition,
         )
         for c in table.columns
     }
@@ -222,6 +229,7 @@ def build_bundle(table: TableSnapshot) -> TableBundle:
                 "sparse": c.is_sparse,
                 "rowguid": c.is_rowguidcol,
                 "user_defined_type": c.is_user_defined_type,
+                "type_definition": c.type_definition,
             }
         )
         for c in table.columns

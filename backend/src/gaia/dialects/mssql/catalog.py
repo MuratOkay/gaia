@@ -643,5 +643,3 @@ class MssqlCatalogReader:
                 exc.args[0] if exc.args else exc,
             )
         return out
-
-        return None if row is None else row[0]

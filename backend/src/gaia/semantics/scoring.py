@@ -44,6 +44,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from gaia.core.config import ProfilingConfig, ScoringConfig
+from gaia.dialects.types import type_info
 from gaia.semantics.bundle import ColumnFacts, TableBundle
 from gaia.semantics.schemas import ColumnCritique, ColumnMeaning
 
@@ -66,20 +67,6 @@ BAND_ABSTAIN = "abstain"  # below review_required_below
 
 _PRECISION = 6
 
-_NUMERIC = {
-    "tinyint",
-    "smallint",
-    "int",
-    "bigint",
-    "decimal",
-    "numeric",
-    "money",
-    "smallmoney",
-    "float",
-    "real",
-}
-_TEMPORAL = {"date", "datetime", "datetime2", "smalldatetime", "datetimeoffset", "time"}
-_TEXT = {"char", "varchar", "nchar", "nvarchar", "text", "ntext", "sysname"}
 # snake_case suffixes (any case) and camelCase suffixes (case-sensitive, so
 # "Valid" or "Piano" do not read as key-like).
 _KEYLIKE_SNAKE = re.compile(r"(^|_)(id|key|code|no|num|number|nr|ref|guid|uuid)$", re.IGNORECASE)
@@ -134,24 +121,6 @@ class ColumnScore:
 
 
 # -- helpers -------------------------------------------------------------------
-
-
-def _base_type(data_type: str) -> str:
-    return data_type.split("(", 1)[0].strip().lower()
-
-
-def _type_length(data_type: str) -> int | None:
-    """Declared length of char types; -1 for (max); None if not applicable."""
-    m = re.search(r"\(([^)]*)\)", data_type)
-    if not m:
-        return None
-    arg = m.group(1).split(",")[0].strip().lower()
-    if arg == "max":
-        return -1
-    try:
-        return int(arg)
-    except ValueError:
-        return None
 
 
 def _round(x: float) -> float:
@@ -209,42 +178,41 @@ def evidence_coverage(facts: ColumnFacts, cfg: ScoringConfig, *, profiled: bool 
 
 
 def _role_type_fit(meaning: ColumnMeaning, facts: ColumnFacts) -> tuple[bool, str]:
-    base = _base_type(facts.data_type)
-    length = _type_length(facts.data_type)
+    """Does the claimed role fit the declared type, in the column's dialect?
+
+    The vocabulary comes from ``gaia.dialects.types``; for SQL Server it is
+    exactly the Phase 2 rule set (proven by a regression test).
+    """
+    t = type_info(facts.dialect, facts.data_type, facts.type_definition)
+    base = t.base + ("[]" if t.is_array else "")
     name = facts.name
     role = meaning.role
     keyish = facts.in_primary_key or facts.in_unique or facts.is_identity or facts.is_rowguid
     keylike_name = bool(_KEYLIKE_SNAKE.search(name) or _KEYLIKE_CAMEL.search(name))
 
     if role == "measure":
-        return base in _NUMERIC, f"measure requires a numeric type, got {base}"
+        return t.is_numeric, f"measure requires a numeric type, got {base}"
     if role == "timestamp":
-        ok = base in _TEMPORAL or (base in {"int", "bigint"} and bool(_DATELIKE_NAME.search(name)))
+        ok = t.is_temporal or (t.fits_date_key() and bool(_DATELIKE_NAME.search(name)))
         return ok, f"timestamp requires a temporal type or a date-key integer, got {base}"
     if role == "flag":
-        ok = base == "bit" or base == "tinyint" or (base in _TEXT and length == 1)
-        return ok, f"flag requires bit, tinyint or a one-character text, got {facts.data_type}"
+        return t.fits_flag(), (
+            f"flag requires bit, tinyint or a one-character text, got {facts.data_type}"
+        )
     if role == "identifier":
-        ok = keyish or base == "uniqueidentifier" or keylike_name
+        ok = keyish or t.is_uuid or keylike_name
         return ok, "identifier requires a key, identity, uniqueidentifier or key-like name"
     if role == "reference":
-        ok = bool(facts.foreign_keys) or keylike_name or base == "uniqueidentifier"
+        ok = bool(facts.foreign_keys) or keylike_name or t.is_uuid
         return ok, "reference requires a foreign key or a key-like name"
     if role == "free-text":
-        return base in _TEXT or base == "xml", f"free-text requires a text type, got {base}"
+        return t.fits_free_text(), f"free-text requires a text type, got {base}"
     if role == "code":
-        ok = (base in _TEXT and (length is not None and 0 < length <= 50)) or base in {
-            "tinyint",
-            "smallint",
-            "int",
-            "char",
-            "nchar",
-        }
-        return ok, f"code requires a short text or small integer type, got {facts.data_type}"
+        return t.fits_code(), (
+            f"code requires a short text or small integer type, got {facts.data_type}"
+        )
     # dimension: anything but binary/large-object types
-    ok = base not in {"varbinary", "binary", "image", "timestamp", "rowversion"}
-    return ok, f"dimension does not fit binary type {base}"
-
+    return not t.is_binary, f"dimension does not fit binary type {base}"
 
 def schema_coherence(
     meaning: ColumnMeaning, facts: ColumnFacts, bundle: TableBundle

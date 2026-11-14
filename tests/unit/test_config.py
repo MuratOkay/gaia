@@ -119,3 +119,63 @@ def test_yaml_config_is_valid_yaml():
     from gaia.core.config import CONFIG_PATH
 
     assert isinstance(yaml.safe_load(CONFIG_PATH.read_text(encoding="utf-8")), dict)
+
+
+def _two_targets(tmp_path, env_text: str):
+    config = tmp_path / "gaia.yaml"
+    env = tmp_path / ".env"
+    config.write_text(
+        textwrap.dedent(
+            """
+            app:
+              default_target: ms
+            targets:
+              ms:
+                dialect: mssql
+                host: 127.0.0.1
+                database: ${T_MS_DB}
+                username: u
+                password: ${T_MS_PW}
+              pg:
+                dialect: postgres
+                host: ${T_PG_HOST:-127.0.0.1}
+                port: ${T_PG_PORT:-5434}
+                database: ${T_PG_DB:-gaia_target_pg}
+                username: gaia_ro
+                password: ${T_PG_PW}
+                options:
+                  sslmode: prefer
+            llm:
+              api_key: ${T_LLM_KEY}
+            """
+        ),
+        encoding="utf-8",
+    )
+    env.write_text(env_text, encoding="utf-8")
+    return config, env
+
+
+def test_defaults_apply_when_unset_or_empty(tmp_path, monkeypatch):
+    for key in ("T_MS_DB", "T_MS_PW", "T_PG_HOST", "T_PG_PORT", "T_PG_DB", "T_PG_PW", "T_LLM_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    config, env = _two_targets(tmp_path, "T_PG_HOST=\nT_PG_DB=other\n")
+    settings = load_settings(config_path=config, env_path=env)
+    pg = settings.target("pg")
+    assert pg.host == "127.0.0.1"  # empty -> default
+    assert pg.port == 5434  # unset -> default, coerced to int
+    assert pg.database == "other"  # set -> value
+    assert pg.options.sslmode == "prefer"
+
+
+def test_unresolved_placeholders_are_scoped_per_target(tmp_path, monkeypatch):
+    for key in ("T_MS_DB", "T_MS_PW", "T_PG_HOST", "T_PG_PORT", "T_PG_DB", "T_PG_PW", "T_LLM_KEY"):
+        monkeypatch.delenv(key, raising=False)
+    config, env = _two_targets(tmp_path, "T_MS_DB=sales\nT_MS_PW=x\n")
+    settings = load_settings(config_path=config, env_path=env)
+
+    assert settings.unresolved_env == ["T_LLM_KEY", "T_PG_PW"]  # global view unchanged
+    assert settings.unresolved_by_section == {"llm": ["T_LLM_KEY"], "targets.pg": ["T_PG_PW"]}
+    # A missing PostgreSQL password must not fail checks against the SQL Server target.
+    assert settings.unresolved_for_target("ms") == ["T_LLM_KEY"]
+    assert settings.unresolved_for_target() == ["T_LLM_KEY"]
+    assert settings.unresolved_for_target("pg") == ["T_LLM_KEY", "T_PG_PW"]

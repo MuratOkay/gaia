@@ -27,7 +27,9 @@ ROOT = Path(__file__).resolve().parents[3]
 CONFIG_PATH = ROOT / "config" / "gaia.yaml"
 ENV_PATH = ROOT / ".env"
 
-_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+# ${NAME} or ${NAME:-default}. A default applies when NAME is unset or empty,
+# as in POSIX shells; it is meant for non-secret values only.
+_ENV_PATTERN = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)(?::-([^}]*))?\}")
 
 
 def _find_repo_root() -> Path:
@@ -77,6 +79,8 @@ class TargetOptions(BaseModel):
     encrypt: bool = True
     trust_server_certificate: bool = True
     app_name: str = "gaia"
+    # PostgreSQL targets only (libpq sslmode); ignored by SQL Server.
+    sslmode: str | None = None
 
 
 class TargetConfig(BaseModel):
@@ -265,6 +269,24 @@ class Settings(BaseModel):
     semantics: SemanticsConfig = Field(default_factory=SemanticsConfig)
     query: QueryConfig = Field(default_factory=QueryConfig)
     unresolved_env: list[str] = Field(default_factory=list)
+    # Unresolved placeholders per config section: "targets.<name>" for a
+    # target, otherwise the top-level key ("llm", "embeddings", ...).
+    unresolved_by_section: dict[str, list[str]] = Field(default_factory=dict)
+
+    def unresolved_for_target(self, name: str | None = None) -> list[str]:
+        """Placeholders that matter when working with one target.
+
+        Other targets' placeholders are excluded, so adding a second target to
+        the config does not make checks against the first one fail.
+        """
+        key = f"targets.{name or self.app.default_target}"
+        names = {
+            n
+            for section, values in self.unresolved_by_section.items()
+            if section == key or not section.startswith("targets.")
+            for n in values
+        }
+        return sorted(names)
 
     def target(self, name: str | None = None) -> TargetConfig:
         key = name or self.app.default_target
@@ -274,19 +296,33 @@ class Settings(BaseModel):
         return self.targets[key]
 
 
-def _expand_env(node: Any, unresolved: set[str]) -> Any:
-    """Substitute ``${VAR}`` references with environment values."""
+def _section(path: tuple[str, ...]) -> str:
+    if len(path) >= 2 and path[0] == "targets":
+        return f"targets.{path[1]}"
+    return path[0] if path else ""
+
+
+def _expand_env(
+    node: Any, unresolved: dict[str, set[str]], path: tuple[str, ...] = ()
+) -> Any:
+    """Substitute ``${VAR}`` / ``${VAR:-default}`` references with environment values.
+
+    ``unresolved`` collects, per config section, the names that had neither a
+    value nor a default.
+    """
     if isinstance(node, dict):
-        return {k: _expand_env(v, unresolved) for k, v in node.items()}
+        return {k: _expand_env(v, unresolved, (*path, str(k))) for k, v in node.items()}
     if isinstance(node, list):
-        return [_expand_env(v, unresolved) for v in node]
+        return [_expand_env(v, unresolved, path) for v in node]
     if isinstance(node, str):
 
         def repl(match: re.Match[str]) -> str:
-            name = match.group(1)
+            name, default = match.group(1), match.group(2)
             value = os.environ.get(name)
-            if value is None:
-                unresolved.add(name)
+            if value is None or (value == "" and default is not None):
+                if default is not None:
+                    return default
+                unresolved.setdefault(_section(path), set()).add(name)
                 return ""
             return value
 
@@ -304,11 +340,12 @@ def load_settings(config_path: Path | None = None, env_path: Path | None = None)
     path = config_path or CONFIG_PATH
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
-    unresolved: set[str] = set()
+    unresolved: dict[str, set[str]] = {}
     expanded = _expand_env(raw, unresolved)
 
     settings = Settings.model_validate(expanded)
-    settings.unresolved_env = sorted(unresolved)
+    settings.unresolved_env = sorted({n for names in unresolved.values() for n in names})
+    settings.unresolved_by_section = {k: sorted(v) for k, v in sorted(unresolved.items())}
     return settings
 
 

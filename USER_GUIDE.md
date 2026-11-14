@@ -4,8 +4,10 @@ A practical, task-oriented guide to running Gaia. It assumes the design is
 already agreed (see [OUTLINE.md](OUTLINE.md)) and that you want to *use* the
 thing.
 
-Every command here has been run against the real stack: PostgreSQL 18 +
-pgvector, SQL Server 2025 (`nge_small`), the DeepSeek gateway, and Ollama.
+Every SQL Server command here has been run against the real stack: PostgreSQL
+18 + pgvector, SQL Server 2025 (`nge_small`), the DeepSeek gateway, and Ollama.
+The PostgreSQL-target commands (§3.1) were verified in a sandbox on PostgreSQL 16;
+the Compose service itself is verified on first use on the real host.
 
 ---
 
@@ -34,7 +36,12 @@ Three stages exist and work:
 | **Reason** | `make reason` | A business meaning per table and column, with evidence, alternatives and an honest score |
 | **Embed** | (inside `make reason`) | 1024-dimension vectors for retrieval in Phase 4 |
 
-Not built yet: profiling (Phase 3), SQL generation (Phase 4), chat UI (Phase 5).
+Targets: SQL Server (`demo_mssql`, the default) and PostgreSQL (`demo_pg`, a
+synthetic development target). Every stage works on both; choose with
+`TARGET=<name>` in `make`, or `--target <name>` on the tools.
+
+Not built yet: profiling (Phase 3, approved), SQL generation (Phase 4), the web
+UI for SME review and chat (Phase 5).
 
 The important consequence: **Gaia does not answer questions yet.** It builds the
 semantic understanding that will let it answer questions.
@@ -47,14 +54,17 @@ semantic understanding that will let it answer questions.
 |---|---|
 | Docker + Compose | `docker compose version` |
 | Python 3.12 venv at `gaia-env` | `./gaia-env/bin/python --version` |
-| ODBC Driver 18 for SQL Server | `odbcinst -q -d` |
+| ODBC Driver 18 for SQL Server (SQL Server targets only) | `odbcinst -q -d` |
 | SQL Server container `sql1` with the target restored | `docker ps --filter name=sql1` |
+| PostgreSQL dev target (optional) | `make pg-target-up` |
 | Ollama container `ollama-code` with `bge-m3` | `docker exec ollama-code ollama list` |
 | Gateway API key in `.env` | see §8 |
 
-Gaia never creates or modifies the target database. The database and the
-read-only login are provisioned by you once; see
-[`infra/sqlserver/RESTORE.md`](infra/sqlserver/RESTORE.md).
+Gaia never creates or modifies a real target database. The database and the
+read-only login are provisioned by you once: restore as in OUTLINE §4.1, then run
+[`infra/sqlserver/001_readonly_login.sql`](infra/sqlserver/001_readonly_login.sql).
+The only exception is the synthetic PostgreSQL development target, which Gaia's
+fixture script creates (§3.1).
 
 ---
 
@@ -76,6 +86,29 @@ cd backend && ../gaia-env/bin/alembic upgrade head && cd ..
 
 `make check-target` is expected to **fail** if the login can write. That is the
 check doing its job, not a setup error.
+
+### 3.1 Optional: the PostgreSQL development target
+
+```bash
+# in .env: GAIA_PG_TARGET_PASSWORD (read-only role) and
+#          GAIA_PG_TARGET_ADMIN_PASSWORD + GAIA_PG_TARGET_ADMIN_URL (container owner)
+make pg-target-up                      # postgres:18 on 127.0.0.1:5434
+make pg-target-seed                    # schema + ~3 M rows + read-only role, ~1.5 min
+make check-target TARGET=demo_pg       # expect 9 PASS
+make introspect   TARGET=demo_pg       # 28 objects, 213 columns
+```
+
+`pg-target-seed` is deterministic (`--seed 42`) and re-runnable: it drops and
+recreates the fixture schemas. `ARGS="--scale 0.1"` gives a quick 0.4 M-row
+version; `--scale 5` a larger one for profiling budgets. The worst-case tables are
+in schema `legacy`; `rpt.v_legacy_transactions` is the only place their business
+names appear (as view aliases).
+
+For PostgreSQL, read-only is proven from **privileges**: the role owns nothing,
+has no write or CREATE privilege and no bypassing attribute, and a DDL attempt in
+an explicit `READ WRITE` transaction fails with a permission error.
+`default_transaction_read_only` is not accepted as proof — any session can
+switch it off.
 
 ---
 
@@ -113,6 +146,8 @@ Start narrow. Reasoning is the slow, paid step; introspection is not.
 
 ### Introspection
 
+All target-facing commands accept `TARGET=<name>`.
+
 | Command | Does |
 |---|---|
 | `make introspect` | Read the catalog, diff against the last snapshot, persist |
@@ -127,6 +162,7 @@ not expose.
 
 | Option | Effect |
 |---|---|
+| `--target NAME` | Data source from config (default `app.default_target`; `TARGET=` in make) |
 | `--table dbo.x` | Limit to one table (repeatable) |
 | `--with-neighbours` | Add tables linked by a declared FK, **one hop only** |
 | `--schema dbo` | Limit to a schema (repeatable) |
@@ -151,6 +187,10 @@ raw payloads are in `audit.llm_call`).
 | `make psql` / `make redis-cli` | Shells into the containers |
 | `make test` | Full test suite |
 | `make dev-api` | FastAPI on `127.0.0.1:8000` (`/health`, `/api/meta`) |
+| `make pg-target-up` / `pg-target-down` | Start / stop the PostgreSQL development target |
+| `make pg-target-seed` | (Re)create and populate it (`ARGS="--scale 0.1"`) |
+| `make pg-target-psql` | psql into it as the read-only role |
+| `make pg-target-reset` | **Destroys** its volume |
 
 ---
 
@@ -185,7 +225,7 @@ Bands (from `profiling` in `config/gaia.yaml`):
 
 | Band | Score | Meaning |
 |---|---|---|
-| accepted | ≥ 0.80 | Well supported; safe for retrieval |
+| accepted | ≥ 0.80 | Well supported |
 | deep_profile | 0.60–0.80 | Plausible but under-evidenced → Phase 3 work |
 | deep_profile_flagged | 0.45–0.60 | Weak; profiling plus human review later |
 | abstain | < 0.45 | Not trustworthy; queued for SME |
@@ -194,6 +234,12 @@ Bands (from `profiling` in `config/gaia.yaml`):
 `evidence_coverage` cannot exceed ~0.10, which caps scores near 0.70 by
 construction. A uniformly high score on such a schema would mean the scorer is
 lying.
+
+This is the Phase 2 scoring (`heuristic-v1`). Phase 3B replaces it with
+`heuristic-v2` (PHASES P3-2): evidence that *supports* a meaning raises the
+score, evidence that *contradicts* it lowers it, and names alone can never reach
+`accepted`. Phase 4 retrieval will use every non-abstain meaning, ranked by score
+(roadmap R2), so `accepted` is not a precondition for being used.
 
 
 ---
@@ -311,8 +357,10 @@ All in `config/gaia.yaml`; secrets stay in `.env`.
 | `embeddings.model` / `dimensions` | `bge-m3` / 1024 | Changing either requires a re-embed and a `vector(N)` change |
 
 `config/gaia.yaml` contains `${VAR}` placeholders resolved from `.env` at load
-time. Unresolved names are reported by `/health` and `/api/meta` rather than
-failing opaquely.
+time, or `${VAR:-default}` where a non-secret default is fine (used for the
+PostgreSQL target's host, port, database and user). Unresolved names are reported
+by `/health` and `/api/meta` rather than failing opaquely; `check-target` only
+counts those of the target being checked.
 
 ### Secrets
 
@@ -372,6 +420,22 @@ is not mistaken for an unhealthy gateway. Read timeouts retry only once
 (`retry.max_attempts_timeout: 2`), because each attempt already costs the full
 timeout.
 
+### PostgreSQL target: `security.privileges` or `security.read_only` fails
+
+The role can write somewhere. The detail lists exactly what: role attributes,
+owned relations, write grants, sequence `nextval` rights, `CREATE` on a schema or
+the database. Re-run `infra/pg-target/readonly_role.sql` (or `make
+pg-target-seed`) and never grant the role ownership. The live DDL attempt aims at
+a schema where `CREATE` is granted if there is one, so a role that is safe in
+`public` but writable elsewhere still fails.
+
+### PostgreSQL target: `set GAIA_PG_TARGET_ADMIN_URL`
+
+`make pg-target-seed` needs the container owner's DSN (the seed creates the
+schema, data and read-only role). Gaia itself only ever uses the read-only role.
+Passwords may contain any character; quote them in `.env` if they contain `;`,
+`#` or spaces.
+
 ### `blank content returned`
 
 JSON mode occasionally returns whitespace only. The client retries
@@ -410,13 +474,14 @@ State these honestly when showing Gaia to anyone:
 | Limit | Consequence |
 |---|---|
 | **No column comments in the target** | Meaning comes from names, types and keys only; scores cap near 0.70 |
-| **No profiling yet (Phase 3)** | `evidence_coverage` cannot earn its `profile` share, so nothing reaches `accepted` |
+| **No profiling yet (Phase 3)** | Nothing reaches `accepted`. Even with its `profile` share, Phase 2 scoring caps an uncommented plain column at 0.775; Phase 3B replaces the scoring |
 | **Slow LLM provider** | A wide bundle can take ~12 min; `llm.timeout_s` is 1800 s and read timeouts retry once. Re-assessed on provider change |
 | **`thinking` is not in the skip key** | Toggling it does not upgrade existing answers without `--force`; the default path always uses thinking |
-| **One target from config** | Admin-supplied connections are a Phase 4 item (OUTLINE §24); today a target comes from `config/gaia.yaml` |
+| **Targets come from config** | Several targets can be configured and selected with `--target`; admin-supplied connections are a Phase 4 item (OUTLINE §24) |
 | **No question answering yet** | Phases 4–5 build SQL generation and the chat UI |
-| **No SME review UI yet** | Low-confidence items are stored and flagged, but reviewed by hand in SQL |
-| **SQL Server only** | The dialect seam exists; other engines are a Phase 7 task |
+| **No SME review UI yet** | Low-confidence items are stored and flagged, but reviewed by hand in SQL; the review UI moves into Phase 5 (R1) |
+| **Two dialects** | SQL Server and PostgreSQL (catalog, read-only probe, reasoning). Profiling is built for both in Phase 3A; further engines stay in Phase 7 |
+| **SQL Server statement timeout not yet applied** | Configured but not enforced on SQL Server sessions until Phase 3.0; PostgreSQL sessions enforce it |
 
 ### What "good" looks like today
 

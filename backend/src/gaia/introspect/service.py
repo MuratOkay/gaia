@@ -92,6 +92,7 @@ def snapshot_from_document(document: dict) -> Snapshot:
                     collation=c.get("collation"),
                     is_user_defined_type=c.get("is_user_defined_type", False),
                     computed_definition=c.get("computed_definition"),
+                    type_definition=c.get("type_definition"),
                 )
             )
         for con in t.get("constraints", []):

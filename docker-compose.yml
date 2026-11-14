@@ -1,12 +1,17 @@
 # ---------------------------------------------------------------------------
 # Gaia infrastructure: metadata store + cache only.
 #
-# The target SQL Server (container "sql1", localhost:1433) and the Ollama
-# runtime (container "ollama-code", localhost:11435) are owned externally and
+# The target SQL Server (container "sql1", 127.0.0.1:1433) and the Ollama
+# runtime (container "ollama-code", 127.0.0.1:11435) are owned externally and
 # deliberately NOT managed here.
 #
 #   docker compose up -d
 #   docker compose ps
+#
+# Optional: the PostgreSQL development *target* (D25), a separate server from
+# the metadata store. Started only with its profile:
+#
+#   docker compose --profile target-pg up -d gaia-target-pg   # or: make pg-target-up
 # ---------------------------------------------------------------------------
 
 services:
@@ -72,6 +77,48 @@ services:
       retries: 20
       start_period: 5s
 
+  # PostgreSQL development target (D25). A *target*, not part of Gaia's own
+  # infrastructure: Gaia only reads it through the read-only role. Populated by
+  # `make pg-target-seed`. Never point GAIA_METADATA_URL at it.
+  gaia-target-pg:
+    image: postgres:18
+    container_name: gaia-target-pg
+    profiles: ["target-pg"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${GAIA_PG_TARGET_DATABASE:-gaia_target_pg}
+      POSTGRES_USER: ${GAIA_PG_TARGET_ADMIN_USER:-postgres}
+      # No ":?" here: Compose interpolates every service, and a missing value
+      # must not break `docker compose up` for the default profile. The image
+      # itself refuses to initialise without a password.
+      POSTGRES_PASSWORD: ${GAIA_PG_TARGET_ADMIN_PASSWORD:-}
+      POSTGRES_INITDB_ARGS: "--data-checksums"
+      TZ: UTC
+      PGTZ: UTC
+    command:
+      - postgres
+      - -c
+      - shared_buffers=512MB
+      - -c
+      - max_wal_size=4GB
+      - -c
+      - track_io_timing=on
+      - -c
+      - timezone=UTC
+    ports:
+      - "127.0.0.1:${GAIA_PG_TARGET_PORT:-5434}:5432"
+    volumes:
+      # postgres:18 sets PGDATA=/var/lib/postgresql/18/docker
+      - gaia-target-pgdata:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
 volumes:
   gaia-pgdata:
     name: gaia-pgdata
+  gaia-target-pgdata:
+    name: gaia-target-pgdata

@@ -5,10 +5,18 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status: design agreed, Phase 0 in progress.
-> Metadata store: PostgreSQL 18 + pgvector. First target: SQL Server 2025.
-> Reasoning LLM: DeepSeek `deepseek-flash` (config-switchable to local Ollama).
-> Embeddings: local Ollama `bge-m3`. Frontend: React + TypeScript (Vite, pnpm).
+> Status (2026-11-14): Phases 0–2 done; Phase 3 approved and in progress
+> (3.P PostgreSQL target + dialect done, 3.0 next). Delivery state, gates and
+> decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
+> where they differ (D12′: config > decisions log > PHASES > OUTLINE).
+> Metadata store: PostgreSQL 18 + pgvector. Targets: SQL Server 2025 (first),
+> PostgreSQL (dialect since 3.P). Reasoning LLM: configurable per deployment;
+> development uses `deepseek-v4.1-flash` via a gateway. Embeddings: local Ollama
+> `bge-m3`. Frontend: React + TypeScript (Vite, pnpm).
+>
+> Design premise (D23): assume the worst case — no comments, no data dictionary,
+> possibly meaningless names, many databases per deployment — with a
+> human-in-the-loop SME per database as the ground truth.
 
 ---
 
@@ -23,17 +31,23 @@ Two connected pipelines.
    schemas, tables, views, columns, data types, nullability, defaults,
    computed/identity flags, PK/unique/check constraints, foreign keys, indexes,
    table and column comments, partitions, row estimates, sizes.
-3. Run a **cheap reasoning pass** over catalog facts plus existing DB statistics.
-4. Produce a structured semantic model per table and per column: business name,
-   purpose, role, entity, unit, value domain, synonyms, PII likelihood, join
-   hints, example business questions, evidence.
-5. Compute an **evidence-grounded confidence score** — not merely the model's
-   self-reported confidence.
-6. If a column scores below threshold, trigger **deep profiling** against the
-   target database.
-7. Re-reason with the enriched evidence and store the improved model.
+3. Collect **cheap evidence first**: module and view definitions, view lineage,
+   statistics histograms, and a bounded profile of the data (size-aware
+   sampling, semantic-type detectors, cross-column identities, join candidates).
+   A catalog-only path remains for targets where data may not be read.
+4. Reason **once** per table bundle with all of that evidence, producing a
+   structured semantic model per table and column: business name, purpose, role,
+   entity, unit, value domain, synonyms, join hints, example business questions,
+   evidence, alternatives.
+5. Compute an **evidence-grounded confidence score** from a ledger of supporting
+   and contradicting evidence — not from the model's self-report, and never from
+   names alone.
+6. **Verify** the claims that remain uncertain with targeted tests against the
+   target (inclusion, uniqueness, exact distributions), within a budget.
+7. Re-reason only the tables whose evidence changed.
 8. Persist everything in Gaia's own PostgreSQL store, with JSONB and pgvector.
-9. Queue the weakest items for later SME (human-in-the-loop) review.
+9. Hand what remains to the **SME of that database** as a ranked review queue;
+   their decisions are ground truth and the calibration source.
 
 ### B. Online chat-to-SQL
 
@@ -64,13 +78,15 @@ Gaia never treats its own store as a business target.
 | Project path | `/home/murat/g120s/gaia` |
 | Python env | `gaia-env` (pre-created by owner, Python 3.12.3) |
 | Host ODBC | `msodbcsql18 18.4.1.1`, `unixodbc-dev`, gcc 13.3 → `pyodbc` builds natively |
-| Target SQL Server | container `sql1`, external to Compose, `localhost:1433` |
+| Target SQL Server | container `sql1`, external to Compose, `127.0.0.1:1433` (never `localhost`, D11) |
 | SQL Server version | 2025 RTM-CU7, 17.0.4065.4 |
-| Ollama | container `ollama-code`, `localhost:11435`, v0.17.7, `/api/embed` confirmed |
+| Ollama | container `ollama-code`, `127.0.0.1:11435`, v0.17.7, `/api/embed` confirmed |
+| PostgreSQL dev target | Compose service `gaia-target-pg` (profile `target-pg`), `127.0.0.1:5434`, synthetic (D25) |
 | Backup source | `/home/murat/Downloads/nge-small-mssql-v0.3.0.bak` (6.86 GB) |
 
 Reserved host ports: `5433` (metadata pg18), `6380` (redis), `8000` (API),
-`5173` (Vite). External: `1433` (SQL Server), `11435` (Ollama).
+`5173` (Vite), `5434` (PostgreSQL dev target). External: `1433` (SQL Server),
+`11435` (Ollama).
 
 ### SQL Server 2025 as non-root
 
@@ -93,23 +109,24 @@ A named Docker volume avoids the problem entirely.
 
 | Topic | Decision | Rationale |
 |---|---|---|
-| Reasoning LLM | `deepseek-flash` via `LLM_MODEL`; provider abstraction with an `ollama` alternative | Live docs map it to `DeepSeek-V4.1-Flash-1017`; 1M context, 384K output, JSON mode, tool calls |
+| Reasoning LLM | Configurable per deployment (local or remote, A7); development uses `deepseek-v4.1-flash` via an OpenAI-compatible gateway (D1) | Customers choose the model; the pipeline must not depend on one provider's features (thinking mode, huge contexts) |
 | Thinking mode | On for semantics + critique, off for SQL repair and classification | Thinking is the default and must be explicitly disabled per task to control latency |
 | Structured output | `response_format={"type":"json_object"}` + Pydantic validation + bounded retry | JSON mode guarantees valid JSON, not schema conformance; blank content must be retried |
 | Prompt caching | Byte-identical stable prefix, volatile question last | Cache-hit input ≈ 1/50th of cache-miss price — the largest cost lever |
 | Off-peak scheduling | Bulk re-reasoning prefers off-peak | Peak = 01:00–04:00 and 06:00–10:00 UTC weekdays; off-peak is half price |
 | Embeddings | **Local Ollama `bge-m3`, 1024-dim, `num_gpu: 0`** | No cloud embedding cost; schema text stays on-host; multilingual for future i18n |
 | Never embed with a coder model | `qwen2.5-coder` returns 1536 dims of untrained noise | Would silently destroy retrieval quality |
-| Target DB | SQL Server 2025 only in v1, behind a dialect adapter | Confirmed first target; other engines later |
-| Target provisioning | **Owner restores a backup; Gaia never creates the database** | Vendor DB already carries real schema + comments |
+| Target DB | SQL Server 2025 first; **PostgreSQL** dialect added in 3.P (D25, D26) | Both behind the dialect seam, each with its own type vocabulary |
+| Target provisioning | **Owner restores a backup; Gaia never creates the database** (the synthetic PostgreSQL dev target is the one exception, D25) | The expectation that the vendor DB carried comments proved false — it has none — which led to the worst-case premise (D23) |
 | Read-only login | Created manually by owner; **Gaia verifies, never creates** | Target database stays untouched by the app |
-| SQL dialect | `sqlglot` with `read="tsql", write="tsql"` | Required for AST validation of generated T-SQL |
+| SQL dialect | `sqlglot` with `read`/`write` = `tsql` or `postgres` | Required for AST validation of generated SQL and for view lineage |
 | MSSQL driver | `pyodbc` + host ODBC Driver 18 | Already installed on the host; no container needed |
+| PostgreSQL driver | `psycopg` 3 | Already a backend dependency; sessions pinned read-only with timeouts and `search_path = pg_catalog` |
 | Backend runtime | **Host process in `gaia-env`** (not containerised in Phase 0) | Uses the owner's pre-created venv; simplest iteration |
 | Metadata store | PostgreSQL 18 + pgvector on **5433** | Not reusing the stopped pg15 `vectordb` container |
 | Cache | Redis 8 on **6380**, ephemeral only | Postgres remains the source of truth |
-| PII | Detect, classify and store per column in v1; masking deferred | Answer #3 |
-| SME review | Schema + `status` states from day one; UI later | Answer #8 |
+| PII | Detected as part of `semantic_type` on the profile (3A); values reach a **remote** model only masked, a local model raw (D24); FPE later | Answer #3, revised 2026-11-14 |
+| SME review | Schema + `status` states from day one; ranked review queue in Phase 3; review UI first in Phase 5 (R1) | Answer #8, revised 2026-11-14: human-in-the-loop is the core of the product |
 | i18n | i18next in frontend from the start (English only); `locale` on conversations and semantic rows | Answer #6 |
 | Frontend tooling | **pnpm** + Vite + React + TS | Answer #5, owner had no preference |
 | Data types | PostGIS / geospatial / exotic types out of MVP scope | Answer #10 |
@@ -183,7 +200,10 @@ never creates or alters it.
   counts fall back to `sys.partitions.rows` (approximate).
 - Session policy enforced by Gaia as well as the login:
   `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED`, `SET LOCK_TIMEOUT`,
-  driver-level `timeout`, `rowcount` caps.
+  driver-level `timeout`, `rowcount` caps. *The statement (driver) timeout is
+  configured but not yet applied on SQL Server sessions — fixed in Phase 3.0.
+  PostgreSQL sessions apply `statement_timeout`, `lock_timeout`, a read-only
+  transaction and `search_path = pg_catalog` (3.P).*
 
 ---
 
@@ -262,11 +282,12 @@ optionally a local LLM), DeepSeek API (default reasoning LLM).
 
 - **FastAPI** + Uvicorn
 - **SQLAlchemy 2 async** + `asyncpg` for the metadata DB
-- `pyodbc` for SQL Server targets (host ODBC Driver 18)
+- `pyodbc` for SQL Server targets (host ODBC Driver 18), `psycopg` 3 for PostgreSQL
+  targets; dialect drivers load lazily
 - **Alembic** migrations
 - **Pydantic v2** + `pydantic-settings`
 - **httpx** DeepSeek client (OpenAI-compatible) + Ollama client, one interface
-- **sqlglot** for T-SQL parsing, AST validation, dialect handling
+- **sqlglot** for SQL parsing (T-SQL, PostgreSQL), AST validation, view lineage
 - **Redis** + **arq** for jobs and caching
 - **pgvector** + Ollama `bge-m3` embeddings
 - **structlog** structured logging
@@ -281,17 +302,19 @@ abstractions.
 
 ## 6. Container topology
 
-Compose owns only Gaia's own infrastructure. SQL Server and Ollama are external.
+Compose owns Gaia's own infrastructure plus, behind the `target-pg` profile, the
+synthetic PostgreSQL development target. SQL Server and Ollama are external.
 
 | Service | Image | Host port | Notes |
 |---|---|---|---|
 | `gaia-metadata-db` | `pgvector/pgvector:pg18` | `127.0.0.1:5433` | `PGDATA=/var/lib/postgresql/18/docker`; volume mounts `/var/lib/postgresql` |
 | `gaia-redis` | `redis:8-alpine` | `127.0.0.1:6380` | `appendonly no`, `maxmemory-policy allkeys-lru` |
+| `gaia-target-pg` | `postgres:18` | `127.0.0.1:5434` | profile `target-pg`; a **target**, never the metadata store (D25) |
 
 | External | Address | Owned by |
 |---|---|---|
-| SQL Server 2025 (`sql1`) | `localhost:1433` | owner |
-| Ollama (`ollama-code`) | `localhost:11435` | owner |
+| SQL Server 2025 (`sql1`) | `127.0.0.1:1433` | owner |
+| Ollama (`ollama-code`) | `127.0.0.1:11435` | owner |
 
 Notes:
 
@@ -310,73 +333,29 @@ Notes:
 ## 7. Configuration
 
 Two layers: committable YAML describing *what*, `.env` holding *secrets*.
+**`config/gaia.yaml` is authoritative** (D12′); the sample that used to be
+reproduced here drifted (host, concurrency, timeouts) and was removed.
 
-`config/gaia.yaml`:
+Sections: `app` (default target, locale), `targets.<name>` (dialect, connection,
+`options`, `limits`, `capabilities`), `llm` (provider, model, concurrency,
+timeouts, thinking per task, retry budgets), `embeddings`, `cache` (TTLs),
+`profiling` (bands, sampling), `scoring` (weights, evidence signals, critique
+values, calibrator), `semantics`, `query`.
 
-```yaml
-app:
-  locale: en
-  default_target: demo_mssql
+Rules:
 
-targets:
-  demo_mssql:
-    dialect: mssql            # registry key -> adapter class
-    host: localhost
-    port: 1433
-    database: ${GAIA_TARGET_DATABASE}
-    username: ${GAIA_TARGET_USER}
-    password: ${GAIA_TARGET_PASSWORD}
-    options:
-      encrypt: true
-      trust_server_certificate: true
-    limits:
-      statement_timeout_s: 30
-      max_sample_rows: 200
-      max_runtime_per_table_s: 120
-      isolation: read_uncommitted
-    capabilities:
-      extended_properties: true
-      dmv_row_counts: true
-      show_statistics: false
-
-llm:
-  provider: deepseek          # deepseek | ollama
-  base_url: https://api.deepseek.com
-  model: deepseek-flash
-  api_key: ${DEEPSEEK_API_KEY}
-  thinking:
-    semantics: true
-    sql_generation: false
-  json_mode: true
-  max_output_tokens: 16000
-  concurrency: 4
-
-embeddings:
-  provider: ollama
-  base_url: http://localhost:11435
-  model: bge-m3
-  dimensions: 1024
-  num_gpu: 0                  # GPU is occupied by the coder model
-  batch_size: 32
-
-cache:
-  redis_url: redis://localhost:6380/0
-  ttl:
-    llm: 2592000
-    embedding: 2592000
-    profile: 604800
-    chat_answer: 900
-
-profiling:
-  confidence_threshold: 0.75
-  deep_profile_below: 0.60
-  review_required_below: 0.45
-```
-
-`${VAR}` interpolation is resolved from `.env` at load time by Pydantic
-settings. Secrets are never written to YAML or to the database.
-`targets.<name>.dialect` resolves through a registry, so adding PostgreSQL or
-MySQL later is one new adapter module plus a config block — no schema changes.
+- `${VAR}` is resolved from the environment and `.env` at load time;
+  `${VAR:-default}` supplies a default for **non-secret** values (D27).
+- Unresolved names are reported by `/health` and `/api/meta`; `check-target`
+  counts only those of the target being checked, so configuring a second target
+  never breaks checks on the first.
+- Secrets are never written to YAML or to the database.
+- `targets.<name>.dialect` resolves through the registry (`mssql`, `postgres`,
+  alias `postgresql`). Adding an engine is a new `gaia.dialects.<name>` package
+  (reader, probe, type vocabulary; profiler and guard from Phases 3A/4) plus a
+  config block — no schema change.
+- Target connections move from config into the database in Phase 4 (§24);
+  config then becomes the bootstrap seed.
 
 ---
 
@@ -396,8 +375,14 @@ Schemas: `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`.
 
 ### `profiling`
 
-- `table_profile` — row count, size, method (`exact`/`approximate`), timings
-- `column_profile` — JSONB stats, samples, top-k, patterns, FK metrics, PII signals, cost
+Built in Phase 3A (`0004`); see PHASES for the full list.
+
+- `profile_run`, `table_profile` — size class, row count, budget used, footprint
+- `column_profile` — per-metric values with `method`, `rows_scanned`, `pages`,
+  `runtime_ms`, `seed`, `isolation`; top-k; pattern and `semantic_type`
+  (detector) results; empty/constant flags. Sample rows are never persisted
+- `verification_test` — Stage 3 targeted tests (inclusion, uniqueness, ranges)
+- `module_definition`, `view_column_lineage` — view/procedure code and lineage
 
 ### `semantics`
 
@@ -446,7 +431,10 @@ Schemas: `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`.
 `prompt_version`, `model`, `raw_score`, `calibrated_score`,
 `score_breakdown jsonb`, `structure_hash`.
 
-PII is **stored, never applied**, in v1. Masking hooks come later.
+PII fields exist on `column_semantic` from Phase 2 but stay empty: Phase 3
+records PII as a family of `semantic_type` on the **profile**, whose lifecycle
+follows the data rather than the reasoning version. Masking applies only to
+values sent to a remote model (D24).
 
 ---
 
@@ -498,7 +486,7 @@ Three independent hashes, because structure and data change on different clocks:
 | Hash | Computed from | Invalidates |
 |---|---|---|
 | `structure_hash` | canonical JSON of columns, types, nullability, defaults, computed/identity flags, comments, PK/unique/check/FK definitions, index definitions | introspection diff + all semantics for that object |
-| `data_hash` | `row_count`, `modification_counter` from `sys.dm_db_stats_properties`, `stats_date` | cached profiles only |
+| `data_hash` | `row_count`, `modification_counter` from `sys.dm_db_stats_properties`, `stats_date` (PostgreSQL: `reltuples`, `n_mod_since_analyze`, last analyze) | informational since P3-6 — see the freshness policy below |
 | `profile_hash` | profile payload + profiler version + sampling parameters | nothing structural; cache identity |
 
 Rules:
@@ -513,76 +501,78 @@ Rules:
   reproducible.
 - **Column-level** hashes allow surgical re-reasoning when one column changes in
   a 200-column table.
-- A table-level `row_count` delta beyond a configurable ratio (e.g. 20%)
-  invalidates profiles even when `structure_hash` is unchanged.
+- **Profile freshness policy (P3-6).** A profile is reused unless the structure
+  changed, the row count moved beyond `row_count_delta_ratio` (20 %), or it is
+  older than `profile_max_age_days` (30). `data_hash` does not invalidate
+  profiles: on SQL Server it includes the latest statistics date, which Gaia's
+  own profiling queries move (auto-created statistics) and nightly maintenance
+  moves too.
 
 ---
 
-## 11. Deep profiling (T-SQL)
+## 11. Evidence collection and profiling
 
-Triggered when any of: score below threshold; ambiguous uncommented name;
-FK/join column; repeated failed SQL or user follow-ups; weak table-level
-reasoning that column evidence could disambiguate; explicit SME request.
+Approved design (Phase 3); PHASES.md holds deliverables, acceptance criteria and
+defaults. Built for both dialects.
 
-Note: a restored vendor database often lacks `MS_Description` comments, which
-pushes more columns below the confidence threshold. Statistics and sample data
-therefore carry most of the evidentiary weight, and the profiling budget should
-assume wide coverage rather than incidental top-ups.
+### Staged escalation
 
-### Table level
+```text
+Stage 0  metadata evidence      no data reads, no LLM      catalog, module/view definitions,
+                                                           view lineage, statistics histograms,
+                                                           index usage (importance only)
+Stage 1  light profile          bounded page reads         tables without catalog-sufficient evidence
+Stage 2  reasoning + critique   one LLM pass               all evidence; views after their bases
+Stage 3  targeted verification  tests derived from claims  inclusion, uniqueness, exact top-k, ranges;
+                                                           re-reason only tables whose evidence changed
+Stage 4  review queue           ranked for the SME         whatever is still below accept_at
+```
 
-- exact/approximate row count, table size
-- PK and uniqueness, partition structure
-- update recency if a timestamp exists
-- relationship cardinality
-- optional workload stats from `sys.dm_db_index_usage_stats`
+Profiling comes **before** the first reasoning because, in the worst case, a
+names-only LLM pass yields almost nothing and costs more than a bounded profile.
+A deterministic catalog-sufficiency check skips Stage 1 for well-documented
+tables. Without `SELECT` (or with profiling disabled) the pipeline runs
+catalog-only and routes to review.
 
-### Column level
+### What a light profile measures
 
-| Metric | Approach |
-|---|---|
-| Column row count | `COUNT_BIG(*)` with `TABLESAMPLE` on large tables |
-| Not-null count / null fraction | `COUNT(col)`, `COUNT_BIG(*) - COUNT(col)` |
-| Distinct count | exact `COUNT(DISTINCT col)`; `APPROX_COUNT_DISTINCT(col)` only as a fallback for high-cardinality text, since it was measured as slower and less accurate here |
-| Numeric stats | `MIN`, `MAX`, `AVG`, `STDEV`, `PERCENTILE_CONT` |
-| Text length distribution | `MIN/MAX/AVG(LEN(col))`, length histogram |
-| Temporal granularity | `MIN`, `MAX`, datepart-difference distinctness |
-| Boolean / low-cardinality distribution | grouped counts |
-| Top-k values | `SELECT TOP (@k) col, COUNT(*) ... GROUP BY col ORDER BY 2 DESC` |
-| Samples | `TABLESAMPLE SYSTEM (p PERCENT) REPEATABLE (seed)` with row cap; `ORDER BY NEWID()` forbidden on large tables |
-| Format / pattern | regex over a bounded sample, pattern frequency |
-| PII detection | pattern + dictionary heuristics over the sample, stored with confidence |
-| FK cardinality / orphans | child vs parent counts, null-FK count, distinct FK count, `LEFT JOIN ... WHERE parent IS NULL` orphan rate, parent key uniqueness |
-| Optional | candidate functional dependencies, correlation with PK/time column |
+Per table by size class (small → one exact batched scan and exact `GROUP BY`
+top-k; columnstore → batched aggregates; large rowstore → row-sized page sample
+plus histograms). Per column: null fraction, distinct count/ratio, min/max (`bit`
+cast to `int`), text lengths, numeric mean/stddev on a recorded `float` cast,
+temporal granularity, parse rates (numeric-/date-like text, `yyyymmdd`
+integers), top-k, empty/constant flag. On the sample, in memory: semantic-type
+detectors with validators (email, URL, phone, IBAN mod-97, card Luhn, national
+ID checksum, GUID, IP, ISO currency/country, dates in text/int, JSON/XML,
+boolean-like text), cross-column identities (`a×b=c`, `a+b=c`, temporal order)
+and join candidates. Every metric records `method`, `rows_scanned`, `pages`,
+`runtime_ms`, `isolation` and `seed`.
 
 ### Sampling and safety
 
-- Prefer existing statistics before running queries. `sys.dm_db_stats_histogram`
-  gives a free range and cardinality estimate for each statistic's leading
-  column.
-- Small tables: full scan. Large tables: **one batched scan** for
-  count/null/min/max, then `TABLESAMPLE SYSTEM ... REPEATABLE(seed)` for value
-  distribution and top-k.
-- **`TOP (N)` must never be used as sampling.** These tables are clustered on a
-  monotonic identity column, so `TOP 200` returns the earliest rows only —
-  wrong range, wrong distinct count, wrong distribution, and indistinguishable
-  from a correct answer. Measured on `nge_small`; see PHASES §Phase 3.
-- Prefer **exact** aggregates. `APPROX_COUNT_DISTINCT` was measured as both
-  slower and 2.3% inaccurate on a sorted columnstore column, so approximate is a
-  fallback, not a default.
-- Cast `bit` to `int` before `MIN`/`MAX` (SQL Server rejects the latter), and
-  cast `decimal` to `float` before `STDEV` (7.4 s → 1.1 s measured), recording
-  the cast.
-- Bounded sample volume: e.g. 50–200 rows per table, capped values per column.
-- Profile columns independently; do not assemble complete sensitive rows.
-- Mask/redact PII before storing samples or sending them to a model.
-- Record `method` (`exact`/`approximate`/`sampled`/`skipped`), `seed`,
-  `rows_scanned`, `runtime_ms`, `est_cost` per metric, not per table.
-- Read-only session, `statement_timeout`, lock timeout, max rows, max runtime per
-  table, concurrency limits per target, off-peak scheduling for bulk runs,
-  prefer a read replica when available.
-- A **budget service** enforces ceilings and degrades **per metric** (approximate
-  or skip one measurement) rather than failing the table or the run.
+- **`TOP (N)` is never a sample.** Tables clustered on an arrival-order key return
+  their earliest rows. `TOP (k) … GROUP BY … ORDER BY count` (top-k) is fine.
+- SQL Server has only `TABLESAMPLE [SYSTEM]` (pages); PostgreSQL also has
+  `BERNOULLI` (row-level, full read). Page samples are clustered, so samples are
+  sized in rows across many pages (default 10,000), never 200 rows. Neither
+  engine samples plain views.
+- Exact where cheap (small tables, columnstore, targeted tests); sampled or
+  approximate on large rowstore, always labelled. `APPROX_COUNT_DISTINCT`'s
+  error is irrelevant to meaning; cost decides.
+- Budgets in pages per table and run, a 180 s per-table ceiling, statement and
+  lock timeouts, MAXDOP (`max_parallel_workers_per_gather` on PostgreSQL), one
+  profiling session per target, PostgreSQL advisory locks, per-target run
+  windows after statistics maintenance.
+- **Footprint:** SQL Server may auto-create statistics for profiled columns;
+  Gaia reports them (D4′). PostgreSQL has no such side effect.
+- Sample rows are processed in memory and never persisted.
+
+### Views and computed columns
+
+View definitions are parsed with `sqlglot` and each view column classified:
+**pass-through** (inherits the base column's meaning; its alias becomes evidence
+*for the base column*), **computed** (reasoned from its expression and the
+resolved inputs), or **unresolved**. Views are reasoned after their base tables.
 
 ---
 
@@ -592,33 +582,58 @@ An LLM's self-reported confidence is usually poorly calibrated and overconfident
 Confidence is therefore computed from evidence, with self-assessment as a
 deliberately weak input.
 
-```text
-evidence_coverage   0.30   comments, constraints, FKs, stats, profile depth, sample availability
-schema_coherence    0.25   name/type agreement, role fit, join consistency, value-domain fit
-hypothesis_margin   0.20   top hypothesis vs alternatives, using thinking mode
-counter_evidence    0.15   explicit critique pass attempting to falsify the meaning
-model_self_report   0.10   the model's own confidence, low weight by design
+### `heuristic-v1` (Phase 2, in force until 3B ships)
 
-calibrated_score = calibrator(raw_score)
+```text
+evidence_coverage   0.30   comments, constraints, FKs, keys, profile (yes/no)
+schema_coherence    0.25   name/type agreement, role fit, FK consistency
+hypothesis_margin   0.20   top hypothesis vs alternatives
+counter_evidence    0.15   critique pass that tries to falsify the meaning
+model_self_report   0.10   the model's own confidence
 ```
 
-- Start with configurable heuristic weights.
-- Once SME-reviewed examples exist, fit isotonic/Platt calibration.
-- Persist **raw and calibrated** scores plus the weights version, so score
-  changes are explainable.
+Its flaws, found in the Phase 3 review and verified by running the scorer: being
+profiled adds +0.075 whatever the data shows (a contradicted meaning scores
+*higher* once profiled), and an uncommented plain column cannot exceed 0.775,
+i.e. can never be accepted. Details in §23.
+
+### `heuristic-v2` (Phase 3B, approved — P3-2)
+
+Every piece of evidence is a ledger item `{kind, ref, direction
+supports|contradicts, strength, source}`, produced deterministically wherever
+possible.
+
+```text
+evidence_support   0.35   noisy-OR(supporting) × (1 − noisy-OR(contradicting))
+coherence          0.20   claim-vs-fact checks: catalog checks + profile checks
+counter_evidence   0.20   critique verdict (the critique sees the evidence too)
+hypothesis_margin  0.15
+model_self_report  0.10
+```
+
+Properties (with the default strengths, which are placeholders until Phase 6
+calibration): names alone can never reach `accept_at` (ceiling 0.650); generic
+consistency is not enough; specific evidence (a detector match, a passed
+inclusion test) is; a contradiction lowers a score below the no-evidence
+baseline. **Coverage** — the deepest stage reached — is stored separately, so a
+low score is never confused with "we did not look". A deterministic
+`semantic_type` is stored alongside.
+
+Raw and calibrated scores, the weights version and the full ledger are persisted
+with every scored version, so score changes are explainable and Phase 6 can fit
+a calibrator per model on SME-reviewed examples.
 
 ### Bands
 
 | Score | Meaning | Action |
 |---|---|---|
-| `>= 0.80` | Well supported | Accept; use in retrieval |
-| `0.60 – 0.79` | Plausible but incomplete | Deep profile, then re-reason |
-| `< 0.60` | Weak / ambiguous | Deep profile and flag |
-| `< 0.45` | Abstain | Do not present as fact; queue for SME |
+| `>= 0.80` | Well supported | Accept |
+| `< 0.80`, stages left | Under-evidenced | Escalate to the next stage |
+| `< 0.80`, stages exhausted | The machine has run out of means | SME review queue, prioritised by uncertainty × importance |
+| `< 0.45` | Abstain | Do not present as fact; queue for SME first |
 
-Also stored per column: evidence references, assumptions, alternative
-interpretations, explicit unknowns, and whether the score is calibrated or
-heuristic.
+Retrieval (Phase 4) uses every non-abstain meaning, ranked by score, with the
+uncertainty disclosed (R2).
 
 ---
 
@@ -658,17 +673,18 @@ Both, for different reasons.
 ```text
 llm:{model}:{prompt_version}:{sha256(prompt+params)}
 embed:{model}:{sha256(text)}
-profile:column:{column_id}:{profile_hash}
 semantic:column:{column_id}:{structure_hash}:{prompt_version}:{model}
 answer:{target}:{semantic_version}:{sha256(normalized_question)}
-lock:profile:table:{table_id}
 ```
+
+Profiles are **not** cached in Redis and profiling locks are PostgreSQL advisory
+locks (P3-10): PostgreSQL already stores every profile, and a second copy of
+sample-derived data buys nothing.
 
 - No embedding-similarity answer caching in v1 — too easy to serve a subtly
   wrong answer. Exact normalized match only.
 - Every key carries the structure hash and semantic version.
-- Suggested TTLs: LLM 30 d, embeddings 30 d, profiles 7 d or until the
-  structure hash changes, chat answers 5–15 min, locks 10 min.
+- Suggested TTLs: LLM 30 d, embeddings 30 d, chat answers 5–15 min.
 - Versioned key prefixes instead of mass `KEYS` scans.
 - Redis must be safe to flush without losing semantic knowledge.
 - If row-level security is ever introduced, tenant/role must be part of every
@@ -719,10 +735,11 @@ gaia/
 ├── config/
 │   └── gaia.yaml
 ├── infra/
-│   ├── postgres/init/001_extensions.sql
-│   └── sqlserver/
-│       ├── RESTORE.md
-│       └── 001_readonly_login.sql
+│   ├── postgres/init/001_extensions.sql     metadata store
+│   ├── sqlserver/001_readonly_login.sql
+│   └── pg-target/                           PostgreSQL dev target (D25)
+│       ├── schema.sql, readonly_role.sql
+│       └── seed.py
 ├── backend/
 │   ├── pyproject.toml
 │   ├── alembic.ini
@@ -734,10 +751,15 @@ gaia/
 │       ├── db/             engine.py, models/, repositories/
 │       ├── dialects/
 │       │   ├── base.py         MetadataReader / Profiler / SqlGuard protocols
-│       │   ├── registry.py     dialect name -> implementation
-│       │   └── mssql/          catalog.py, profiler.py, guard.py, sampling.py
+│       │   ├── registry.py     dialect name -> implementation (lazy), probes
+│       │   ├── bootstrap.py    built-in dialects: mssql, postgres (alias postgresql)
+│       │   ├── types.py        per-dialect type vocabularies
+│       │   ├── probe.py        check-target result type
+│       │   ├── mssql/          catalog.py, probe.py  (+ profiler.py, modules.py, guard.py)
+│       │   └── postgres/       connection.py, catalog.py, probe.py  (+ the same)
 │       ├── introspect/     snapshot.py, hashing.py, diff.py
-│       ├── profiling/      budget.py, statistics.py, sampler.py, pii.py, service.py
+│       ├── profiling/      budget.py, sampler.py, statistics.py, detectors.py, identities.py,
+│       │                   joins.py, lineage.py, service.py   (Phase 3A)
 │       ├── semantics/      reasoner.py, prompts/, scoring.py, calibration.py, embeddings.py
 │       ├── query/          retrieval.py, planner.py, generator.py, validator.py, executor.py, answerer.py
 │       ├── llm/            base.py, deepseek.py, ollama.py, structured.py, cache.py
@@ -748,7 +770,7 @@ gaia/
 │   ├── vite.config.ts
 │   ├── src/
 │   │   ├── App.tsx
-│   │   ├── pages/Chat.tsx
+│   │   ├── pages/Review.tsx, Chat.tsx
 │   │   ├── components/     MessageList, ResultTable, SqlViewer, ConfidenceBadge
 │   │   ├── api/client.ts
 │   │   └── i18n/           index.ts, locales/en.json
@@ -758,7 +780,8 @@ gaia/
 ```
 
 `dialects/` is the forward-compatibility seam: `MetadataReader`, `Profiler` and
-`SqlGuard` are protocols; `mssql` is the only implementation in v1.
+`SqlGuard` are protocols; `mssql` and `postgres` implement them (readers and
+probes today; profilers in 3A, guards in Phase 4).
 
 The owner's existing `gaia-env/` is the backend runtime; it is the single Python
 environment and is excluded from version control.
@@ -775,11 +798,11 @@ environment and is excluded from version control.
 | **0** | Compose stack (pg18+pgvector, redis), extensions, `gaia-env` provisioned, config loading, FastAPI `/health`, Alembic baseline, `make check-target` | metadata DB + Redis healthy; `check-target` passes against the restored SQL Server |
 | **1** | MSSQL catalog reader, canonical JSON snapshot, three-hash hashing, `catalog.*` tables, incremental diff + tombstoning | repeated introspection is idempotent; a comment-only change is detected **— DONE, see §22** |
 | **2** | LLM client (DeepSeek + Ollama), JSON-mode structured outputs with Pydantic retry, table + column reasoning, evidence-based scoring, embeddings, `semantics.*` | every column has meaning, evidence, alternatives, score breakdown **— DONE, see §23** |
-| **3** | Deep profiling loop, budget guard, sampling, FK cardinality, PII classification, Redis cache + locks, re-reasoning | low-confidence columns measurably improve |
-| **4** | Retrieval, planner, T-SQL generation, sqlglot guard, read-only execution, repair loop, streaming API | golden business questions return correct SQL and results |
-| **5** | React chat UI (pnpm + Vite), i18next wiring, SQL/result rendering | end-to-end question answered in the browser |
-| **6** | Evaluation harness, score calibration, cost/latency tracking | repeatable regression report |
-| **7** | SME review UI, masking, scheduled refresh, additional dialects | later |
+| **3** | *Approved 2026-11-14:* 3.P PostgreSQL target + dialect (**done**, §25); module/view evidence, bounded profiling, detectors, targeted verification, scoring v2, one-pass re-reasoning, SME review queue | accuracy on a name-blind worst-case simulation improves and the score ranks correct above incorrect |
+| **4** | Retrieval (all non-abstain meanings, ranked), planner, SQL generation per dialect, `sqlglot` guards, read-only execution, repair loop, streaming API, data-source management | golden business questions return correct SQL and results |
+| **5** | Web UI: **SME review first**, then chat (R1) | an SME works through a database's queue; a question is answered in the browser |
+| **6** | Evaluation harness, calibration from SME labels per model, cost/latency tracking | repeatable regression report |
+| **7** | Masking/FPE, scheduled refresh, further dialects, workload evidence | later |
 
 Phase 1 is gated on the owner restoring the target database.
 
@@ -788,7 +811,7 @@ Phase 1 is gated on the owner restoring the target database.
 ## 18. Risks and guardrails
 
 1. **LLM overconfidence** → evidence-based scoring, critique pass, calibration, abstention.
-2. **Sensitive sample data in prompts** → mask by default, sample opt-out, local-model option; no-network mode later.
+2. **Sensitive sample data in prompts** → masked for remote models, raw only for local models (D24); sample opt-out; no-network mode later.
 3. **Production database load** → replica, timeouts, sampling, budgets, off-peak runs.
 4. **Huge schemas exceeding context** → reason per table bundle, never the whole schema at once.
 5. **Schema drift** → structure hash + cache invalidation; `modify_date` is not trusted.
@@ -803,12 +826,10 @@ Phase 1 is gated on the owner restoring the target database.
 
 ## 19. Open questions
 
-1. **Reasoning LLM scope** — (a) DeepSeek `deepseek-flash` for reasoning + SQL,
-   Ollama `bge-m3` for embeddings (current default); (b) no cloud at all, larger
-   local model for reasoning; (c) both, switchable for comparison.
-2. **Target database name** — to be provided by the owner after the restore.
-3. **Embedding model** — `bge-m3` (1024) chosen by default; confirm or switch to
-   `nomic-embed-text` (768) for a smaller footprint.
+All three original questions are resolved: the reasoning model is a per-customer
+configuration (local or remote; development uses the DeepSeek gateway, D1/A7);
+the target database is `nge_small`; the embedding model is `bge-m3` (D2). Open
+items are tracked in PHASES.md ("Open items").
 
 ---
 
@@ -828,7 +849,7 @@ Phase 1 is gated on the owner restoring the target database.
 12. [x] `make target-info` / `check-target` implemented and failure-path verified
 13. [x] Dialect seam (`MetadataReader`/`Profiler`/`SqlGuard` protocols + registry)
 14. [x] Unit tests (10 passing)
-15. [ ] `check-target` passes against the restored SQL Server — **blocked on owner restore**
+15. [x] `check-target` passes against the restored SQL Server (see §21)
 
 ## 21. Verified Phase 0 results
 
@@ -1143,9 +1164,15 @@ the binding constraint.
   still missing.
 * Approved `glossary_term` rows are not yet fed into the bundle; doing so needs
   the glossary state in the skip key.
-* View semantics rely on column names only (`sys.sql_modules` not captured).
+* View semantics rely on column names only (`sys.sql_modules` not captured) —
+  addressed by Phase 3A (module capture and view lineage, A8).
 * The trigram indexes in `0003` were not executed in the sandbox (no
-  `pg_trgm` there); they are present in the real store.
+  `pg_trgm` there); they are present in the real store. *Executed in a sandbox on
+  2026-11-14 (PostgreSQL 16 + pgvector 0.6.2 + contrib), §25.*
+* Found in the Phase 3 review: the `profile` evidence signal is a yes/no flag, so
+  profiling raises every score by 0.075 regardless of content, and an
+  uncommented plain column is capped at 0.775 (< `accept_at`). Replaced by
+  `heuristic-v2` in 3B (§12).
 * Target connections come from `config/gaia.yaml` today. Runtime, admin-supplied
   connections are a Phase 4 concern — see §24.
 
@@ -1197,8 +1224,10 @@ deliberate, and it is why this is Phase 4 work and not an emergency.
    `TargetConfig`; `config/gaia.yaml targets` becomes a bootstrap seed (useful
    for development and for the first admin). Config and database must not
    silently disagree — config-seeded rows are marked as such.
-3. **Onboarding probe.** `tools/check_target.py` becomes the "test connection"
-   action in the admin UI. This matters more than it looks: today read-only is
+3. **Onboarding probe.** The per-dialect probes (`dialects/<d>/probe.py`, behind
+   `tools/check_target.py`) become the "test connection" action in the admin UI.
+   The PostgreSQL probe proves read-only from privileges as well as by a DDL
+   attempt (3.P); the SQL Server probe gets the same treatment in 3.0. This matters more than it looks: today read-only is
    *guaranteed by provisioning*. With admin-supplied credentials we cannot assume
    it, so read-only has to be **proven** — and that probe already attempts a DDL
    statement and asserts it fails.
@@ -1231,3 +1260,51 @@ The cost of deferring is low precisely because the keys already exist. The cost
 of *not* recording the decision would be discovering, in Phase 5, that the UI
 needs credentials the schema has nowhere to put.
 
+---
+
+## 25. Phase 3.P — PostgreSQL development target and dialect (complete in sandbox)
+
+Owner request of 2026-11-14 (PHASES A9): before 3.0, create a PostgreSQL target
+with test data and replicate the SQL Server dialect for it. Verified in a
+sandbox (PostgreSQL 16.15 target; PostgreSQL 16 + pgvector metadata store);
+the Compose service and PostgreSQL 18 are verified on the real host.
+
+### The fixture (`infra/pg-target/`)
+
+A synthetic retail database, ~3 M rows at scale 1, generated deterministically
+(`seed.py --seed 42 --scale 1`, 96 s; two runs give identical checksums). It is
+shaped for the worst-case premise rather than for realism alone:
+
+| Feature | Where | Tests what |
+|---|---|---|
+| Meaningless names, no keys between tables, dates as `yyyymmdd` integers, `'Y'/'N'` flags, numbers as text | `legacy.tb_mst01`, `tb_trx02` (`f1…f10`), `tb_prm03`, `xx_aux` | name-free inference; detectors; parse rates; unused columns |
+| Business names only as view aliases | `rpt.v_legacy_transactions` | alias back-propagation (A8); exact ground truth for 3C |
+| Computed view columns and aggregates | `rpt.v_customer_overview`, `v_daily_sales`, `mv_product_margin` | computed-column reasoning; materialized views |
+| Undeclared references | employee ids, store codes, customer codes, `tb_prm03` lookup codes | join-candidate discovery, inclusion tests (98.9 %) |
+| Arithmetic identities | `total = subtotal + tax + shipping`, `f7 = f5 × f6`, generated `line_subtotal` | identities as evidence for measures |
+| Untrusted / disabled constraints | `NOT VALID` FK with orphans, `NOT VALID` check with violations, FK triggers disabled with orphans | trust flags; why trusted FKs need no orphan test and others do |
+| Enum, domain, identity, serial, generated, partitioned table, expression / partial / INCLUDE / GIN indexes | throughout | catalog mapping |
+| Checksum-valid synthetic identifiers | TCKN, IBAN, card BIN + last four, reserved e-mail domains | detectors with validators |
+| Exactly three comments | one table, two columns | comment reading without lifting the worst case |
+
+### The dialect (`backend/src/gaia/dialects/postgres/`)
+
+Mapping decisions are documented in `catalog.py`; the important ones: partitions
+fold into their parent; materialized views are `view`; domains render as their
+base type with the domain and its checks in `type_definition`, enums keep their
+name with the labels there; identity *and* serial columns are `is_identity`;
+stored generated columns are `is_computed`; `NOT VALID` is `is_not_trusted`; an
+FK whose enforcement triggers are disabled is `is_disabled`; sessions pin
+`search_path = pg_catalog` so rendered catalog text — and every hash — is
+independent of the role's search path.
+
+The scorer's type checks now use per-dialect vocabularies (`dialects/types.py`):
+PostgreSQL `timestamp` is a date-time while SQL Server's is a row version. An
+oracle test proves the SQL Server vocabulary reproduces Phase 2 exactly, and a
+golden test proves SQL Server snapshot hashes and rendered bundles are
+byte-identical, so no stored SQL Server semantics re-reason.
+
+Results and the eight defects found and fixed (among them: a DDL probe in one
+safe schema proves nothing; `default_transaction_read_only` is not a boundary;
+one unresolved placeholder anywhere failed every `check-target`) are in PHASES,
+"3.P results".

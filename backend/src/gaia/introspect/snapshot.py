@@ -37,9 +37,14 @@ class ColumnSnapshot:
     collation: str | None = None
     is_user_defined_type: bool = False
     computed_definition: str | None = None
+    # Definition of a user-defined type when the dialect exposes one, e.g. a
+    # PostgreSQL enum ("enum ('new', 'paid')") or domain
+    # ("domain crm.email_address: CHECK (...)"). SQL Server never sets it.
+    # Included in the payloads only when set, so existing hashes are unchanged.
+    type_definition: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        data = {
             "name": self.name,
             "ordinal": self.ordinal,
             "data_type": self.data_type,
@@ -57,10 +62,13 @@ class ColumnSnapshot:
             "is_user_defined_type": self.is_user_defined_type,
             "computed_definition": self.computed_definition,
         }
+        if self.type_definition is not None:
+            data["type_definition"] = self.type_definition
+        return data
 
     def structure_payload(self) -> dict[str, Any]:
         """Only semantically meaningful fields; ordinal is deliberately absent."""
-        return {
+        payload = {
             "name": self.name,
             "data_type": self.data_type,
             "nullable": self.nullable,
@@ -77,6 +85,9 @@ class ColumnSnapshot:
             "is_user_defined_type": self.is_user_defined_type,
             "computed_definition": normalize_text(self.computed_definition),
         }
+        if self.type_definition is not None:
+            payload["type_definition"] = normalize_text(self.type_definition)
+        return payload
 
     @property
     def structure_hash(self) -> str:
@@ -86,7 +97,7 @@ class ColumnSnapshot:
 @dataclass
 class ConstraintSnapshot:
     name: str
-    kind: str  # primary_key | unique | check | default
+    kind: str  # primary_key | unique | check | default | exclusion (PostgreSQL)
     columns: list[str] = field(default_factory=list)
     definition: str | None = None
     is_disabled: bool = False
@@ -193,7 +204,7 @@ class IndexSnapshot:
 class TableSnapshot:
     schema: str
     name: str
-    kind: str  # table | view
+    kind: str  # table | view (PostgreSQL materialized views are reported as view)
     comment: str | None = None
     estimated_rows: int | None = None
     size_bytes: int | None = None
