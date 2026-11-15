@@ -137,3 +137,47 @@ def test_pg_bundle_scores_with_pg_vocabulary(snapshot):
     assert bundle.facts["is_active"].dialect == "postgres"
     assert bundle.facts["segment"].type_definition.startswith("enum")
     assert "type_definition" in json.dumps(bundle.document)
+
+
+def test_statement_timeout_cancels_and_session_survives(target):
+    import time
+
+    from gaia.dialects.errors import StatementTimeout
+    from gaia.dialects.postgres.connection import session
+
+    with session(target, autocommit=True, statement_timeout_s=1) as cur:
+        started = time.perf_counter()
+        with pytest.raises(StatementTimeout) as exc:
+            cur.execute("SELECT pg_sleep(5)")
+        assert 0.8 <= time.perf_counter() - started < 4.0
+        assert exc.value.dialect == "postgres"
+        cur.execute("SELECT 1")  # autocommit: the next statement is unaffected
+        assert cur.fetchone()[0] == 1
+        cur.execute("SHOW transaction_read_only")
+        assert cur.fetchone()[0] == "on"
+
+
+def test_measurement_harness_on_the_worst_case_table(target, snapshot):
+    import argparse
+
+    from gaia.dialects.postgres.measure import PostgresMeasure
+    from gaia.tools.measure_target import Budget, measure_table
+
+    backend = PostgresMeasure(target, statement_timeout_s=60, maxdop=2)
+    table = _table(snapshot, "legacy.tb_trx02")
+    opts = argparse.Namespace(max_columns=60, sample_rows=1000, seed=42)
+    with backend.session() as cur:
+        before = backend.stats_inventory(cur)
+        out = measure_table(backend, cur, table, opts, Budget(5))
+        after = backend.stats_inventory(cur)
+        support = {s["kind"]: s for s in backend.sampling_support(cur, 42)}
+
+    exact = {e["column"]: e["value"] for e in out["measurements"] if e["op"] == "distinct_exact"}
+    assert exact["f8"] == 3 and exact["f10"] == 2  # status and currency codes, by design
+    assert exact["f1"] == out["measurements"][0]["value"]  # f1 is unique: distinct == count
+    assert all("error" not in e.get("first", {}) for e in out["measurements"])
+    assert next(e for e in out["measurements"] if e["op"] == "scan")["repeat"]["pages"] > 0
+    assert before == after  # PostgreSQL: profiling leaves no statistics footprint
+    assert support["partitioned table"]["supported"]
+    assert support["materialized view"]["supported"]
+    assert not support["view"]["supported"]

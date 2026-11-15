@@ -1,0 +1,1497 @@
+{
+  "tool": "measure_target",
+  "tool_version": 1,
+  "target": "demo_pg",
+  "dialect": "postgres",
+  "started_at": "2026-11-14T14:26:16+00:00",
+  "settings": {
+    "statement_timeout_s": 300,
+    "maxdop": 2,
+    "sample_rows": 10000,
+    "seed": 42,
+    "max_columns": 60
+  },
+  "tables": [
+    {
+      "table": "sales.order_events",
+      "estimated_rows": 6715455,
+      "size_bytes": 510681088,
+      "columns_total": 6,
+      "columns_measured": 6,
+      "measurements": [
+        {
+          "op": "count",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"order_events\"",
+          "value": 6715455,
+          "first": {
+            "ms": 469.9
+          },
+          "repeat": {
+            "ms": 820.6,
+            "pages": 62304,
+            "physical": 62046,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "scan",
+          "column": null,
+          "sql": "SELECT count(*), count(\"event_id\"), min(\"event_id\"), max(\"event_id\"), count(\"order_id\"), min(\"order_id\"), max(\"order_id\"), count(\"event_type\"), min(\"event_type\"), max(\"event_type\"), count(\"event_at\"), min(\"event_at\"), max(\"event_at\"), count(\"actor\"), min(\"actor\"), max(\"actor\"), count(\"payload\") FROM \"sales\".\"order_events\"",
+          "value": 6715455,
+          "first": {
+            "ms": 1222.1
+          },
+          "repeat": {
+            "ms": 2011.7,
+            "pages": 62304,
+            "physical": 61662,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "distinct_exact",
+          "column": "event_id",
+          "sql": "SELECT count(DISTINCT \"event_id\") FROM \"sales\".\"order_events\"",
+          "value": 6715455,
+          "first": {
+            "ms": 2189.0
+          },
+          "key": false,
+          "repeat": {
+            "ms": 2838.0,
+            "pages": 25743,
+            "physical": 0,
+            "worktable": 0
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "event_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'event_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 6715917.0,
+          "first": {
+            "ms": 3.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "order_id",
+          "sql": "SELECT count(DISTINCT \"order_id\") FROM \"sales\".\"order_events\"",
+          "value": 2500000,
+          "first": {
+            "ms": 1267.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "order_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'order_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 1200072.0,
+          "first": {
+            "ms": 3.3
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "event_type",
+          "sql": "SELECT count(DISTINCT \"event_type\") FROM \"sales\".\"order_events\"",
+          "value": 6,
+          "first": {
+            "ms": 2972.5
+          },
+          "key": false,
+          "repeat": {
+            "ms": 4695.7,
+            "pages": 62304,
+            "physical": 61660,
+            "worktable": 39488
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "event_type",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'event_type' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 6.0,
+          "first": {
+            "ms": 6.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "event_at",
+          "sql": "SELECT count(DISTINCT \"event_at\") FROM \"sales\".\"order_events\"",
+          "value": 6403946,
+          "first": {
+            "ms": 3626.3
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "event_at",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'event_at' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 6428700.0,
+          "first": {
+            "ms": 2.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "actor",
+          "sql": "SELECT count(DISTINCT \"actor\") FROM \"sales\".\"order_events\"",
+          "value": 43,
+          "first": {
+            "ms": 4926.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "actor",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'actor' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 43.0,
+          "first": {
+            "ms": 2.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "payload",
+          "sql": "SELECT count(DISTINCT \"payload\") FROM \"sales\".\"order_events\"",
+          "value": 1016879,
+          "first": {
+            "ms": 11557.2
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "payload",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"order_events\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'order_events' AND s.attname = 'payload' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 947265.0,
+          "first": {
+            "ms": 3.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "event_id",
+          "sql": "SELECT count(*) FROM (SELECT \"event_id\" FROM \"sales\".\"order_events\" GROUP BY \"event_id\") AS g",
+          "value": 6715455,
+          "first": {
+            "ms": 2296.3
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "event_type",
+          "sql": "SELECT count(*) FROM (SELECT \"event_type\" FROM \"sales\".\"order_events\" GROUP BY \"event_type\") AS g",
+          "value": 6,
+          "first": {
+            "ms": 1217.3
+          },
+          "key": false
+        },
+        {
+          "op": "avg_stdev_native",
+          "column": "event_id",
+          "sql": "SELECT avg(\"event_id\"), stddev_samp(\"event_id\") FROM \"sales\".\"order_events\"",
+          "value": 3357728.0,
+          "first": {
+            "ms": 1086.2
+          },
+          "repeat": {
+            "ms": 1913.1,
+            "pages": 62304,
+            "physical": 61372,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_float",
+          "column": "event_id",
+          "sql": "SELECT avg(\"event_id\"::float8), stddev_samp(\"event_id\"::float8) FROM \"sales\".\"order_events\"",
+          "value": 3357728.0,
+          "first": {
+            "ms": 413.6
+          },
+          "repeat": {
+            "ms": 880.2,
+            "pages": 62304,
+            "physical": 60988,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_float",
+          "column": "event_id",
+          "sql": "SELECT avg(\"event_id\"::float8) FROM \"sales\".\"order_events\"",
+          "value": 3357728.0,
+          "first": {
+            "ms": 422.4
+          },
+          "repeat": {
+            "ms": 805.8,
+            "pages": 62304,
+            "physical": 60636,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "percentile_exact",
+          "column": "event_id",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"event_id\") FROM \"sales\".\"order_events\"",
+          "value": 3357728.0,
+          "first": {
+            "ms": 2094.1
+          },
+          "repeat": {
+            "ms": 3193.2,
+            "pages": 62304,
+            "physical": 60348,
+            "worktable": 34730
+          }
+        },
+        {
+          "op": "percentile_sample",
+          "column": "event_id",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"event_id\") FROM \"sales\".\"order_events\" TABLESAMPLE SYSTEM (0.14891) REPEATABLE (42)",
+          "value": 3588291.0,
+          "first": {
+            "ms": 5.3
+          },
+          "repeat": {
+            "ms": 4.7,
+            "pages": 81,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_system",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"order_events\" TABLESAMPLE SYSTEM (0.14891) REPEATABLE (42)",
+          "value": 8749,
+          "first": {
+            "ms": 2.6
+          },
+          "repeat": {
+            "ms": 4.1,
+            "pages": 81,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_bernoulli",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"order_events\" TABLESAMPLE BERNOULLI (0.14891) REPEATABLE (42)",
+          "value": 9831,
+          "first": {
+            "ms": 116.6
+          },
+          "repeat": {
+            "ms": 116.1,
+            "pages": 62304,
+            "physical": 60075,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_fetch",
+          "column": null,
+          "sql": "SELECT * FROM \"sales\".\"order_events\" TABLESAMPLE SYSTEM (0.14891) REPEATABLE (42)",
+          "value": null,
+          "rows_returned": 8749,
+          "first": {
+            "ms": 27.2
+          }
+        },
+        {
+          "op": "topk",
+          "column": "event_type",
+          "sql": "SELECT \"event_type\", count(*) AS n FROM \"sales\".\"order_events\" GROUP BY \"event_type\" ORDER BY n DESC LIMIT 25",
+          "value": null,
+          "first": {
+            "ms": 589.5
+          },
+          "repeat": {
+            "ms": 1110.6,
+            "pages": 62318,
+            "physical": 59787,
+            "worktable": 0
+          }
+        }
+      ],
+      "auto_stats_test": null
+    },
+    {
+      "table": "finance.gl_entries",
+      "estimated_rows": 6488806,
+      "size_bytes": 548257792,
+      "columns_total": 8,
+      "columns_measured": 8,
+      "measurements": [
+        {
+          "op": "count",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"finance\".\"gl_entries\"",
+          "value": 6488806,
+          "first": {
+            "ms": 429.2
+          },
+          "repeat": {
+            "ms": 417.8,
+            "pages": 6018,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "scan",
+          "column": null,
+          "sql": "SELECT count(*), count(\"entry_id\"), min(\"entry_id\"), max(\"entry_id\"), count(\"posted_on\"), min(\"posted_on\"), max(\"posted_on\"), count(\"account_no\"), min(\"account_no\"), max(\"account_no\"), count(\"debit\"), min(\"debit\"), max(\"debit\"), count(\"credit\"), min(\"credit\"), max(\"credit\"), count(\"doc_type\"), min(\"doc_type\"), max(\"doc_type\"), count(\"doc_ref\"), min(\"doc_ref\"), max(\"doc_ref\"), count(\"fiscal_period\"), min(\"fiscal_period\"), max(\"fiscal_period\") FROM \"finance\".\"gl_entries\"",
+          "value": 6488806,
+          "first": {
+            "ms": 2404.1
+          },
+          "repeat": {
+            "ms": 2727.4,
+            "pages": 66904,
+            "physical": 66808,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "distinct_exact",
+          "column": "entry_id",
+          "sql": "SELECT count(DISTINCT \"entry_id\") FROM \"finance\".\"gl_entries\"",
+          "value": 6488806,
+          "first": {
+            "ms": 977.5
+          },
+          "key": true,
+          "repeat": {
+            "ms": 1713.6,
+            "pages": 17734,
+            "physical": 0,
+            "worktable": 0
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "entry_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'entry_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 6488806.0,
+          "first": {
+            "ms": 1.5
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_exact",
+          "column": "posted_on",
+          "sql": "SELECT count(DISTINCT \"posted_on\") FROM \"finance\".\"gl_entries\"",
+          "value": 1096,
+          "first": {
+            "ms": 3094.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "posted_on",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'posted_on' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 1096.0,
+          "first": {
+            "ms": 2.6
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "account_no",
+          "sql": "SELECT count(DISTINCT \"account_no\") FROM \"finance\".\"gl_entries\"",
+          "value": 5,
+          "first": {
+            "ms": 3540.8
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "account_no",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'account_no' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 5.0,
+          "first": {
+            "ms": 6.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "debit",
+          "sql": "SELECT count(DISTINCT \"debit\") FROM \"finance\".\"gl_entries\"",
+          "value": 1040189,
+          "first": {
+            "ms": 7607.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "debit",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'debit' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 14252.0,
+          "first": {
+            "ms": 10.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "credit",
+          "sql": "SELECT count(DISTINCT \"credit\") FROM \"finance\".\"gl_entries\"",
+          "value": 1138249,
+          "first": {
+            "ms": 9686.6
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "credit",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'credit' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 45750.0,
+          "first": {
+            "ms": 4.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "doc_type",
+          "sql": "SELECT count(DISTINCT \"doc_type\") FROM \"finance\".\"gl_entries\"",
+          "value": 2,
+          "first": {
+            "ms": 4336.6
+          },
+          "key": false,
+          "repeat": {
+            "ms": 6353.0,
+            "pages": 66904,
+            "physical": 66392,
+            "worktable": 22310
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "doc_type",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'doc_type' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 2.0,
+          "first": {
+            "ms": 4.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "doc_ref",
+          "sql": "SELECT count(DISTINCT \"doc_ref\") FROM \"finance\".\"gl_entries\"",
+          "value": 2150105,
+          "first": {
+            "ms": 11561.0
+          },
+          "key": false,
+          "repeat": {
+            "ms": 11280.5,
+            "pages": 66904,
+            "physical": 66520,
+            "worktable": 63420
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "doc_ref",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'doc_ref' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 1077537.0,
+          "first": {
+            "ms": 28.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "fiscal_period",
+          "sql": "SELECT count(DISTINCT \"fiscal_period\") FROM \"finance\".\"gl_entries\"",
+          "value": 36,
+          "first": {
+            "ms": 2410.8
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "fiscal_period",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"finance\".\"gl_entries\"'::regclass WHERE s.schemaname = 'finance' AND s.tablename = 'gl_entries' AND s.attname = 'fiscal_period' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 36.0,
+          "first": {
+            "ms": 3.3
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "entry_id",
+          "sql": "SELECT count(*) FROM (SELECT \"entry_id\" FROM \"finance\".\"gl_entries\" GROUP BY \"entry_id\") AS g",
+          "value": 6488806,
+          "first": {
+            "ms": 1686.0
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "doc_ref",
+          "sql": "SELECT count(*) FROM (SELECT \"doc_ref\" FROM \"finance\".\"gl_entries\" GROUP BY \"doc_ref\") AS g",
+          "value": 2150105,
+          "first": {
+            "ms": 10927.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "doc_type",
+          "sql": "SELECT count(*) FROM (SELECT \"doc_type\" FROM \"finance\".\"gl_entries\" GROUP BY \"doc_type\") AS g",
+          "value": 2,
+          "first": {
+            "ms": 1589.7
+          },
+          "key": false
+        },
+        {
+          "op": "avg_stdev_native",
+          "column": "debit",
+          "sql": "SELECT avg(\"debit\"), stddev_samp(\"debit\") FROM \"finance\".\"gl_entries\"",
+          "value": 2864.171394247262,
+          "first": {
+            "ms": 871.7
+          },
+          "repeat": {
+            "ms": 1171.8,
+            "pages": 66904,
+            "physical": 66264,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_float",
+          "column": "debit",
+          "sql": "SELECT avg(\"debit\"::float8), stddev_samp(\"debit\"::float8) FROM \"finance\".\"gl_entries\"",
+          "value": 2864.1713942472834,
+          "first": {
+            "ms": 1004.0
+          },
+          "repeat": {
+            "ms": 1155.8,
+            "pages": 66904,
+            "physical": 66072,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_float",
+          "column": "debit",
+          "sql": "SELECT avg(\"debit\"::float8) FROM \"finance\".\"gl_entries\"",
+          "value": 2864.171394247271,
+          "first": {
+            "ms": 1059.0
+          },
+          "repeat": {
+            "ms": 1210.8,
+            "pages": 66904,
+            "physical": 65880,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_native",
+          "column": "credit",
+          "sql": "SELECT avg(\"credit\"), stddev_samp(\"credit\") FROM \"finance\".\"gl_entries\"",
+          "value": 2864.171394247262,
+          "first": {
+            "ms": 1231.7
+          },
+          "repeat": {
+            "ms": 1143.5,
+            "pages": 66904,
+            "physical": 65688,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_float",
+          "column": "credit",
+          "sql": "SELECT avg(\"credit\"::float8), stddev_samp(\"credit\"::float8) FROM \"finance\".\"gl_entries\"",
+          "value": 2864.1713942472634,
+          "first": {
+            "ms": 986.3
+          },
+          "repeat": {
+            "ms": 1393.9,
+            "pages": 66904,
+            "physical": 65496,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_float",
+          "column": "credit",
+          "sql": "SELECT avg(\"credit\"::float8) FROM \"finance\".\"gl_entries\"",
+          "value": 2864.1713942473475,
+          "first": {
+            "ms": 1198.9
+          },
+          "repeat": {
+            "ms": 2546.7,
+            "pages": 66904,
+            "physical": 65304,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "percentile_exact",
+          "column": "debit",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"debit\") FROM \"finance\".\"gl_entries\"",
+          "value": 0.0,
+          "first": {
+            "ms": 4487.0
+          },
+          "repeat": {
+            "ms": 4805.0,
+            "pages": 66904,
+            "physical": 65176,
+            "worktable": 33732
+          }
+        },
+        {
+          "op": "percentile_sample",
+          "column": "debit",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"debit\") FROM \"finance\".\"gl_entries\" TABLESAMPLE SYSTEM (0.154112) REPEATABLE (42)",
+          "value": 0.0,
+          "first": {
+            "ms": 8.3
+          },
+          "repeat": {
+            "ms": 7.3,
+            "pages": 100,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_system",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"finance\".\"gl_entries\" TABLESAMPLE SYSTEM (0.154112) REPEATABLE (42)",
+          "value": 9700,
+          "first": {
+            "ms": 6.1
+          },
+          "repeat": {
+            "ms": 2.3,
+            "pages": 100,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_bernoulli",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"finance\".\"gl_entries\" TABLESAMPLE BERNOULLI (0.154112) REPEATABLE (42)",
+          "value": 10068,
+          "first": {
+            "ms": 268.6
+          },
+          "repeat": {
+            "ms": 248.8,
+            "pages": 66904,
+            "physical": 65014,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_fetch",
+          "column": null,
+          "sql": "SELECT * FROM \"finance\".\"gl_entries\" TABLESAMPLE SYSTEM (0.154112) REPEATABLE (42)",
+          "value": null,
+          "rows_returned": 9700,
+          "first": {
+            "ms": 132.7
+          }
+        },
+        {
+          "op": "topk",
+          "column": "doc_type",
+          "sql": "SELECT \"doc_type\", count(*) AS n FROM \"finance\".\"gl_entries\" GROUP BY \"doc_type\" ORDER BY n DESC LIMIT 25",
+          "value": null,
+          "first": {
+            "ms": 2350.1
+          },
+          "repeat": {
+            "ms": 1098.8,
+            "pages": 66918,
+            "physical": 64886,
+            "worktable": 0
+          }
+        }
+      ],
+      "auto_stats_test": null
+    },
+    {
+      "table": "sales.orders",
+      "estimated_rows": 2500000,
+      "size_bytes": 362930176,
+      "columns_total": 19,
+      "columns_measured": 19,
+      "measurements": [
+        {
+          "op": "count",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"orders\"",
+          "value": 2500000,
+          "first": {
+            "ms": 586.7
+          },
+          "repeat": {
+            "ms": 741.7,
+            "pages": 1993,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "scan",
+          "column": null,
+          "sql": "SELECT count(*), count(\"order_id\"), min(\"order_id\"), max(\"order_id\"), count(\"order_no\"), min(\"order_no\"), max(\"order_no\"), count(\"customer_id\"), min(\"customer_id\"), max(\"customer_id\"), count(\"store_id\"), min(\"store_id\"), max(\"store_id\"), count(\"channel\"), min(\"channel\"), max(\"channel\"), count(\"status\"), min(\"status\"), max(\"status\"), count(\"order_date\"), min(\"order_date\"), max(\"order_date\"), count(\"ordered_at\"), min(\"ordered_at\"), max(\"ordered_at\"), count(\"shipped_at\"), min(\"shipped_at\"), max(\"shipped_at\"), count(\"delivered_at\"), min(\"delivered_at\"), max(\"delivered_at\"), count(\"currency_code\"), min(\"currency_code\"), max(\"currency_code\"), count(\"subtotal\"), min(\"subtotal\"), max(\"subtotal\"), count(\"tax_total\"), min(\"tax_total\"), max(\"tax_total\"), count(\"shipping_fee\"), min(\"shipping_fee\"), max(\"shipping_fee\"), count(\"total_amount\"), min(\"total_amount\"), max(\"total_amount\"), count(\"payment_method\"), min(\"payment_method\"), max(\"payment_method\"), count(\"coupon_code\"), min(\"coupon_code\"), max(\"coupon_code\"), count(\"sales_rep_id\"), min(\"sales_rep_id\"), max(\"sales_rep_id\"), count(\"source_system\"), min(\"source_system\"), max(\"source_system\") FROM \"sales\".\"orders\"",
+          "value": 2500000,
+          "first": {
+            "ms": 3492.6
+          },
+          "repeat": {
+            "ms": 2364.5,
+            "pages": 44288,
+            "physical": 44192,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "distinct_exact",
+          "column": "order_id",
+          "sql": "SELECT count(DISTINCT \"order_id\") FROM \"sales\".\"orders\"",
+          "value": 2500000,
+          "first": {
+            "ms": 344.3
+          },
+          "key": true,
+          "repeat": {
+            "ms": 516.5,
+            "pages": 6835,
+            "physical": 0,
+            "worktable": 0
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "order_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'order_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 2500000.0,
+          "first": {
+            "ms": 1.6
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_exact",
+          "column": "order_no",
+          "sql": "SELECT count(DISTINCT \"order_no\") FROM \"sales\".\"orders\"",
+          "value": 2500000,
+          "first": {
+            "ms": 802.6
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "order_no",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'order_no' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 2500000.0,
+          "first": {
+            "ms": 3.7
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_exact",
+          "column": "customer_id",
+          "sql": "SELECT count(DISTINCT \"customer_id\") FROM \"sales\".\"orders\"",
+          "value": 249992,
+          "first": {
+            "ms": 1147.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "customer_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'customer_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 225987.0,
+          "first": {
+            "ms": 5.9
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "store_id",
+          "sql": "SELECT count(DISTINCT \"store_id\") FROM \"sales\".\"orders\"",
+          "value": 40,
+          "first": {
+            "ms": 669.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "store_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'store_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 40.0,
+          "first": {
+            "ms": 2.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "channel",
+          "sql": "SELECT count(DISTINCT \"channel\") FROM \"sales\".\"orders\"",
+          "value": 4,
+          "first": {
+            "ms": 834.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "channel",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'channel' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 4.0,
+          "first": {
+            "ms": 3.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "status",
+          "sql": "SELECT count(DISTINCT \"status\") FROM \"sales\".\"orders\"",
+          "value": 6,
+          "first": {
+            "ms": 255.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "status",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'status' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 6.0,
+          "first": {
+            "ms": 3.6
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "order_date",
+          "sql": "SELECT count(DISTINCT \"order_date\") FROM \"sales\".\"orders\"",
+          "value": 1096,
+          "first": {
+            "ms": 1063.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "order_date",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'order_date' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 1096.0,
+          "first": {
+            "ms": 3.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "ordered_at",
+          "sql": "SELECT count(DISTINCT \"ordered_at\") FROM \"sales\".\"orders\"",
+          "value": 2444279,
+          "first": {
+            "ms": 1569.3
+          },
+          "key": false,
+          "repeat": {
+            "ms": 1774.5,
+            "pages": 44288,
+            "physical": 43776,
+            "worktable": 7368
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "ordered_at",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'ordered_at' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 2406936.0,
+          "first": {
+            "ms": 2.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "shipped_at",
+          "sql": "SELECT count(DISTINCT \"shipped_at\") FROM \"sales\".\"orders\"",
+          "value": 849830,
+          "first": {
+            "ms": 885.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "shipped_at",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'shipped_at' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 836664.0,
+          "first": {
+            "ms": 2.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "delivered_at",
+          "sql": "SELECT count(DISTINCT \"delivered_at\") FROM \"sales\".\"orders\"",
+          "value": 760281,
+          "first": {
+            "ms": 977.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "delivered_at",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'delivered_at' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 763917.0,
+          "first": {
+            "ms": 5.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "currency_code",
+          "sql": "SELECT count(DISTINCT \"currency_code\") FROM \"sales\".\"orders\"",
+          "value": 3,
+          "first": {
+            "ms": 1917.5
+          },
+          "key": false,
+          "repeat": {
+            "ms": 1553.2,
+            "pages": 44288,
+            "physical": 43648,
+            "worktable": 9835
+          },
+          "headline": true
+        },
+        {
+          "op": "distinct_stats",
+          "column": "currency_code",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'currency_code' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 3.0,
+          "first": {
+            "ms": 7.6
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "subtotal",
+          "sql": "SELECT count(DISTINCT \"subtotal\") FROM \"sales\".\"orders\"",
+          "value": 1083097,
+          "first": {
+            "ms": 4446.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "subtotal",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'subtotal' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 191527.0,
+          "first": {
+            "ms": 2.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "tax_total",
+          "sql": "SELECT count(DISTINCT \"tax_total\") FROM \"sales\".\"orders\"",
+          "value": 441187,
+          "first": {
+            "ms": 3751.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "tax_total",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'tax_total' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 85225.0,
+          "first": {
+            "ms": 4.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "shipping_fee",
+          "sql": "SELECT count(DISTINCT \"shipping_fee\") FROM \"sales\".\"orders\"",
+          "value": 3,
+          "first": {
+            "ms": 3152.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "shipping_fee",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'shipping_fee' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 3.0,
+          "first": {
+            "ms": 4.6
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "total_amount",
+          "sql": "SELECT count(DISTINCT \"total_amount\") FROM \"sales\".\"orders\"",
+          "value": 1148554,
+          "first": {
+            "ms": 4681.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "total_amount",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'total_amount' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 222606.0,
+          "first": {
+            "ms": 3.7
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "payment_method",
+          "sql": "SELECT count(DISTINCT \"payment_method\") FROM \"sales\".\"orders\"",
+          "value": 4,
+          "first": {
+            "ms": 2824.0
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "payment_method",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'payment_method' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 4.0,
+          "first": {
+            "ms": 10.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "coupon_code",
+          "sql": "SELECT count(DISTINCT \"coupon_code\") FROM \"sales\".\"orders\"",
+          "value": 9000,
+          "first": {
+            "ms": 2202.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "coupon_code",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'coupon_code' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 8790.0,
+          "first": {
+            "ms": 5.1
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "sales_rep_id",
+          "sql": "SELECT count(DISTINCT \"sales_rep_id\") FROM \"sales\".\"orders\"",
+          "value": 366,
+          "first": {
+            "ms": 1436.3
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "sales_rep_id",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'sales_rep_id' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 366.0,
+          "first": {
+            "ms": 4.9
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_exact",
+          "column": "source_system",
+          "sql": "SELECT count(DISTINCT \"source_system\") FROM \"sales\".\"orders\"",
+          "value": 4,
+          "first": {
+            "ms": 1645.4
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_stats",
+          "column": "source_system",
+          "sql": "SELECT CASE WHEN s.n_distinct < 0 THEN round(-s.n_distinct * c.reltuples) ELSE s.n_distinct END FROM pg_stats s JOIN pg_class c ON c.oid = '\"sales\".\"orders\"'::regclass WHERE s.schemaname = 'sales' AND s.tablename = 'orders' AND s.attname = 'source_system' ORDER BY s.inherited DESC LIMIT 1",
+          "value": 4.0,
+          "first": {
+            "ms": 1.5
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "order_id",
+          "sql": "SELECT count(*) FROM (SELECT \"order_id\" FROM \"sales\".\"orders\" GROUP BY \"order_id\") AS g",
+          "value": 2500000,
+          "first": {
+            "ms": 438.1
+          },
+          "key": true
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "ordered_at",
+          "sql": "SELECT count(*) FROM (SELECT \"ordered_at\" FROM \"sales\".\"orders\" GROUP BY \"ordered_at\") AS g",
+          "value": 2444279,
+          "first": {
+            "ms": 5341.8
+          },
+          "key": false
+        },
+        {
+          "op": "distinct_grouped",
+          "column": "currency_code",
+          "sql": "SELECT count(*) FROM (SELECT \"currency_code\" FROM \"sales\".\"orders\" GROUP BY \"currency_code\") AS g",
+          "value": 3,
+          "first": {
+            "ms": 272.9
+          },
+          "key": false
+        },
+        {
+          "op": "avg_stdev_native",
+          "column": "subtotal",
+          "sql": "SELECT avg(\"subtotal\"), stddev_samp(\"subtotal\") FROM \"sales\".\"orders\"",
+          "value": 6952.226918812,
+          "first": {
+            "ms": 403.0
+          },
+          "repeat": {
+            "ms": 477.8,
+            "pages": 44288,
+            "physical": 43520,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_float",
+          "column": "subtotal",
+          "sql": "SELECT avg(\"subtotal\"::float8), stddev_samp(\"subtotal\"::float8) FROM \"sales\".\"orders\"",
+          "value": 6952.226918812,
+          "first": {
+            "ms": 545.1
+          },
+          "repeat": {
+            "ms": 623.8,
+            "pages": 44288,
+            "physical": 43328,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_float",
+          "column": "subtotal",
+          "sql": "SELECT avg(\"subtotal\"::float8) FROM \"sales\".\"orders\"",
+          "value": 6952.226918812113,
+          "first": {
+            "ms": 533.0
+          },
+          "repeat": {
+            "ms": 681.6,
+            "pages": 44288,
+            "physical": 43136,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_native",
+          "column": "tax_total",
+          "sql": "SELECT avg(\"tax_total\"), stddev_samp(\"tax_total\") FROM \"sales\".\"orders\"",
+          "value": 1154.488545976,
+          "first": {
+            "ms": 341.9
+          },
+          "repeat": {
+            "ms": 480.9,
+            "pages": 44288,
+            "physical": 42944,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_stdev_float",
+          "column": "tax_total",
+          "sql": "SELECT avg(\"tax_total\"::float8), stddev_samp(\"tax_total\"::float8) FROM \"sales\".\"orders\"",
+          "value": 1154.4885459760208,
+          "first": {
+            "ms": 455.2
+          },
+          "repeat": {
+            "ms": 593.8,
+            "pages": 44288,
+            "physical": 42752,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "avg_float",
+          "column": "tax_total",
+          "sql": "SELECT avg(\"tax_total\"::float8) FROM \"sales\".\"orders\"",
+          "value": 1154.488545976041,
+          "first": {
+            "ms": 506.7
+          },
+          "repeat": {
+            "ms": 568.1,
+            "pages": 44288,
+            "physical": 42560,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "percentile_exact",
+          "column": "subtotal",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"subtotal\") FROM \"sales\".\"orders\"",
+          "value": 3992.9,
+          "first": {
+            "ms": 1914.4
+          },
+          "repeat": {
+            "ms": 2101.5,
+            "pages": 44288,
+            "physical": 42432,
+            "worktable": 5663
+          }
+        },
+        {
+          "op": "percentile_sample",
+          "column": "subtotal",
+          "sql": "SELECT percentile_cont(0.5) WITHIN GROUP (ORDER BY \"subtotal\") FROM \"sales\".\"orders\" TABLESAMPLE SYSTEM (0.4) REPEATABLE (42)",
+          "value": 3921.2799999999997,
+          "first": {
+            "ms": 8.7
+          },
+          "repeat": {
+            "ms": 9.1,
+            "pages": 154,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_system",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"orders\" TABLESAMPLE SYSTEM (0.4) REPEATABLE (42)",
+          "value": 8688,
+          "first": {
+            "ms": 3.9
+          },
+          "repeat": {
+            "ms": 5.6,
+            "pages": 154,
+            "physical": 0,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_count_bernoulli",
+          "column": null,
+          "sql": "SELECT count(*) FROM \"sales\".\"orders\" TABLESAMPLE BERNOULLI (0.4) REPEATABLE (42)",
+          "value": 10035,
+          "first": {
+            "ms": 152.5
+          },
+          "repeat": {
+            "ms": 133.4,
+            "pages": 44288,
+            "physical": 42225,
+            "worktable": 0
+          }
+        },
+        {
+          "op": "sample_fetch",
+          "column": null,
+          "sql": "SELECT * FROM \"sales\".\"orders\" TABLESAMPLE SYSTEM (0.4) REPEATABLE (42)",
+          "value": null,
+          "rows_returned": 8688,
+          "first": {
+            "ms": 69.3
+          }
+        },
+        {
+          "op": "topk",
+          "column": "currency_code",
+          "sql": "SELECT \"currency_code\", count(*) AS n FROM \"sales\".\"orders\" GROUP BY \"currency_code\" ORDER BY n DESC LIMIT 25",
+          "value": null,
+          "first": {
+            "ms": 473.2
+          },
+          "repeat": {
+            "ms": 524.7,
+            "pages": 44302,
+            "physical": 42097,
+            "worktable": 0
+          }
+        }
+      ],
+      "auto_stats_test": null
+    }
+  ],
+  "environment": {
+    "version": "16.15 (Ubuntu 16.15-0ubuntu0.24.04.1)",
+    "database": "gaia_target_pg",
+    "server_started_at": "2026-11-14 14:26:12.91567+00",
+    "shared_buffers": "256MB",
+    "track_io_timing": "off",
+    "max_parallel_workers_per_gather": "2",
+    "transaction_read_only": "on",
+    "maxdop": 2,
+    "isolation": "read_committed (autocommit, read-only)"
+  },
+  "sampling_support": [
+    {
+      "object": "rpt.mv_product_margin",
+      "kind": "materialized view",
+      "supported": true,
+      "rows": 0,
+      "ms": 4.4,
+      "error": null
+    },
+    {
+      "object": "sales.order_events",
+      "kind": "partitioned table",
+      "supported": true,
+      "rows": 59975,
+      "ms": 48.1,
+      "error": null
+    },
+    {
+      "object": "rpt.v_customer_overview",
+      "kind": "view",
+      "supported": false,
+      "rows": null,
+      "ms": 3.2,
+      "error": "TABLESAMPLE clause can only be applied to tables and materialized views"
+    }
+  ],
+  "footprint": {
+    "before": 213,
+    "after": 213,
+    "new": []
+  },
+  "wall_s": 230.7,
+  "findings": [
+    "sales.order_events: exact tier 1+2 (count + batched scan + 6 exact distinct counts) = 28.2 s",
+    "sales.order_events: non-key exact COUNT(DISTINCT) median 3299 ms, worst 11557 ms on payload (1016879 distinct)",
+    "sales.order_events: pg_stats estimate error vs exact: median 0.2 %, max 52.0 %",
+    "sales.order_events.event_id: COUNT(DISTINCT) 2189 ms vs GROUP BY form 2296 ms (6715455 distinct)",
+    "sales.order_events.event_type: COUNT(DISTINCT) 2972 ms vs GROUP BY form 1217 ms (6 distinct)",
+    "sales.order_events.event_id: AVG+STDEV native 1086 ms vs float cast 414 ms (first; like for like, 2.6x)",
+    "sales.order_events.event_id: AVG+STDEV native 1913 ms vs float cast 880 ms (repeat; like for like, 2.2x)",
+    "sales.order_events: median exact 2094 ms, sample 5 ms",
+    "sales.order_events: system sample of 10000 rows returned 8749 rows in 3 ms, 81 pages",
+    "sales.order_events: bernoulli sample of 10000 rows returned 9831 rows in 117 ms, 62304 pages",
+    "finance.gl_entries: exact tier 1+2 (count + batched scan + 8 exact distinct counts) = 46.0 s",
+    "finance.gl_entries: non-key exact COUNT(DISTINCT) median 4337 ms, worst 11561 ms on doc_ref (2150105 distinct)",
+    "finance.gl_entries: pg_stats estimate error vs exact: median 0.0 %, max 98.6 %",
+    "finance.gl_entries.entry_id: COUNT(DISTINCT) 978 ms vs GROUP BY form 1686 ms (6488806 distinct)",
+    "finance.gl_entries.doc_ref: COUNT(DISTINCT) 11561 ms vs GROUP BY form 10928 ms (2150105 distinct)",
+    "finance.gl_entries.doc_type: COUNT(DISTINCT) 4337 ms vs GROUP BY form 1590 ms (2 distinct)",
+    "finance.gl_entries.debit: AVG+STDEV native 872 ms vs float cast 1004 ms (first; like for like, 0.9x)",
+    "finance.gl_entries.debit: AVG+STDEV native 1172 ms vs float cast 1156 ms (repeat; like for like, 1.0x)",
+    "finance.gl_entries.credit: AVG+STDEV native 1232 ms vs float cast 986 ms (first; like for like, 1.2x)",
+    "finance.gl_entries.credit: AVG+STDEV native 1144 ms vs float cast 1394 ms (repeat; like for like, 0.8x)",
+    "finance.gl_entries: median exact 4487 ms, sample 8 ms",
+    "finance.gl_entries: system sample of 10000 rows returned 9700 rows in 6 ms, 100 pages",
+    "finance.gl_entries: bernoulli sample of 10000 rows returned 10068 rows in 269 ms, 66904 pages",
+    "sales.orders: exact tier 1+2 (count + batched scan + 19 exact distinct counts) = 38.7 s",
+    "sales.orders: non-key exact COUNT(DISTINCT) median 1569 ms, worst 4681 ms on total_amount (1148554 distinct)",
+    "sales.orders: pg_stats estimate error vs exact: median 0.0 %, max 82.3 %",
+    "sales.orders.order_id: COUNT(DISTINCT) 344 ms vs GROUP BY form 438 ms (2500000 distinct)",
+    "sales.orders.ordered_at: COUNT(DISTINCT) 1569 ms vs GROUP BY form 5342 ms (2444279 distinct)",
+    "sales.orders.currency_code: COUNT(DISTINCT) 1918 ms vs GROUP BY form 273 ms (3 distinct)",
+    "sales.orders.tax_total: AVG+STDEV native 342 ms vs float cast 455 ms (first; like for like, 0.8x)",
+    "sales.orders.tax_total: AVG+STDEV native 481 ms vs float cast 594 ms (repeat; like for like, 0.8x)",
+    "sales.orders.subtotal: AVG+STDEV native 403 ms vs float cast 545 ms (first; like for like, 0.7x)",
+    "sales.orders.subtotal: AVG+STDEV native 478 ms vs float cast 624 ms (repeat; like for like, 0.8x)",
+    "sales.orders: median exact 1914 ms, sample 9 ms",
+    "sales.orders: system sample of 10000 rows returned 8688 rows in 4 ms, 154 pages",
+    "sales.orders: bernoulli sample of 10000 rows returned 10035 rows in 152 ms, 44288 pages",
+    "footprint: 0 statistics object(s) appeared during the run",
+    "TABLESAMPLE on materialized view rpt.mv_product_margin: supported",
+    "TABLESAMPLE on partitioned table sales.order_events: supported",
+    "TABLESAMPLE on view rpt.v_customer_overview: NOT supported \u2014 TABLESAMPLE clause can only be applied to tables and materialized views"
+  ]
+}

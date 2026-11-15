@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 __all__ = [
     "ROLES",
+    "SEMANTIC_TYPES",
     "Alternative",
     "ColumnCritique",
     "ColumnMeaning",
@@ -57,6 +58,31 @@ _ROLE_ALIASES = {
 }
 
 _EMPTY_MARKERS = {"", "none", "null", "n/a", "na", "-", "not applicable"}
+
+# What kind of value a column holds, independent of its business meaning
+# (Phase 3B). Detectors in 3A emit the same vocabulary, so a model's claim can
+# be checked against the data deterministically. "none" = ordinary value
+# (a name, an amount, a code...); "other" = the model named something outside
+# the list.
+SEMANTIC_TYPES: tuple[str, ...] = (
+    "none", "email", "url", "phone", "iban", "card_number", "card_bin", "card_last4",
+    "national_id", "tax_id", "postal_code", "country_code", "currency_code",
+    "language_code", "ip_address", "guid", "hash", "date_text", "date_int", "time_int",
+    "datetime_text", "json", "xml", "boolean_text", "numeric_text", "person_name",
+    "address", "city", "other",
+)
+_SEMANTIC_ALIASES = {
+    "e-mail": "email", "email_address": "email", "mail": "email",
+    "uuid": "guid", "uniqueidentifier": "guid",
+    "tckn": "national_id", "ssn": "national_id", "national_identifier": "national_id",
+    "vat_id": "tax_id", "tax_number": "tax_id",
+    "zip": "postal_code", "zip_code": "postal_code", "postcode": "postal_code",
+    "ip": "ip_address", "phone_number": "phone", "telephone": "phone",
+    "yyyymmdd": "date_int", "date_key": "date_int", "hhmmss": "time_int",
+    "boolean": "boolean_text", "flag_text": "boolean_text", "sha256": "hash",
+    "iso_country": "country_code", "iso_currency": "currency_code",
+    "name": "person_name", "full_name": "person_name",
+}
 
 
 def _confidence(value: Any) -> Any:
@@ -106,7 +132,7 @@ class ValueDomain(_Base):
     minimum: str | None = None
     maximum: str | None = None
     source: Literal[
-        "check_constraint", "foreign_key", "default", "data_type", "name", "inferred"
+        "check_constraint", "foreign_key", "default", "data_type", "name", "inferred", "profile"
     ] = "inferred"
 
     @field_validator("values", mode="before")
@@ -151,6 +177,19 @@ class ColumnMeaning(_Base):
     alternatives: list[Alternative] = Field(default_factory=list)
     evidence: list[str] = Field(default_factory=list)
     confidence: float = Field(ge=0.0, le=1.0)
+    # Phase 3B; absent from Phase 2 answers.
+    semantic_type: str | None = None
+
+    @field_validator("semantic_type", mode="before")
+    @classmethod
+    def _semantic_type(cls, v: Any) -> Any:
+        if v is None:
+            return None
+        key = str(v).strip().lower().replace(" ", "_").replace("-", "_")
+        if key in _EMPTY_MARKERS or key in ("", "n_a"):
+            return "none"
+        key = _SEMANTIC_ALIASES.get(key, key)
+        return key if key in SEMANTIC_TYPES else "other"
 
     @field_validator("role", mode="before")
     @classmethod

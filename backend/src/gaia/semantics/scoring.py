@@ -40,7 +40,7 @@ Components:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 from gaia.core.config import ProfilingConfig, ScoringConfig
@@ -57,6 +57,7 @@ __all__ = [
     "Component",
     "band_for",
     "score_column",
+    "score_column_v2",
     "summarize_scores",
 ]
 
@@ -379,3 +380,152 @@ def summarize_scores(scores: list[float], bands: ProfilingConfig) -> dict[str, A
         "max": ordered[-1],
         "bands": counts,
     }
+
+
+# -- heuristic-v2 (Phase 3B) -------------------------------------------------------------
+#
+#   evidence_support   noisy-OR(supporting) x (1 - noisy-OR(contradicting))
+#   coherence          mean of claim-vs-fact checks: the catalog checks above
+#                      (evidence refs may now also cite evidence-block refs)
+#                      plus the profile checks from the ledger
+#   counter_evidence   critique verdict (the v2 critique sees the evidence too)
+#   hypothesis_margin  as v1
+#   model_self_report  as v1
+#
+# Properties (tests/unit/test_scoring_v2.py): names alone can never reach
+# accept_at; consistency alone is not enough; specific evidence is; a
+# contradiction lowers a score below the no-evidence baseline.
+
+
+def noisy_or(strengths: list[float]) -> float:
+    p = 1.0
+    for s in strengths:
+        p *= 1.0 - _clamp(s)
+    return 1.0 - p
+
+
+def evidence_support(ledger) -> tuple[float, dict[str, Any]]:
+    support = noisy_or([i.strength for i in ledger.supporting])
+    contra = noisy_or([i.strength for i in ledger.contradicting])
+    return _clamp(support * (1.0 - contra)), {
+        "support": _round(support),
+        "contradiction": _round(contra),
+        "items": [i.as_dict() for i in ledger.items],
+    }
+
+
+def _data_fit(role: str, facts: ColumnFacts, ledger, strengths) -> str | None:
+    """A name-based type rule satisfied by data evidence instead of a name."""
+    t = type_info(facts.dialect, facts.data_type, facts.type_definition)
+    support = [i for i in ledger.items if i.direction == "supports"]
+    if role == "timestamp" and t.fits_date_key():
+        for i in support:
+            if (i.kind == "detector" and i.ref in ("det:date_int", "det:time_int")
+                    and i.strength >= strengths.detector_strong):
+                return f"fits via detector {i.ref.removeprefix('det:')}"
+    if role == "reference":
+        for i in support:
+            if i.kind == "test_inclusion" and i.strength >= strengths.test_passed:
+                return "fits via inclusion test"
+    if role == "identifier":
+        for i in support:
+            if i.kind in ("test_uniqueness", "identifier_unique"):
+                return "fits via unique values"
+    return None
+
+
+def coherence_v2(
+    meaning: ColumnMeaning,
+    facts: ColumnFacts,
+    bundle: TableBundle,
+    ledger,
+    evidence_refs: set[str],
+    alias_names: list[str] | None = None,
+    strengths=None,
+) -> tuple[float, dict[str, Any]]:
+    _value, signals = schema_coherence(meaning, facts, bundle)
+    checks = dict(signals["checks"])
+    # Name-based rules (key-like, date-like) also accept the column's view
+    # aliases: when names are meaningless (f2), the alias (customer_code) is
+    # the only business name there is (A8).
+    if checks["role_type_fit"]["value"] < 1.0 and alias_names:
+        for alias in alias_names:
+            ok, _why = _role_type_fit(meaning, replace(facts, name=alias))
+            if ok:
+                checks["role_type_fit"] = {"value": 1.0, "detail": f"fits via view alias {alias}"}
+                break
+    # ... and data that proves what the name would only suggest (3A): an
+    # integer validated as yyyymmdd is a date key, values found in another
+    # table's key make a reference, unique values an identifier.
+    if checks["role_type_fit"]["value"] < 1.0 and strengths is not None:
+        why = _data_fit(meaning.role, facts, ledger, strengths)
+        if why:
+            checks["role_type_fit"] = {"value": 1.0, "detail": why}
+    cited = list(dict.fromkeys(meaning.evidence))
+    invalid = [
+        r for r in cited if not (bundle.ref_is_valid_for(r, facts.name) or r in evidence_refs)
+    ]
+    checks["evidence_refs_valid"] = {
+        "value": _round((len(cited) - len(invalid)) / len(cited)) if cited else 0.0,
+        "detail": (
+            "no evidence cited"
+            if not cited
+            else (f"invalid refs: {', '.join(invalid)}" if invalid else None)
+        ),
+    }
+    for check in ledger.data_checks:
+        checks[f"data:{check.name}"] = {
+            "value": 1.0 if check.passed else 0.0,
+            "detail": None if check.passed else check.detail,
+        }
+    value = sum(c["value"] for c in checks.values()) / len(checks)
+    return _clamp(value), {"checks": checks}
+
+
+def score_column_v2(
+    meaning: ColumnMeaning,
+    facts: ColumnFacts,
+    bundle: TableBundle,
+    critique: ColumnCritique | None,
+    scoring: ScoringConfig,
+    bands: ProfilingConfig,
+    *,
+    ledger,
+    evidence_refs: set[str] | None = None,
+    alias_names: list[str] | None = None,
+) -> ColumnScore:
+    weights = scoring.v2.weights.model_dump()
+    _check_weights(weights, "scoring.v2.weights")
+    parts = {
+        "evidence_support": evidence_support(ledger),
+        "coherence": coherence_v2(
+            meaning, facts, bundle, ledger, evidence_refs or set(), alias_names,
+            scoring.v2.strengths,
+        ),
+        "counter_evidence": counter_evidence(critique, scoring),
+        "hypothesis_margin": hypothesis_margin(meaning, scoring),
+        "model_self_report": (_clamp(meaning.confidence), {"confidence": meaning.confidence}),
+    }
+    components = [
+        Component(
+            name=name,
+            value=_round(value),
+            weight=float(weights[name]),
+            contribution=_round(float(weights[name]) * _round(value)),
+            signals=signals,
+        )
+        for name, (value, signals) in parts.items()
+    ]
+    raw = _round(sum(c.contribution for c in components))
+    band = band_for(raw, bands)
+    assessed = critique is not None
+    return ColumnScore(
+        raw_score=raw,
+        calibrated_score=raw,  # identity calibrator until Phase 6
+        band=band,
+        status="auto_approved" if band == BAND_ACCEPTED and assessed else "draft",
+        components=components,
+        weights_version="heuristic-v2",
+        calibrator=scoring.calibrator,
+        critique_assessed=assessed,
+    )

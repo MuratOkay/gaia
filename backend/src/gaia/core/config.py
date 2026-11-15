@@ -62,6 +62,8 @@ class TargetLimits(BaseModel):
     connect_timeout_s: int = 15
     statement_timeout_s: int = 30
     lock_timeout_ms: int = 5000
+    # Phase 1 placeholders, not used: profiling has its own limits
+    # (``profiling.budget``); the chat path (Phase 4) will define its own.
     max_sample_rows: int = 200
     max_runtime_per_table_s: int = 120
     max_rows_returned: int = 1000
@@ -93,6 +95,10 @@ class TargetConfig(BaseModel):
     options: TargetOptions = Field(default_factory=TargetOptions)
     limits: TargetLimits = Field(default_factory=TargetLimits)
     capabilities: TargetCapabilities = Field(default_factory=TargetCapabilities)
+    # Phase 3A, per target: profiling can be switched off (catalog-only mode) and
+    # restricted to a window after the target's statistics maintenance (A5).
+    profiling_enabled: bool = True
+    profiling_window: str | None = None  # "HH:MM-HH:MM", overrides profiling.window
 
     def odbc_connection_string(self) -> str:
         """Build a Driver-18 connection string.
@@ -141,7 +147,9 @@ class RetryConfig(BaseModel):
 
 
 class LLMConfig(BaseModel):
-    provider: Literal["deepseek", "ollama"] = "deepseek"
+    # "replay" answers from files (gaia.llm.replay): for tests and for runs
+    # where a person or another system acts as the model.
+    provider: Literal["deepseek", "ollama", "replay"] = "deepseek"
     base_url: str = "https://api.deepseek.com"
     model: str = "deepseek-flash"
     api_key: str = ""
@@ -157,6 +165,13 @@ class LLMConfig(BaseModel):
     timeout_s: int = 1800
     thinking: ThinkingConfig = Field(default_factory=ThinkingConfig)
     retry: RetryConfig = Field(default_factory=RetryConfig)
+    # Prompt size above which a table bundle is split into column chunks
+    # (D17'). Sized for local models with small context windows.
+    context_budget_tokens: int = 32000
+    # Where the model runs (D24): "remote" sends data values only masked unless
+    # profiling.allow_raw_to_remote; "local" sends them raw.
+    locality: Literal["local", "remote"] = "remote"
+    replay_dir: str | None = None
 
 
 class EmbeddingsConfig(BaseModel):
@@ -182,18 +197,47 @@ class CacheConfig(BaseModel):
     ttl_s: CacheTTL = Field(default_factory=CacheTTL)
 
 
-class SampleConfig(BaseModel):
-    rows_per_table: int = 200
-    max_values_per_column: int = 25
-    seed: int = 42
+class ProfilingBudget(BaseModel):
+    """Phase 3A limits (P3-5). Placeholders until the SQL Server measurement
+    (3.0) tunes them; every limit degrades one metric, never the run."""
+
+    full_scan_max_pages: int = 12_800  # small class: everything exact (~100 MB)
+    scan_max_pages: int = 1_000_000  # one exact batched scan allowed up to this size
+    sample_target_rows: int = 10_000
+    max_sample_rows: int = 20_000  # fetch cap (TABLESAMPLE returns approximately)
+    low_cardinality_max: int = 1_000  # exact GROUP BY for columns with at most this many values
+    max_pages_per_table: int = 2_000_000
+    max_pages_per_run: int = 50_000_000
+    max_runtime_per_table_s: int = 180
+    statement_timeout_s: int = 60
+    maxdop: int = 2  # SQL Server MAXDOP / PostgreSQL max_parallel_workers_per_gather
+    work_mem_mb: int | None = None  # PostgreSQL only; None = server default
+    max_join_tests: int = 500  # inclusion tests per run (join candidates)
+    join_test_values: int = 200  # sampled child values per inclusion test
 
 
 class ProfilingConfig(BaseModel):
+    # Phase 3A: on = profile evidence is collected and used by reasoning.
+    # Off = catalog-only evidence is the deepest coverage available, so low
+    # scores go straight to the review queue. config/gaia.yaml turns it on; a
+    # config without the key stays off (nothing reads target data unasked).
+    enabled: bool = False
+    budget: ProfilingBudget = Field(default_factory=ProfilingBudget)
+    # "HH:MM-HH:MM" in the host's local time (may wrap midnight); None = any time.
+    window: str | None = None
+    profile_max_age_days: int = 30
+    # Development override for synthetic data: send raw values to a remote model.
+    allow_raw_to_remote: bool = False
+    # Text columns with at most this many distinct values are codes: their
+    # values are sent raw even in masked mode (unless a detector flags them).
+    code_max_distinct: int = 50
     accept_at: float = 0.80
     deep_profile_below: float = 0.60
     review_required_below: float = 0.45
     row_count_delta_ratio: float = 0.20
-    sample: SampleConfig = Field(default_factory=SampleConfig)
+    # TABLESAMPLE ... REPEATABLE(seed): the same seed reproduces a sample while
+    # data and physical layout are unchanged. Stored with every profile.
+    seed: int = 42
 
 
 class ScoringWeights(BaseModel):
@@ -232,8 +276,62 @@ class CritiqueVerdictValues(BaseModel):
     not_assessed: float = 0.5
 
 
+class ScoringV2Weights(BaseModel):
+    evidence_support: float = 0.35
+    coherence: float = 0.20
+    counter_evidence: float = 0.20
+    hypothesis_margin: float = 0.15
+    model_self_report: float = 0.10
+
+
+class EvidenceStrengths(BaseModel):
+    """Strength of each evidence item in the v2 ledger (PHASES P3-2).
+
+    Placeholders until Phase 6 fits a calibrator on SME labels. A name is never
+    evidence: it is where the hypothesis comes from.
+    """
+
+    # supporting
+    comment: float = 0.60
+    foreign_key_trusted: float = 0.60
+    foreign_key_untrusted: float = 0.30
+    key: float = 0.50
+    check_trusted: float = 0.50
+    check_untrusted: float = 0.25
+    type_definition: float = 0.50
+    default: float = 0.10
+    identity_column: float = 0.40
+    computed_definition: float = 0.40
+    view_alias: float = 0.40
+    lineage: float = 0.40  # a view column's source or expression, when cited
+    detector_strong: float = 0.70  # match rate >= 0.95
+    detector_weak: float = 0.40  # 0.80 <= match rate < 0.95
+    identity_relation: float = 0.70
+    test_passed: float = 0.70
+    profile_check: float = 0.25
+    # contradicting
+    profile_check_failed: float = 0.50
+    test_failed: float = 0.80
+    detector_mismatch_strong: float = 0.50
+    detector_mismatch_weak: float = 0.25
+    foreign_key_role_mismatch: float = 0.50
+    key_role_mismatch: float = 0.30
+    check_ignored: float = 0.25
+    identity_relation_mismatch: float = 0.50
+    identity_column_as_measure: float = 0.50
+    test_role_mismatch: float = 0.50  # e.g. values are included in a key, claim says measure
+
+
+class ScoringV2Config(BaseModel):
+    weights: ScoringV2Weights = Field(default_factory=ScoringV2Weights)
+    strengths: EvidenceStrengths = Field(default_factory=EvidenceStrengths)
+
+
 class ScoringConfig(BaseModel):
-    weights_version: str = "heuristic-v1"
+    # Which scorer runs: the Phase 2 heuristic, or the Phase 3B evidence ledger.
+    version: Literal["heuristic-v1", "heuristic-v2"] = "heuristic-v2"
+    v2: ScoringV2Config = Field(default_factory=ScoringV2Config)
+    weights_version: str = "heuristic-v1"  # label of the v1 weights below
     weights: ScoringWeights = Field(default_factory=ScoringWeights)
     evidence_signals: EvidenceSignals = Field(default_factory=EvidenceSignals)
     critique_verdicts: CritiqueVerdictValues = Field(default_factory=CritiqueVerdictValues)
@@ -249,6 +347,8 @@ class SemanticsConfig(BaseModel):
     validation_retries: int = 1
     # Embed current semantics at the end of each reasoning run.
     embed_after_reasoning: bool = True
+    # Prompt generation: 1 = Phase 2 (catalog only), 2 = Phase 3B (evidence).
+    prompt_major: Literal[1, 2] = 2
 
 
 class QueryConfig(BaseModel):

@@ -33,6 +33,8 @@ EMBEDDING_DIMENSIONS = 1024
 
 SEMANTIC_STATUSES = ("draft", "auto_approved", "sme_reviewed", "sme_rejected", "stale")
 SCORE_BANDS = ("accepted", "deep_profile", "deep_profile_flagged", "abstain")
+COVERAGE_LEVELS = ("catalog", "modules", "light_profile", "targeted", "sme")
+REVIEW_STATUSES = ("open", "done", "dismissed", "superseded")
 
 
 def _status_check() -> sa.CheckConstraint:
@@ -131,6 +133,11 @@ class TableSemantic(Base):
     critique_prompt_version: Mapped[str] = mapped_column(sa.Text, nullable=False)
     model: Mapped[str] = mapped_column(sa.Text, nullable=False)
     thinking: Mapped[bool] = mapped_column(sa.Boolean, nullable=False)
+    # Phase 3B: hash of the rendered evidence block (part of the skip key), how
+    # data values were exposed to the model, and how many column chunks.
+    evidence_hash: Mapped[str | None] = mapped_column(sa.Text)
+    exposure: Mapped[str | None] = mapped_column(sa.Text)
+    chunks: Mapped[int] = mapped_column(sa.Integer, nullable=False, server_default="1")
 
     business_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
     purpose: Mapped[str] = mapped_column(sa.Text, nullable=False)
@@ -176,6 +183,10 @@ class ColumnSemantic(Base):
         _status_check(),
         sa.CheckConstraint(
             "band IN (" + ", ".join(f"'{b}'" for b in SCORE_BANDS) + ")", name="band"
+        ),
+        sa.CheckConstraint(
+            "coverage IN (" + ", ".join(f"'{c}'" for c in COVERAGE_LEVELS) + ")",
+            name="coverage",
         ),
         {"schema": "semantics"},
     )
@@ -224,6 +235,14 @@ class ColumnSemantic(Base):
     score_breakdown: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
     weights_version: Mapped[str] = mapped_column(sa.Text, nullable=False)
     calibrator: Mapped[str] = mapped_column(sa.Text, nullable=False)
+
+    # Phase 3B: deterministic value type (from detectors when the data was
+    # profiled), the model's own claim, the deepest evidence stage reached, and
+    # whether the column looks unused (empty or constant).
+    semantic_type: Mapped[str | None] = mapped_column(sa.Text)
+    claimed_semantic_type: Mapped[str | None] = mapped_column(sa.Text)
+    coverage: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="catalog")
+    unused: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, server_default=sa.false())
 
     # Phase 3 (PHASES decision 6): stored, never applied, in v1.
     pii_types: Mapped[list[str] | None] = mapped_column(ARRAY(sa.Text))
@@ -418,3 +437,91 @@ class Embedding(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class EvidenceItem(Base):
+    """One entry of a column version's evidence ledger (Phase 3B, heuristic-v2).
+
+    Stored per scored version, so a score can be traced to its evidence and
+    Phase 6 can fit a calibrator on SME-reviewed examples.
+    """
+
+    __tablename__ = "evidence_item"
+    __table_args__ = (
+        sa.Index("ix_evidence_item_column_semantic", "column_semantic_id"),
+        sa.Index("ix_evidence_item_kind", "kind", "direction"),
+        sa.CheckConstraint("direction IN ('supports', 'contradicts')", name="direction"),
+        sa.CheckConstraint(
+            "source IN ('catalog', 'module', 'profile', 'detector', 'identity', 'test', 'sme')",
+            name="source",
+        ),
+        {"schema": "semantics"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    column_semantic_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("semantics.column_semantic.id", ondelete="CASCADE"), nullable=False
+    )
+    table_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.tables.id", ondelete="CASCADE"), nullable=False
+    )
+    kind: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    direction: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    strength: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ref: Mapped[str | None] = mapped_column(sa.Text)
+    detail: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+
+
+class ReviewItem(Base):
+    """The SME review queue (Phase 3B Stage 4; the UI is Phase 5).
+
+    One *open* item per column at most; a newer scored version supersedes it.
+    ``priority = (1 - score) x importance``; importance comes from row count,
+    foreign-key degree and whether the column is a key or indexed.
+    """
+
+    __tablename__ = "review_item"
+    __table_args__ = (
+        sa.Index(
+            "uq_review_item_open_column",
+            "column_id",
+            unique=True,
+            postgresql_where=sa.text("status = 'open'"),
+        ),
+        sa.Index("ix_review_item_queue", "data_source_id", "status", "priority"),
+        sa.CheckConstraint(
+            "status IN (" + ", ".join(f"'{s}'" for s in REVIEW_STATUSES) + ")", name="status"
+        ),
+        sa.CheckConstraint("subject_kind IN ('column', 'table')", name="subject_kind"),
+        {"schema": "semantics"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    data_source_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    table_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.tables.id", ondelete="CASCADE"), nullable=False
+    )
+    column_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("catalog.columns.id", ondelete="CASCADE")
+    )
+    column_semantic_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("semantics.column_semantic.id", ondelete="SET NULL")
+    )
+    subject_kind: Mapped[str] = mapped_column(sa.Text, nullable=False, default="column")
+    reasons: Mapped[list[str]] = mapped_column(ARRAY(sa.Text), nullable=False, default=list)
+    priority: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    score: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    importance: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    coverage: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, default="open")
+    assignee: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))

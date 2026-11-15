@@ -34,8 +34,8 @@ targets:
       connect_timeout_s: 15
       statement_timeout_s: 30
       lock_timeout_ms: 5000
-      max_sample_rows: 200
-      max_runtime_per_table_s: 120
+      max_sample_rows: 200         # Phase 1 legacy, unused; profiling uses profiling.budget
+      max_runtime_per_table_s: 120 # Phase 1 legacy, unused; profiling uses profiling.budget
       max_rows_returned: 1000
       isolation: read_uncommitted
     capabilities:
@@ -61,8 +61,8 @@ targets:
       connect_timeout_s: 15
       statement_timeout_s: 30     # enforced per session (SET statement_timeout)
       lock_timeout_ms: 5000
-      max_sample_rows: 200
-      max_runtime_per_table_s: 120
+      max_sample_rows: 200         # Phase 1 legacy, unused; profiling uses profiling.budget
+      max_runtime_per_table_s: 120 # Phase 1 legacy, unused; profiling uses profiling.budget
       max_rows_returned: 1000
       isolation: read_uncommitted # no PostgreSQL equivalent; catalog reads use REPEATABLE READ
     # SQL Server capability flags; not used by the PostgreSQL dialect.
@@ -83,6 +83,12 @@ llm:
   # full answer is ready, so this is sized for the widest bundle, not a typical
   # one. The current provider is slow by nature; re-assess on provider change.
   timeout_s: 1800
+  # Phase 3B. Prompts larger than this are split into column chunks (D17').
+  context_budget_tokens: 32000
+  # Where the model runs (D24). remote: data values reach the model only as
+  # shapes for personal-data and high-cardinality text columns.
+  locality: remote
+  # replay_dir: /path   # with provider: replay (or `make reason ARGS="--replay DIR"`)
   thinking:
     # Thinking is on by default in DeepSeek; disable where latency matters more
     # than depth.
@@ -120,18 +126,66 @@ cache:
     lock: 600             # 10 minutes
 
 profiling:
+  # Phase 3A. On: evidence is collected from the target (make profile) and used
+  # by reasoning. Off (or targets.<name>.profiling_enabled: false): catalog
+  # evidence is all there will be, so columns below accept_at go straight to
+  # the review queue.
+  enabled: true
+  # "HH:MM-HH:MM" host local time, may wrap midnight; after the target's
+  # statistics maintenance (A5). targets.<name>.profiling_window overrides it.
+  window: null
+  # Re-profile when the structure changed, the row count moved more than
+  # row_count_delta_ratio, or the profile is older than this (P3-6).
+  profile_max_age_days: 30
+  row_count_delta_ratio: 0.20
+  seed: 42                      # TABLESAMPLE ... REPEATABLE(seed)
+  budget:                       # P3-5; placeholders until the SQL Server 3.0 measurement
+    full_scan_max_pages: 12800  # <= ~100 MB: everything exact
+    scan_max_pages: 1000000     # one batched exact scan allowed up to ~8 GB
+    sample_target_rows: 10000
+    max_sample_rows: 20000
+    low_cardinality_max: 1000   # exact GROUP BY top-k below this many values
+    max_pages_per_table: 2000000
+    max_pages_per_run: 50000000
+    max_runtime_per_table_s: 180
+    statement_timeout_s: 60
+    maxdop: 2                   # PostgreSQL: max_parallel_workers_per_gather
+    work_mem_mb: null           # PostgreSQL only
+    max_join_tests: 500
+    join_test_values: 200
+  # Development override for synthetic data only: raw values to a remote model.
+  allow_raw_to_remote: false
+  # Text columns with at most this many distinct values count as codes; their
+  # values stay readable in masked mode unless a detector flags personal data.
+  code_max_distinct: 50
   # Confidence bands; see OUTLINE.md §12.
   accept_at: 0.80
   deep_profile_below: 0.60
   review_required_below: 0.45
-  # Re-profile unchanged-but-grown tables when row count moves more than this.
-  row_count_delta_ratio: 0.20
-  sample:
-    rows_per_table: 200
-    max_values_per_column: 25
-    seed: 42
 
 scoring:
+  # heuristic-v2 (Phase 3B, P3-2): evidence ledger. heuristic-v1: Phase 2.
+  version: heuristic-v2
+  v2:
+    weights:                    # sum = 1.0
+      evidence_support: 0.35    # noisy-OR(supporting) x (1 - noisy-OR(contradicting))
+      coherence: 0.20           # claim vs catalog and data checks
+      counter_evidence: 0.20    # critique verdict
+      hypothesis_margin: 0.15
+      model_self_report: 0.10
+    # Evidence strengths: placeholders until Phase 6 calibrates on SME labels.
+    # All keys: gaia.core.config.EvidenceStrengths. A name is never evidence.
+    strengths:
+      comment: 0.60
+      foreign_key_trusted: 0.60
+      key: 0.50
+      check_trusted: 0.50
+      detector_strong: 0.70
+      test_passed: 0.70
+      profile_check: 0.25
+      profile_check_failed: 0.50
+      test_failed: 0.80
+  # --- heuristic-v1 (Phase 2) -----------------------------------------------
   # Heuristic weights, sum = 1.0. Replace with a fitted calibrator once SME
   # reviews exist; the weights version is stored with every score.
   weights_version: heuristic-v1
@@ -166,6 +220,9 @@ scoring:
 semantics:
   validation_retries: 1         # re-ask with the validation errors, then fail
   embed_after_reasoning: true
+  # 2 = Phase 3B prompts (evidence block, semantic_type); 1 = Phase 2 prompts.
+  # Changing it changes the prompt versions, so every table is re-reasoned once.
+  prompt_major: 2
 
 query:
   max_repair_attempts: 2

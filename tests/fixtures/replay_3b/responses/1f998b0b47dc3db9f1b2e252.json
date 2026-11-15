@@ -1,0 +1,440 @@
+{
+ "table": {
+  "business_name": "Legacy Sales Transaction",
+  "purpose": "Sales transactions carried over from an earlier system: who bought, when, where, how many, at what price, in which currency and with what outcome.",
+  "grain": "One row per legacy sales transaction.",
+  "entity": "Sales transaction",
+  "synonyms": [
+   "historic sales",
+   "legacy transactions"
+  ],
+  "assumptions": [
+   "The view rpt.v_legacy_transactions exposes this table with business names, so its aliases describe these columns."
+  ],
+  "unknowns": [
+   "Whether a transaction can have several lines; the unique f1 suggests one row per transaction.",
+   "Which system produced the data and why it stops at 2022-12-30."
+  ],
+  "confidence": 0.8
+ },
+ "columns": [
+  {
+   "name": "f1",
+   "business_name": "Transaction ID",
+   "purpose": "Unique number of the legacy transaction.",
+   "role": "identifier",
+   "semantic_type": "none",
+   "entity": "Sales transaction",
+   "unit": null,
+   "value_domain": {
+    "kind": "range",
+    "description": "Unique integers from 900000000 to 900199999.",
+    "values": [],
+    "minimum": "900000000",
+    "maximum": "900199999",
+    "source": "profile"
+   },
+   "synonyms": [
+    "transaction number"
+   ],
+   "example_questions": [
+    "Show me legacy transaction 900008546.",
+    "How many legacy transactions are there?"
+   ],
+   "assumptions": [],
+   "unknowns": [],
+   "alternatives": [
+    {
+     "business_name": "Legacy Document Number",
+     "purpose": "Number of the source document rather than of the transaction.",
+     "confidence": 0.1
+    }
+   ],
+   "evidence": [
+    "ix:ux_trx02_f1",
+    "mod:rpt.v_legacy_transactions.transaction_id",
+    "prof:distinct"
+   ],
+   "confidence": 0.92
+  },
+  {
+   "name": "f2",
+   "business_name": "Customer Code",
+   "purpose": "Code of the customer who made the purchase.",
+   "role": "reference",
+   "semantic_type": "none",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "pattern",
+    "description": "A letter followed by eight digits.",
+    "values": [],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "customer number",
+    "account code"
+   ],
+   "example_questions": [
+    "Which customers made the most legacy purchases?",
+    "What did customer C00012345 buy before 2023?"
+   ],
+   "assumptions": [
+    "The code matches the customer code used elsewhere in the database."
+   ],
+   "unknowns": [
+    "Which table holds the master record for these codes; there is no declared foreign key."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Loyalty Card Number",
+     "purpose": "A card identifier rather than a customer code.",
+     "confidence": 0.1
+    }
+   ],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.customer_code",
+    "ix:ix_trx02_f2",
+    "prof:length",
+    "prof:distinct"
+   ],
+   "confidence": 0.82
+  },
+  {
+   "name": "f3",
+   "business_name": "Transaction Date",
+   "purpose": "Date of the transaction, stored as a yyyymmdd number.",
+   "role": "timestamp",
+   "semantic_type": "date_int",
+   "entity": "Sales transaction",
+   "unit": null,
+   "value_domain": {
+    "kind": "range",
+    "description": "Dates between 2019-01-01 and 2022-12-30 as yyyymmdd integers.",
+    "values": [],
+    "minimum": "20190101",
+    "maximum": "20221230",
+    "source": "profile"
+   },
+   "synonyms": [
+    "sale date",
+    "booking date"
+   ],
+   "example_questions": [
+    "What were legacy sales per month in 2021?",
+    "On which days did sales peak?"
+   ],
+   "assumptions": [
+    "It is the sales date rather than a posting date."
+   ],
+   "unknowns": [
+    "Time zone of the date."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Posting Date",
+     "purpose": "Date the transaction was booked in accounting.",
+     "confidence": 0.2
+    }
+   ],
+   "evidence": [
+    "type",
+    "det:date_int",
+    "prof:range"
+   ],
+   "confidence": 0.8
+  },
+  {
+   "name": "f4",
+   "business_name": "Transaction Time",
+   "purpose": "Time of day of the transaction as an hhmmss number; leading zeros are lost (80000 = 08:00:00).",
+   "role": "timestamp",
+   "semantic_type": "time_int",
+   "entity": "Sales transaction",
+   "unit": null,
+   "value_domain": {
+    "kind": "range",
+    "description": "Times between 08:00:00 and 21:59:59 stored as integers.",
+    "values": [],
+    "minimum": "80000",
+    "maximum": "215959",
+    "source": "profile"
+   },
+   "synonyms": [
+    "sale time"
+   ],
+   "example_questions": [
+    "At what time of day do most legacy sales happen?"
+   ],
+   "assumptions": [
+    "Five-digit values are times before 10:00 without the leading zero."
+   ],
+   "unknowns": [
+    "Whether the time is local store time."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Receipt Sequence",
+     "purpose": "A running number within the day.",
+     "confidence": 0.15
+    }
+   ],
+   "evidence": [
+    "det:time_int",
+    "prof:range",
+    "sibling_columns"
+   ],
+   "confidence": 0.65
+  },
+  {
+   "name": "f5",
+   "business_name": "Quantity",
+   "purpose": "Number of units sold in the transaction.",
+   "role": "measure",
+   "semantic_type": "none",
+   "entity": "Sales transaction",
+   "unit": "units",
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "Small counts: 1, 2, 3, 5 or 10.",
+    "values": [
+     "1",
+     "2",
+     "3",
+     "5",
+     "10"
+    ],
+    "minimum": "1",
+    "maximum": "10",
+    "source": "profile"
+   },
+   "synonyms": [
+    "units",
+    "qty"
+   ],
+   "example_questions": [
+    "How many units were sold in 2020?"
+   ],
+   "assumptions": [],
+   "unknowns": [],
+   "alternatives": [
+    {
+     "business_name": "Pack Size",
+     "purpose": "Units per pack.",
+     "confidence": 0.05
+    }
+   ],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.quantity",
+    "prof:top_values"
+   ],
+   "confidence": 0.92
+  },
+  {
+   "name": "f6",
+   "business_name": "Unit Price",
+   "purpose": "Price of one unit in the transaction currency.",
+   "role": "measure",
+   "semantic_type": "none",
+   "entity": "Sales transaction",
+   "unit": "currency (given per row in f10)",
+   "value_domain": {
+    "kind": "range",
+    "description": "Prices from 1.01 to 4999.98.",
+    "values": [],
+    "minimum": "1.01",
+    "maximum": "4999.98",
+    "source": "profile"
+   },
+   "synonyms": [
+    "price"
+   ],
+   "example_questions": [
+    "What was the average unit price per store?"
+   ],
+   "assumptions": [
+    "The price is in the currency of f10."
+   ],
+   "unknowns": [
+    "Whether the price includes tax."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Unit Cost",
+     "purpose": "Purchase cost of one unit.",
+     "confidence": 0.1
+    }
+   ],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.unit_price",
+    "prof:range"
+   ],
+   "confidence": 0.9
+  },
+  {
+   "name": "f7",
+   "business_name": "Transaction Amount",
+   "purpose": "Total value of the transaction: quantity times unit price.",
+   "role": "measure",
+   "semantic_type": "none",
+   "entity": "Sales transaction",
+   "unit": "currency (given per row in f10)",
+   "value_domain": {
+    "kind": "range",
+    "description": "Amounts from 1.04 to 49993.50.",
+    "values": [],
+    "minimum": "1.04",
+    "maximum": "49993.50",
+    "source": "profile"
+   },
+   "synonyms": [
+    "sales amount",
+    "revenue"
+   ],
+   "example_questions": [
+    "What was legacy revenue per year?",
+    "Which store had the highest sales amount?"
+   ],
+   "assumptions": [
+    "No discount or tax is included, since f7 = f5 × f6 exactly."
+   ],
+   "unknowns": [
+    "Whether cancelled transactions (f8 = CN) should be excluded from revenue."
+   ],
+   "alternatives": [],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.amount",
+    "prof:range"
+   ],
+   "confidence": 0.94
+  },
+  {
+   "name": "f8",
+   "business_name": "Transaction Status Code",
+   "purpose": "Outcome of the transaction: completed, cancelled or returned.",
+   "role": "code",
+   "semantic_type": "none",
+   "entity": "Sales transaction",
+   "unit": null,
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "OK (90%), CN (6%), RT (4%).",
+    "values": [
+     "OK",
+     "CN",
+     "RT"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "status"
+   ],
+   "example_questions": [
+    "What share of legacy transactions were cancelled?"
+   ],
+   "assumptions": [
+    "OK = completed, CN = cancelled, RT = returned."
+   ],
+   "unknowns": [
+    "The exact meaning of each code; a lookup table may define them."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Payment Result Code",
+     "purpose": "Result of the payment rather than of the sale.",
+     "confidence": 0.15
+    }
+   ],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.status_code",
+    "prof:top_values",
+    "prof:length"
+   ],
+   "confidence": 0.85
+  },
+  {
+   "name": "f9",
+   "business_name": "Store Code",
+   "purpose": "Code of the store where the transaction took place.",
+   "role": "code",
+   "semantic_type": "none",
+   "entity": "Store",
+   "unit": null,
+   "value_domain": {
+    "kind": "pattern",
+    "description": "A letter followed by three digits; 140 distinct values.",
+    "values": [],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "branch code",
+    "shop code"
+   ],
+   "example_questions": [
+    "Which store sold the most before 2023?"
+   ],
+   "assumptions": [],
+   "unknowns": [
+    "Which table describes the stores; there is no declared foreign key.",
+    "Why there are 140 codes."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Sales Channel Code",
+     "purpose": "Channel rather than physical store.",
+     "confidence": 0.1
+    }
+   ],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.store_code",
+    "prof:distinct",
+    "prof:length"
+   ],
+   "confidence": 0.82
+  },
+  {
+   "name": "f10",
+   "business_name": "Currency Code",
+   "purpose": "ISO 4217 currency of the prices and amount.",
+   "role": "code",
+   "semantic_type": "currency_code",
+   "entity": "Sales transaction",
+   "unit": null,
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "TRY (97%) or USD (3%).",
+    "values": [
+     "TRY",
+     "USD"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "currency"
+   ],
+   "example_questions": [
+    "How much legacy revenue was in US dollars?"
+   ],
+   "assumptions": [],
+   "unknowns": [],
+   "alternatives": [],
+   "evidence": [
+    "det:currency_code",
+    "prof:top_values"
+   ],
+   "confidence": 0.92
+  }
+ ],
+ "join_hints": []
+}

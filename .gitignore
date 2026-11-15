@@ -33,3 +33,6 @@ logs/
 .vscode/
 .idea/
 .DS_Store
+
+# Verification
+verification/

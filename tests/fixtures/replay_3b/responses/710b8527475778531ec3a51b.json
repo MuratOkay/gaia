@@ -1,0 +1,33 @@
+{
+  "table": {
+    "business_name": "Department",
+    "purpose": "The company's departments, with a short code, a name and the cost center they book to.",
+    "grain": "One row per department.",
+    "entity": "Department",
+    "synonyms": ["organisational unit", "division"],
+    "assumptions": [],
+    "unknowns": ["Whether departments can be nested; there is no parent column."],
+    "confidence": 0.85
+  },
+  "columns": [
+    {"name": "dept_id", "business_name": "Department ID", "purpose": "Numeric key of the department.", "role": "identifier", "semantic_type": "none", "entity": "Department", "unit": null,
+     "value_domain": {"kind": "range", "description": "Integers 1 to 12.", "values": [], "minimum": "1", "maximum": "12", "source": "profile"},
+     "synonyms": ["department number"], "example_questions": ["Which department has ID 4?"], "assumptions": [], "unknowns": [],
+     "alternatives": [{"business_name": "Department Sort Order", "purpose": "Display order.", "confidence": 0.05}],
+     "evidence": ["pk:departments_pkey", "prof:distinct"], "confidence": 0.9},
+    {"name": "dept_code", "business_name": "Department Code", "purpose": "Three-letter code of the department, e.g. FIN or SAL.", "role": "code", "semantic_type": "none", "entity": "Department", "unit": null,
+     "value_domain": {"kind": "enumeration", "description": "Twelve three-letter codes.", "values": ["MGT", "ANL", "LOG", "ITS", "SAL", "STR", "CSV", "HRS", "PUR", "LEG", "FIN", "MKT"], "minimum": null, "maximum": null, "source": "profile"},
+     "synonyms": ["department abbreviation"], "example_questions": ["Which department code belongs to Finance?"], "assumptions": ["FIN and MKT complete the list beyond the ten values shown."], "unknowns": [],
+     "alternatives": [], "evidence": ["uq:departments_dept_code_key", "prof:top_values", "prof:length"], "confidence": 0.9},
+    {"name": "name", "business_name": "Department Name", "purpose": "Full name of the department.", "role": "dimension", "semantic_type": "none", "entity": "Department", "unit": null,
+     "value_domain": {"kind": "free", "description": "Names such as Finance, Logistics, Sales.", "values": [], "minimum": null, "maximum": null, "source": "profile"},
+     "synonyms": ["department"], "example_questions": ["How many employees work in each department?"], "assumptions": [], "unknowns": [],
+     "alternatives": [], "evidence": ["prof:top_values", "name"], "confidence": 0.9},
+    {"name": "cost_center", "business_name": "Cost Center", "purpose": "Accounting cost center the department's costs are booked to.", "role": "code", "semantic_type": "none", "entity": "Department", "unit": null,
+     "value_domain": {"kind": "pattern", "description": "CC- followed by three digits.", "values": [], "minimum": "CC-100", "maximum": "CC-510", "source": "profile"},
+     "synonyms": ["cost centre"], "example_questions": ["Which cost center does Logistics use?"], "assumptions": [], "unknowns": ["Whether cost centers are shared across departments (here each is distinct)."],
+     "alternatives": [{"business_name": "Budget Code", "purpose": "Budget line rather than cost center.", "confidence": 0.15}],
+     "evidence": ["prof:top_values", "prof:range"], "confidence": 0.85}
+  ],
+  "join_hints": []
+}

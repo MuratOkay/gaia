@@ -49,10 +49,8 @@ import re
 from datetime import UTC, datetime
 from typing import Any
 
-import psycopg
-
 from gaia.core.config import TargetConfig
-from gaia.dialects.postgres.connection import session
+from gaia.dialects.postgres.connection import GuardedCursor, session
 from gaia.introspect.snapshot import (
     ColumnSnapshot,
     ConstraintSnapshot,
@@ -204,7 +202,7 @@ class PostgresCatalogReader:
     # -- helpers -------------------------------------------------------------------
 
     @staticmethod
-    def _scalar(cur: psycopg.Cursor, query: str) -> Any:
+    def _scalar(cur: GuardedCursor, query: str) -> Any:
         cur.execute(query)
         row = cur.fetchone()
         return None if row is None else row[0]
@@ -212,7 +210,7 @@ class PostgresCatalogReader:
     # -- catalog queries ---------------------------------------------------------
 
     def _read_objects(
-        self, cur: psycopg.Cursor
+        self, cur: GuardedCursor
     ) -> list[tuple[int, str, str, str, str, str | None]]:
         cur.execute(
             f"""
@@ -236,7 +234,7 @@ class PostgresCatalogReader:
         return [(int(r[0]), r[1], r[2], r[3], r[4], r[5]) for r in cur.fetchall()]
 
     def _read_columns(
-        self, cur: psycopg.Cursor, oids: list[int]
+        self, cur: GuardedCursor, oids: list[int]
     ) -> dict[int, list[ColumnSnapshot]]:
         cur.execute(
             """
@@ -335,7 +333,7 @@ class PostgresCatalogReader:
         return out
 
     def _read_constraints(
-        self, cur: psycopg.Cursor, oids: list[int]
+        self, cur: GuardedCursor, oids: list[int]
     ) -> dict[int, list[ConstraintSnapshot]]:
         """Primary key, unique, check and exclusion constraints (FKs separately)."""
         cur.execute(
@@ -376,7 +374,7 @@ class PostgresCatalogReader:
         return out
 
     def _read_foreign_keys(
-        self, cur: psycopg.Cursor, oids: list[int]
+        self, cur: GuardedCursor, oids: list[int]
     ) -> dict[int, list[RelationSnapshot]]:
         cur.execute(
             """
@@ -431,7 +429,7 @@ class PostgresCatalogReader:
             )
         return out
 
-    def _read_indexes(self, cur: psycopg.Cursor, oids: list[int]) -> dict[int, list[IndexSnapshot]]:
+    def _read_indexes(self, cur: GuardedCursor, oids: list[int]) -> dict[int, list[IndexSnapshot]]:
         cur.execute(
             """
             SELECT i.indrelid,
@@ -488,7 +486,7 @@ class PostgresCatalogReader:
             out.setdefault(relid, []).append(snap)
         return out
 
-    def _read_sizes(self, cur: psycopg.Cursor, oids: list[int]) -> dict[int, dict[str, Any]]:
+    def _read_sizes(self, cur: GuardedCursor, oids: list[int]) -> dict[int, dict[str, Any]]:
         """Rows, size and statistics freshness, summed over partitions."""
         if not oids:
             return {}

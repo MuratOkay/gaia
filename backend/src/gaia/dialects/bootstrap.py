@@ -22,12 +22,21 @@ BUILTIN_DIALECTS = {
 }
 
 _READERS = {"mssql": "MssqlCatalogReader", "postgres": "PostgresCatalogReader"}
+_PROFILERS = {"mssql": "MssqlProfiler", "postgres": "PostgresProfiler"}
 
 
 def _reader_factory(package: str):
     def factory(**kwargs):
         module = import_module(f"gaia.dialects.{package}.catalog")
         return getattr(module, _READERS[package])(**kwargs)
+
+    return factory
+
+
+def _profiler_factory(package: str):
+    def factory(**kwargs):
+        module = import_module(f"gaia.dialects.{package}.profiler")
+        return getattr(module, _PROFILERS[package])(**kwargs)
 
     return factory
 
@@ -43,6 +52,7 @@ def register_builtin_dialects() -> None:
     """Idempotent registration of the dialects Gaia ships with."""
     for name, package in BUILTIN_DIALECTS.items():
         registry.register_reader(name, _reader_factory(package))
+        registry.register_profiler(name, _profiler_factory(package))
         registry.register_probe(name, _probe_loader(package))
 
 

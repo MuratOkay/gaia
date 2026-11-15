@@ -68,6 +68,13 @@ src = ["src"]
 select = ["E", "F", "I", "UP", "B", "ASYNC", "S", "RET"]
 ignore = ["S101"]
 
+[tool.ruff.lint.per-file-ignores]
+# Measurement and profiling statements are assembled from catalog identifiers,
+# quoted and escaped by the dialect (quote()); values travel as parameters; no
+# user-supplied text reaches them.
+"src/gaia/dialects/*/measure.py" = ["S608"]
+"src/gaia/dialects/*/profiler.py" = ["S608"]
+
 [tool.mypy]
 python_version = "3.12"
 packages = ["gaia"]

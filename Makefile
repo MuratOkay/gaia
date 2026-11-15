@@ -76,8 +76,13 @@ dev-api: ## Run the FastAPI app with reload
 	cd $(ROOT)/backend && $(VENV)/bin/uvicorn gaia.main:app --reload --host 127.0.0.1 --port 8000
 
 .PHONY: test
-test: ## Run the test suite
-	cd $(ROOT)/backend && $(VENV)/bin/pytest -q
+test: ## Run the test suite (ARGS="tests/integration/test_x.py -k name" for a subset)
+	cd $(ROOT) && $(VENV)/bin/pytest -q -c backend/pyproject.toml $(ARGS)
+
+.PHONY: test-db
+test-db: ## Create the disposable gaia_test database used by the PostgreSQL integration tests
+	-docker exec gaia-metadata-db createdb -U $${GAIA_METADATA_USER:-gaia} gaia_test
+	@echo "then: GAIA_TEST_DATABASE_URL=postgresql+asyncpg://gaia:<password>@127.0.0.1:5433/gaia_test make test"
 
 .PHONY: lint
 lint: ## Ruff check + format check
@@ -137,17 +142,37 @@ introspect-dry: ## Introspection without persisting (TARGET=...)
 introspect-json: ## Dump the canonical snapshot document (TARGET=...)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.introspect --dry-run --json /tmp/gaia-snapshot.json $(TARGET_ARG)
 
+.PHONY: measure
+measure: ## Phase 3.0 profiling-cost measurements (TARGET=...; ARGS="--table dw.sales_wide")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.measure_target $(TARGET_ARG) $(ARGS)
+
+.PHONY: profile
+profile: ## Phase 3A Stage 1: profile the target + join candidates (TARGET=...; ARGS="--table x --report")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.profile $(TARGET_ARG) $(ARGS)
+
+.PHONY: profile-dry
+profile-dry: ## What Stage 1 would profile, reuse or skip; no target reads (TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.profile --dry-run $(TARGET_ARG) $(ARGS)
+
+.PHONY: profile-tests
+profile-tests: ## Phase 3A Stage 3: test the stored claims (after make reason; TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.profile --stage 3 $(TARGET_ARG) $(ARGS)
+
 .PHONY: check-embed
 check-embed: ## Smoke-test the embedding endpoint
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.check_embeddings
 
 .PHONY: reason
-reason: ## Phase 2 reasoning over the stored snapshot (ARGS="--table dbo.x --with-neighbours"; TARGET=...)
+reason: ## Reasoning over the stored snapshot and evidence (ARGS="--table dbo.x --with-neighbours"; TARGET=...)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason $(TARGET_ARG) $(ARGS)
 
 .PHONY: reason-dry
 reason-dry: ## Show what reasoning would do; no LLM calls, no writes (ARGS=...; TARGET=...)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --dry-run $(TARGET_ARG) $(ARGS)
+
+.PHONY: review
+review: ## Show the SME review queue, highest priority first (TARGET=...; ARGS="--limit 100")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.review $(TARGET_ARG) $(ARGS)
 
 .PHONY: check-llm
 check-llm: ## Smoke-test the reasoning LLM (plain, JSON mode, thinking)

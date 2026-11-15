@@ -216,6 +216,12 @@ def snapshot_factory():
 # -- fake reasoning LLM -------------------------------------------------------------------
 
 _BUNDLE = re.compile(r"Table bundle \(json\):\n(\{.*?\n\})(?:\n\n|$)", re.DOTALL)
+_EVIDENCE = re.compile(r"Evidence \(json\):\n(\{.*?\n\})(?:\n\n|$)", re.DOTALL)
+
+
+def _evidence_from(messages) -> dict | None:
+    match = _EVIDENCE.search(messages[1].content)
+    return json.loads(match.group(1)) if match else None
 
 
 def _bundle_from(messages) -> dict:
@@ -225,7 +231,22 @@ def _bundle_from(messages) -> dict:
     return json.loads(match.group(1))
 
 
-def _fake_column(col: dict, bundle: dict) -> dict:
+def _fake_column(col: dict, bundle: dict, evidence: dict | None = None) -> dict:
+    """Phase 2 answer; with ``evidence`` (v2 prompts) it also cites the column's
+    evidence refs and claims the detected semantic type, like a careful model."""
+    answer = _fake_column_v1(col, bundle)
+    if evidence is None:
+        return answer
+    entry = next((c for c in evidence.get("columns", []) if c["name"] == col["name"]), {})
+    answer["evidence"] = [*answer["evidence"], *entry.get("refs", [])]
+    detectors = entry.get("detectors") or []
+    answer["semantic_type"] = detectors[0]["type"] if detectors else "none"
+    if detectors and detectors[0]["type"] == "email":
+        answer["role"] = "dimension"
+    return answer
+
+
+def _fake_column_v1(col: dict, bundle: dict) -> dict:
     name, dtype = col["name"], col["type"]
     fk = next((f for f in bundle.get("foreign_keys", []) if name in f["columns"]), None)
     pk = bundle.get("primary_key")
@@ -325,6 +346,7 @@ class FakeLLM:
         self, messages, *, json_mode=False, thinking=False, max_tokens=None, temperature=None
     ):
         bundle = _bundle_from(messages)
+        evidence = _evidence_from(messages)
         table = bundle["table"]
         critique = messages[0].content.startswith("You are a sceptical reviewer")
         purpose = "critique" if critique else "semantics"
@@ -361,7 +383,7 @@ class FakeLLM:
         else:
             if table in self.fail_tables:
                 return LLMResponse(content="this is not json", model="fake", finish_reason="stop")
-            columns = [_fake_column(c, bundle) for c in bundle["columns"]]
+            columns = [_fake_column(c, bundle, evidence) for c in bundle["columns"]]
             if table in self.heal_tables and len(messages) == 2:
                 columns = columns[1:]
             join_hints = []
@@ -467,9 +489,9 @@ async def pg_session_factory():
 
     engine = create_async_engine(url)
     async with engine.begin() as conn:
-        for schema in ("audit", "semantics", "catalog"):
+        for schema in ("audit", "profiling", "semantics", "catalog"):
             await conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
-        for schema in ("catalog", "semantics", "audit"):
+        for schema in ("catalog", "semantics", "profiling", "audit"):
             await conn.execute(sa.text(f"CREATE SCHEMA {schema}"))
         await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         has_trgm = await conn.scalar(

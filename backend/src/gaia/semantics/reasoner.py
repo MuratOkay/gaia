@@ -13,6 +13,12 @@ Message layout, for provider prefix caching (OUTLINE §14):
     [system]  reasoning prompt                      identical for every call
     [user]    object list of the data source        identical within a run
               + table bundle                        the only per-table part
+              + evidence (v2 prompts only)          per table
+
+Prompt generation 2 (Phase 3B) adds the evidence block, the ``semantic_type``
+field and chunking of wide tables: when a bundle would exceed the context or
+output budget it is reasoned and critiqued in column chunks, and the answers
+are merged (``semantics.chunking``). Generation 1 behaves exactly as in Phase 2.
 """
 
 from __future__ import annotations
@@ -23,7 +29,15 @@ from gaia.llm.base import LLMClient, Message
 from gaia.llm.cache import KVCache
 from gaia.llm.structured import CallRecord, StructuredOutputError, complete_structured
 from gaia.semantics.bundle import CatalogIndex, TableBundle
+from gaia.semantics.chunking import (
+    chunk_bundle,
+    estimate_tokens,
+    merge_critiques,
+    merge_reasonings,
+    plan_chunks,
+)
 from gaia.semantics.critique import critique_messages, critique_prompt
+from gaia.semantics.evidence import RenderedEvidence
 from gaia.semantics.prompts import Prompt, load_prompt
 from gaia.semantics.schemas import (
     TableCritique,
@@ -46,18 +60,25 @@ __all__ = [
 DeclaredJoin = tuple[str, tuple[str, ...], str, tuple[str, ...]]
 
 
-def reasoning_prompt() -> Prompt:
-    return load_prompt("reason_table", 1)
+def reasoning_prompt(major: int = 1) -> Prompt:
+    return load_prompt("reason_table", major)
 
 
-def reasoning_messages(bundle: TableBundle, index: CatalogIndex) -> list[Message]:
+def reasoning_messages(
+    bundle: TableBundle,
+    index: CatalogIndex,
+    evidence: RenderedEvidence | None = None,
+    major: int = 1,
+) -> list[Message]:
     user = (
         "Object list of this database (use it only to resolve join hints):\n"
         f"{index.render()}\n\n"
         "Table bundle (json):\n"
         f"{bundle.render()}"
     )
-    return [Message("system", reasoning_prompt().text), Message("user", user)]
+    if major >= 2 and evidence is not None:
+        user += "\n\nEvidence (json):\n" f"{evidence.render()}"
+    return [Message("system", reasoning_prompt(major).text), Message("user", user)]
 
 
 @dataclass(frozen=True)
@@ -69,6 +90,8 @@ class ReasonerSettings:
     temperature: float | None
     validation_retries: int = 1
     cache_ttl_s: int = 2_592_000
+    prompt_major: int = 1
+    context_budget_tokens: int = 32_000
 
 
 @dataclass
@@ -93,6 +116,8 @@ class TableOutcome:
     critique_error: str | None = None
     join_hints: list[ValidatedJoin] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    evidence: RenderedEvidence | None = None
+    chunks: int = 1
 
     @property
     def ok(self) -> bool:
@@ -196,13 +221,61 @@ class TableReasoner:
 
     @property
     def prompt_version(self) -> str:
-        return reasoning_prompt().version
+        return reasoning_prompt(self.settings.prompt_major).version
 
     @property
     def critique_prompt_version(self) -> str:
-        return critique_prompt().version
+        return critique_prompt(self.settings.prompt_major).version
 
-    def run(self, bundle: TableBundle) -> TableOutcome:
+    def plan(self, bundle: TableBundle, evidence: RenderedEvidence | None) -> list[list[str]]:
+        """Column chunks for this bundle (one chunk unless it is too wide)."""
+        s = self.settings
+        if s.prompt_major < 2:
+            return [bundle.column_names]
+        header = ""
+        if evidence is not None:
+            header = str({k: v for k, v in evidence.document.items() if k != "columns"})
+        prompt = reasoning_prompt(s.prompt_major).text
+        fixed = estimate_tokens(prompt + self.index.render() + header)
+        return plan_chunks(
+            bundle,
+            evidence,
+            fixed_tokens=fixed,
+            context_budget=s.context_budget_tokens,
+            max_output_tokens=s.max_tokens,
+        )
+
+    def run(self, bundle: TableBundle, evidence: RenderedEvidence | None = None) -> TableOutcome:
+        chunks = self.plan(bundle, evidence)
+        if len(chunks) == 1:
+            outcome = self._run_one(bundle, evidence)
+            outcome.evidence = evidence
+            return outcome
+
+        outcome = TableOutcome(bundle=bundle, evidence=evidence, chunks=len(chunks))
+        reasonings, critiques = [], []
+        for i, columns in enumerate(chunks, start=1):
+            part = chunk_bundle(bundle, columns, i, len(chunks))
+            part_evidence = evidence.subset(columns) if evidence is not None else None
+            sub = self._run_one(part, part_evidence)
+            outcome.calls.extend(sub.calls)
+            outcome.notes.extend(f"chunk {i}/{len(chunks)}: {n}" for n in sub.notes)
+            if sub.reasoning is None:
+                outcome.error = f"chunk {i}/{len(chunks)}: {sub.error}"
+                return outcome
+            reasonings.append(sub.reasoning)
+            outcome.join_hints.extend(sub.join_hints)
+            if sub.critique is None:
+                outcome.critique_error = f"chunk {i}/{len(chunks)}: {sub.critique_error}"
+            else:
+                critiques.append(sub.critique)
+        outcome.reasoning = _canonical_names(merge_reasonings(reasonings), bundle)
+        if outcome.critique_error is None and critiques:
+            outcome.critique = merge_critiques(critiques)
+        outcome.notes.append(f"reasoned in {len(chunks)} column chunks")
+        return outcome
+
+    def _run_one(self, bundle: TableBundle, evidence: RenderedEvidence | None) -> TableOutcome:
         outcome = TableOutcome(bundle=bundle)
         expected = bundle.column_names
         s = self.settings
@@ -210,7 +283,7 @@ class TableReasoner:
         try:
             result = complete_structured(
                 self.llm,
-                reasoning_messages(bundle, self.index),
+                reasoning_messages(bundle, self.index, evidence, s.prompt_major),
                 TableReasoning,
                 purpose="semantics",
                 model=s.model,
@@ -241,7 +314,7 @@ class TableReasoner:
         try:
             crit = complete_structured(
                 self.llm,
-                critique_messages(bundle, outcome.reasoning),
+                critique_messages(bundle, outcome.reasoning, evidence, s.prompt_major),
                 TableCritique,
                 purpose="critique",
                 model=s.model,

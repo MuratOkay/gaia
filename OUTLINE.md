@@ -6,7 +6,8 @@
 > validating and executing SQL.
 >
 > Status (2026-11-14): Phases 0–2 done; Phase 3 approved and in progress
-> (3.P PostgreSQL target + dialect done, 3.0 next). Delivery state, gates and
+> (3.P done; 3.0 code complete; 3B and 3A done in the sandbox, owner runs
+> pending; 3C next). Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
 > Metadata store: PostgreSQL 18 + pgvector. Targets: SQL Server 2025 (first),
@@ -200,10 +201,11 @@ never creates or alters it.
   counts fall back to `sys.partitions.rows` (approximate).
 - Session policy enforced by Gaia as well as the login:
   `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED`, `SET LOCK_TIMEOUT`,
-  driver-level `timeout`, `rowcount` caps. *The statement (driver) timeout is
-  configured but not yet applied on SQL Server sessions — fixed in Phase 3.0.
-  PostgreSQL sessions apply `statement_timeout`, `lock_timeout`, a read-only
-  transaction and `search_path = pg_catalog` (3.P).*
+  driver-level `timeout`, `rowcount` caps. *The statement (driver) timeout was
+  configured but not applied on SQL Server sessions until Phase 3.0; it is now
+  set on every session (`dialects/mssql/connection.py`), and a timeout surfaces
+  as `StatementTimeout`. PostgreSQL sessions apply `statement_timeout`,
+  `lock_timeout`, a read-only transaction and `search_path = pg_catalog` (3.P).*
 
 ---
 
@@ -337,10 +339,11 @@ Two layers: committable YAML describing *what*, `.env` holding *secrets*.
 reproduced here drifted (host, concurrency, timeouts) and was removed.
 
 Sections: `app` (default target, locale), `targets.<name>` (dialect, connection,
-`options`, `limits`, `capabilities`), `llm` (provider, model, concurrency,
-timeouts, thinking per task, retry budgets), `embeddings`, `cache` (TTLs),
-`profiling` (bands, sampling), `scoring` (weights, evidence signals, critique
-values, calibrator), `semantics`, `query`.
+`options`, `limits`, `capabilities`, `profiling_enabled`, `profiling_window`),
+`llm` (provider, model, concurrency, timeouts, thinking per task, retry budgets,
+locality, context budget), `embeddings`, `cache` (TTLs), `profiling` (enabled,
+window, freshness, seed, `budget`, exposure override, bands), `scoring` (version,
+weights, evidence strengths, critique values, calibrator), `semantics`, `query`.
 
 Rules:
 
@@ -352,7 +355,7 @@ Rules:
 - Secrets are never written to YAML or to the database.
 - `targets.<name>.dialect` resolves through the registry (`mssql`, `postgres`,
   alias `postgresql`). Adding an engine is a new `gaia.dialects.<name>` package
-  (reader, probe, type vocabulary; profiler and guard from Phases 3A/4) plus a
+  (reader, probe, type vocabulary, profiler; guard from Phase 4) plus a
   config block — no schema change.
 - Target connections move from config into the database in Phase 4 (§24);
   config then becomes the bootstrap seed.
@@ -375,14 +378,20 @@ Schemas: `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`.
 
 ### `profiling`
 
-Built in Phase 3A (`0004`); see PHASES for the full list.
+Built in Phase 3A (migration `0005`, R4). Profiles are *current or history*
+(`is_current`), like semantics.
 
-- `profile_run`, `table_profile` — size class, row count, budget used, footprint
-- `column_profile` — per-metric values with `method`, `rows_scanned`, `pages`,
-  `runtime_ms`, `seed`, `isolation`; top-k; pattern and `semantic_type`
-  (detector) results; empty/constant flags. Sample rows are never persisted
-- `verification_test` — Stage 3 targeted tests (inclusion, uniqueness, ranges)
-- `module_definition`, `view_column_lineage` — view/procedure code and lineage
+- `profile_run` — stage 1 or 3, counts, data queries, pages, footprint, notes
+- `table_profile` — status (`profiled` / `partial` / `skipped` + reason / `failed`),
+  size class, row count, catalog rows at profile time (freshness), pages, runtime,
+  queries, isolation, seed; identities in `evidence`
+- `column_profile` — the `ColumnProfileSummary` (the 3B contract) plus per-metric
+  provenance: `method`, `rows_scanned`, `pages`, `runtime_ms`, `isolation`, `seed`,
+  `source` when a scan or sample was shared. Sample rows are never persisted
+- `verification_test` — Stage 1 join candidates and Stage 3 tests of claims
+  (`origin`, `specific`, row-weighted `metric`)
+- `module_definition`, `view_column_lineage` — view/procedure/function code and
+  per-view-column lineage (`pass_through` / `computed` / `unresolved`, `converts`)
 
 ### `semantics`
 
@@ -574,6 +583,21 @@ View definitions are parsed with `sqlglot` and each view column classified:
 *for the base column*), **computed** (reasoned from its expression and the
 resolved inputs), or **unresolved**. Views are reasoned after their base tables.
 
+### As built in 3A (see §28)
+
+- Size classes as designed; *small* tables are exact throughout (one batched
+  scan, whole-table values up to 10,000 rows, one `GROUP BY` per column beyond
+  that). Large SQL Server tables get one batched `APPROX_COUNT_DISTINCT` scan;
+  PostgreSQL uses the planner's estimate for free.
+- Joins are discovered from values: shapes for text, ranges and **key density**
+  for integers (a dense key matches any in-range integer, so such pairs are not
+  evidence). Inclusion is **row-weighted**, so legacy orphans do not hide a
+  reference.
+- Views that only *convert* a column (`TO_DATE(f3::text, 'YYYYMMDD') AS
+  transaction_date`) give the base column an alias too.
+- Module definitions live in the profile store, not in the snapshot (D32).
+- Not built: statistics histograms, index usage, mean/stddev, fan-out tests.
+
 ---
 
 ## 12. Honest scoring
@@ -582,7 +606,7 @@ An LLM's self-reported confidence is usually poorly calibrated and overconfident
 Confidence is therefore computed from evidence, with self-assessment as a
 deliberately weak input.
 
-### `heuristic-v1` (Phase 2, in force until 3B ships)
+### `heuristic-v1` (Phase 2; selectable with `scoring.version: heuristic-v1`)
 
 ```text
 evidence_coverage   0.30   comments, constraints, FKs, keys, profile (yes/no)
@@ -597,7 +621,7 @@ profiled adds +0.075 whatever the data shows (a contradicted meaning scores
 *higher* once profiled), and an uncommented plain column cannot exceed 0.775,
 i.e. can never be accepted. Details in §23.
 
-### `heuristic-v2` (Phase 3B, approved — P3-2)
+### `heuristic-v2` (Phase 3B — implemented 2026-11-14, the configured default)
 
 Every piece of evidence is a ledger item `{kind, ref, direction
 supports|contradicts, strength, source}`, produced deterministically wherever
@@ -734,6 +758,7 @@ gaia/
 ├── .gitignore
 ├── config/
 │   └── gaia.yaml
+├── docs/measurements/           make measure reports kept as evidence
 ├── infra/
 │   ├── postgres/init/001_extensions.sql     metadata store
 │   ├── sqlserver/001_readonly_login.sql
@@ -748,21 +773,26 @@ gaia/
 │       ├── main.py
 │       ├── api/            chat.py, targets.py, semantics.py, review.py, health.py
 │       ├── core/           config.py, registry.py, logging.py, security.py
-│       ├── db/             engine.py, models/, repositories/
+│       ├── db/             engine.py, models/, repositories/ (snapshot, semantics,
+│       │                   profile stores)
 │       ├── dialects/
 │       │   ├── base.py         MetadataReader / Profiler / SqlGuard protocols
 │       │   ├── registry.py     dialect name -> implementation (lazy), probes
 │       │   ├── bootstrap.py    built-in dialects: mssql, postgres (alias postgresql)
 │       │   ├── types.py        per-dialect type vocabularies
 │       │   ├── probe.py        check-target result type
-│       │   ├── mssql/          catalog.py, probe.py  (+ profiler.py, modules.py, guard.py)
-│       │   └── postgres/       connection.py, catalog.py, probe.py  (+ the same)
+│       │   ├── errors.py       StatementTimeout / LockTimeout (3.0)
+│       │   ├── mssql/          connection.py, catalog.py, probe.py, measure.py,
+│       │   │                   profiler.py (3A; guard.py in 4)
+│       │   └── postgres/       the same
 │       ├── introspect/     snapshot.py, hashing.py, diff.py
-│       ├── profiling/      budget.py, sampler.py, statistics.py, detectors.py, identities.py,
-│       │                   joins.py, lineage.py, service.py   (Phase 3A)
-│       ├── semantics/      reasoner.py, prompts/, scoring.py, calibration.py, embeddings.py
+│       ├── profiling/      summary.py (evidence contract, 3B); budget.py, statistics.py,
+│       │                   detectors.py, identities.py, joins.py, lineage.py,
+│       │                   service.py (Phase 3A)
+│       ├── semantics/      reasoner.py, prompts/ (v1, v2), scoring.py, evidence.py,
+│       │                   chunking.py, review.py, embeddings.py, calibration.py (Phase 6)
 │       ├── query/          retrieval.py, planner.py, generator.py, validator.py, executor.py, answerer.py
-│       ├── llm/            base.py, deepseek.py, ollama.py, structured.py, cache.py
+│       ├── llm/            base.py, deepseek.py, replay.py, structured.py, cache.py, embeddings.py
 │       ├── jobs/           worker.py, tasks.py
 │       └── cache/          redis.py
 ├── frontend/
@@ -780,8 +810,8 @@ gaia/
 ```
 
 `dialects/` is the forward-compatibility seam: `MetadataReader`, `Profiler` and
-`SqlGuard` are protocols; `mssql` and `postgres` implement them (readers and
-probes today; profilers in 3A, guards in Phase 4).
+`SqlGuard` are protocols; `mssql` and `postgres` implement them (readers, probes
+and profilers today; guards in Phase 4).
 
 The owner's existing `gaia-env/` is the backend runtime; it is the single Python
 environment and is excluded from version control.
@@ -1226,8 +1256,9 @@ deliberate, and it is why this is Phase 4 work and not an emergency.
    silently disagree — config-seeded rows are marked as such.
 3. **Onboarding probe.** The per-dialect probes (`dialects/<d>/probe.py`, behind
    `tools/check_target.py`) become the "test connection" action in the admin UI.
-   The PostgreSQL probe proves read-only from privileges as well as by a DDL
-   attempt (3.P); the SQL Server probe gets the same treatment in 3.0. This matters more than it looks: today read-only is
+   Both probes prove read-only from permissions as well as by a DDL attempt
+   aimed at the weakest schema, and accept only a permission error as proof
+   (PostgreSQL since 3.P, SQL Server since 3.0). This matters more than it looks: today read-only is
    *guaranteed by provisioning*. With admin-supplied credentials we cannot assume
    it, so read-only has to be **proven** — and that probe already attempts a DDL
    statement and asserts it fails.
@@ -1308,3 +1339,111 @@ Results and the eight defects found and fixed (among them: a DDL probe in one
 safe schema proves nothing; `default_transaction_read_only` is not a boundary;
 one unresolved placeholder anywhere failed every `check-target`) are in PHASES,
 "3.P results".
+
+---
+
+## 26. Phase 3.0 — preconditions (code complete; SQL Server runs pending)
+
+### What changed in the design
+
+* **Timeouts are typed and enforced on both dialects.** Every target session
+  raises `StatementTimeout` / `LockTimeout` (`dialects/errors.py`), so a
+  budgeted profiler can degrade one metric instead of failing a table. SQL
+  Server's statement timeout — configured since Phase 0 — is applied for the
+  first time.
+* **Read-only is proven from permissions on both dialects**, and a live DDL
+  attempt aimed at the weakest schema counts only if it fails with a permission
+  error. On SQL Server `EXECUTE` on a procedure is treated as a write path
+  (ownership chaining).
+* **Measurement is a tool, not a one-off.** `make measure` re-runs the cost
+  model on any target (pages, cold/warm, spills, footprint, sampling support).
+  Every new deployment can size its budgets from its own numbers.
+
+### What the PostgreSQL numbers changed
+
+The 2026-11-13 conclusion "exact profiling is affordable (10–30 s per table)"
+came from SQL Server, a unique-key distinct count and a warm cache. On
+PostgreSQL at 6.7 M rows, exact profiling of every column costs 28–60 s per
+table and extrapolates past the 180 s ceiling at 24 M rows; exact distinct
+counts spill to temp; the cheapest exact form differs by column (`GROUP BY` vs
+`count(DISTINCT)`); the planner's distinct estimate is only good enough to pick a
+strategy. The staged design (§11) already anticipated this — exact for small
+tables, one exact batched scan, everything else by per-metric strategy within a
+page budget — and 3A now has measured inputs for it (PHASES, "3.0 results").
+
+---
+
+## 27. Phase 3B — reasoning with evidence (complete in sandbox)
+
+Built before 3A at the owner's request (D29). The design point that made that
+possible: **reasoning never reads the target**. It consumes a
+`TableEvidenceInput` per table (`profiling/summary.py`) — profiles, detector
+hits, identities, view aliases, verification tests — and 3A's only job is to
+produce that contract. Until it does, evidence is catalog-only, or supplied as
+JSON for tests.
+
+What a v2 reasoning call sees: the Phase 2 bundle, plus an evidence block with
+refs the model may cite. What it returns: the Phase 2 answer plus a
+`semantic_type` from a controlled vocabulary. What happens next is
+deterministic: every fact becomes a ledger item that supports or contradicts
+the claim (a name never does), `heuristic-v2` scores the ledger, the ledger is
+stored, and columns the machine cannot settle go to `semantics.review_item`
+ranked by `(1 − score) × importance`.
+
+Three rules keep cost proportional to change:
+
+* the **evidence hash** joins the skip key, but covers only stable facts — so a
+  table re-reasons when its evidence means something new, not on every insert;
+* a version whose **critique failed** is re-run until it has one;
+* **wide tables** are chunked by column under the context and output budgets, so
+  local models with small windows work.
+
+Data values reach a remote model only as shapes where they could be personal or
+free text; a local model sees them raw (D24).
+
+The replay provider lets a person — or another system — act as the model
+through files (D30). The assistant used it to run the v2 prompts end to end on
+the PostgreSQL target; that run is a functional test only (the assistant
+designed that database), and it found five defects that unit tests had not
+(PHASES, "3B results").
+
+---
+
+## 28. Phase 3A — evidence collection (complete in sandbox; SQL Server runs pending)
+
+The producer side of the 3B contract. One command per stage, both dialects:
+
+```text
+make introspect → make profile → make reason → make profile-tests → make reason
+                  (Stage 1)       (Stage 2)     (Stage 3)             (only tables whose
+                                                                       evidence changed)
+```
+
+**Stage 1** profiles every table that is not catalog-sufficient, within page and
+time budgets, on one read-only session: a batched exact scan, one row-sized
+sample processed in memory (detectors, identities, granularity, values for join
+tests), exact or labelled-approximate distinct counts and top values. Views are
+not sampled; their definitions are parsed into lineage, and their aliases —
+including single-column conversions — become evidence for the base columns.
+Join candidates come from values, never names, and are tested by row-weighted
+inclusion against the parent key. A second run inside the freshness window reads
+no data at all.
+
+**Stage 3** derives tests from what the model claimed (a join hint → inclusion in
+that parent; an identifier → exact uniqueness; a code or flag → exact top-k),
+runs only those that have not run, and changes the evidence of exactly the
+tables concerned.
+
+Every number carries how it was obtained (`method`, rows scanned, pages, time,
+isolation, seed). Nothing here ever fails a run for one bad statement: the metric
+degrades and says why. Results on `demo_pg`, the corrections the build forced
+(dense integer keys, legacy orphans, biased value samples, coincidental codes,
+conversions as aliases, a ceiling a statement could outlive) and the deferred
+items are in PHASES, "3A results".
+
+**The limit that matters for the worst case:** an integer reference without a
+declared foreign key, into a dense surrogate key, cannot be confirmed from data —
+every integer in range is found. Such joins rest on aliases, names and the model,
+and stay in review until an SME or a stronger source (Query Store, backlog)
+confirms them.
+

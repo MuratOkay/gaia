@@ -1,0 +1,115 @@
+{
+ "table_verdict": "supported",
+ "table_notes": [
+  "The view aliases and the identity f7 = f5 × f6 support the reading as a sales transaction table."
+ ],
+ "columns": [
+  {
+   "name": "f1",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "ix:ux_trx02_f1",
+    "mod:rpt.v_legacy_transactions.transaction_id",
+    "prof:distinct"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f2",
+   "verdict": "supported",
+   "counter_evidence": [
+    "No declared foreign key; the referenced master table is unknown."
+   ],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.customer_code",
+    "prof:length"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f3",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "det:date_int",
+    "prof:range"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f4",
+   "verdict": "plausible",
+   "counter_evidence": [
+    "Only 84% of sampled values validate as hhmmss; the rest are five-digit values, consistent with a dropped leading zero but not proven."
+   ],
+   "evidence": [
+    "det:time_int",
+    "prof:range"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f5",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.quantity"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f6",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.unit_price"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f7",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "idn:1",
+    "mod:rpt.v_legacy_transactions.amount"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f8",
+   "verdict": "supported",
+   "counter_evidence": [
+    "The expansion of OK/CN/RT is assumed, not stated."
+   ],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.status_code",
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f9",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "mod:rpt.v_legacy_transactions.store_code",
+    "prof:length"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "f10",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "det:currency_code",
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  }
+ ]
+}

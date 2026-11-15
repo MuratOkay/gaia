@@ -1,0 +1,10 @@
+{
+  "table_verdict": "supported",
+  "table_notes": [],
+  "columns": [
+    {"name": "dept_id", "verdict": "supported", "counter_evidence": [], "evidence": ["pk:departments_pkey", "prof:distinct"], "better_interpretation": null},
+    {"name": "dept_code", "verdict": "supported", "counter_evidence": [], "evidence": ["uq:departments_dept_code_key", "prof:top_values"], "better_interpretation": null},
+    {"name": "name", "verdict": "supported", "counter_evidence": [], "evidence": ["prof:top_values"], "better_interpretation": null},
+    {"name": "cost_center", "verdict": "plausible", "counter_evidence": ["Only the name and the CC- pattern support 'cost center'."], "evidence": ["name", "prof:range"], "better_interpretation": null}
+  ]
+}

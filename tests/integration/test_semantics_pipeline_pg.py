@@ -15,7 +15,7 @@ from __future__ import annotations
 import pytest
 import sqlalchemy as sa
 
-from gaia.core.config import AppSection, LLMConfig, Settings
+from gaia.core.config import AppSection, LLMConfig, ScoringConfig, SemanticsConfig, Settings
 from gaia.db.models.audit import LLMCall
 from gaia.db.models.semantics import (
     ColumnSemantic,
@@ -29,10 +29,14 @@ from gaia.semantics.service import ReasoningOptions, run_reasoning
 
 
 def _settings() -> Settings:
+    """Phase 2 behaviour (prompt generation 1, heuristic-v1): these tests are
+    the regression net for it; Phase 3B is covered by test_reasoning_v2_pg.py."""
     return Settings(
         app=AppSection(default_target="demo_mssql", locale="en"),
         targets={},
         llm=LLMConfig(model="deepseek-v4.1-flash", api_key="test", concurrency=3),
+        semantics=SemanticsConfig(prompt_major=1),
+        scoring=ScoringConfig(version="heuristic-v1"),
     )
 
 
@@ -218,3 +222,72 @@ async def test_pipeline_end_to_end(pg_session_factory, snapshot_factory, fake_ll
             )
         )
     assert products_status == "stale"
+
+
+@pytest.mark.asyncio
+async def test_single_column_change_reasons_exactly_one_bundle(
+    pg_session_factory, snapshot_factory, fake_llm, fake_embedder
+):
+    """PHASES Phase 2 acceptance, closed in 3.0: one column edit re-reasons
+    exactly its table bundle; every other table keeps its version; data-only
+    movement re-reasons nothing."""
+    factory = pg_session_factory
+    await _apply(factory, snapshot_factory())
+    await _reason(factory, fake_llm, fake_embedder)
+
+    async def current_versions() -> dict[str, tuple[int, str]]:
+        async with factory() as s:
+            rows = (
+                await s.execute(
+                    sa.select(
+                        TableSemantic.business_name, TableSemantic.version, TableSemantic.status
+                    ).where(TableSemantic.is_current.is_(True))
+                )
+            ).all()
+        return {name: (version, status) for name, version, status in rows}
+
+    baseline = await current_versions()
+    assert len(baseline) == TOTAL_TABLES and all(v == 1 for v, _ in baseline.values())
+
+    # Data-only movement: rows x10 and a modification counter. No re-reasoning.
+    grown = snapshot_factory()
+    for t in grown.tables:
+        t.estimated_rows = (t.estimated_rows or 0) * 10 + 1
+        t.modification_counter = 12345
+    await _apply(factory, grown)
+    fake_llm.calls.clear()
+    data_only = await _reason(factory, fake_llm, fake_embedder)
+    assert data_only.count("reasoned") == 0 and data_only.count("skipped") == TOTAL_TABLES
+    assert sum(fake_llm.calls.values()) == 0
+    assert await current_versions() == baseline
+
+    # A type change on one column of one table.
+    typed = snapshot_factory()
+    orders = next(t for t in typed.tables if t.name == "orders")
+    next(c for c in orders.columns if c.name == "notes").data_type = "nvarchar(1000)"
+    await _apply(factory, typed)
+    fake_llm.calls.clear()
+    one = await _reason(factory, fake_llm, fake_embedder)
+    assert [r.qualified_name for r in one.results if r.action == "reasoned"] == ["dbo.orders"]
+    assert one.count("skipped") == TOTAL_TABLES - 1
+    assert fake_llm.calls == {"semantics": 1, "critique": 1}
+    after = await current_versions()
+    assert after.pop("Orders") == (2, "draft")
+    assert after == {k: v for k, v in baseline.items() if k != "Orders"}
+
+    # A comment-only edit on one column of another table: also exactly one bundle.
+    commented = snapshot_factory()
+    orders = next(t for t in commented.tables if t.name == "orders")
+    next(c for c in orders.columns if c.name == "notes").data_type = "nvarchar(1000)"
+    products = next(t for t in commented.tables if t.name == "products")
+    products.columns[0].comment = "Product surrogate key"
+    await _apply(factory, commented)
+    fake_llm.calls.clear()
+    two = await _reason(factory, fake_llm, fake_embedder)
+    assert [r.qualified_name for r in two.results if r.action == "reasoned"] == ["dbo.products"]
+    assert fake_llm.calls == {"semantics": 1, "critique": 1}
+    final = await current_versions()
+    assert final["Products"] == (2, "draft") and final["Orders"] == (2, "draft")
+    assert {k: v for k, v in final.items() if k not in ("Products", "Orders")} == {
+        k: v for k, v in baseline.items() if k not in ("Products", "Orders")
+    }

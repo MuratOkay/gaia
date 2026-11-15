@@ -1,0 +1,1373 @@
+{
+ "profiling_available": true,
+ "tables": [
+  {
+   "table": "legacy.tb_trx02",
+   "profiling_available": true,
+   "tests_pending": false,
+   "columns": {
+    "f1": {
+     "column": "f1",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 200000,
+     "distinct_method": "exact",
+     "minimum": "900000000",
+     "maximum": "900199999",
+     "top_values": [
+      [
+       "900000553",
+       1
+      ],
+      [
+       "900026787",
+       1
+      ],
+      [
+       "900008815",
+       1
+      ],
+      [
+       "900000483",
+       1
+      ],
+      [
+       "900064531",
+       1
+      ],
+      [
+       "900001774",
+       1
+      ],
+      [
+       "900003800",
+       1
+      ],
+      [
+       "900062551",
+       1
+      ],
+      [
+       "900048887",
+       1
+      ],
+      [
+       "900016711",
+       1
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "900008544",
+      "900008545",
+      "900008546",
+      "900008547",
+      "900008548"
+     ],
+     "detectors": []
+    },
+    "f2": {
+     "column": "f2",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 27039,
+     "distinct_method": "exact",
+     "minimum": "C00000001",
+     "maximum": "C99998869",
+     "top_values": [
+      [
+       "C00019115",
+       21
+      ],
+      [
+       "C00011709",
+       20
+      ],
+      [
+       "C00002677",
+       20
+      ],
+      [
+       "C00002824",
+       20
+      ],
+      [
+       "C00021430",
+       20
+      ],
+      [
+       "C00008205",
+       19
+      ],
+      [
+       "C00014820",
+       19
+      ],
+      [
+       "C00018257",
+       19
+      ],
+      [
+       "C00001004",
+       19
+      ],
+      [
+       "C00016290",
+       19
+      ]
+     ],
+     "min_length": 9,
+     "max_length": 9,
+     "avg_length": 9.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "C00012178",
+      "C00009984",
+      "C00014134",
+      "C00013717",
+      "C00023339"
+     ],
+     "detectors": []
+    },
+    "f3": {
+     "column": "f3",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 1460,
+     "distinct_method": "exact",
+     "minimum": "20190101",
+     "maximum": "20221230",
+     "top_values": [
+      [
+       "20221106",
+       178
+      ],
+      [
+       "20200513",
+       174
+      ],
+      [
+       "20210307",
+       172
+      ],
+      [
+       "20210705",
+       170
+      ],
+      [
+       "20190427",
+       169
+      ],
+      [
+       "20210223",
+       169
+      ],
+      [
+       "20220323",
+       167
+      ],
+      [
+       "20210310",
+       167
+      ],
+      [
+       "20191223",
+       167
+      ],
+      [
+       "20211211",
+       166
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "20191016",
+      "20210130",
+      "20210822",
+      "20200725",
+      "20221218"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "date_int",
+       "match_rate": 1.0,
+       "sample_size": 400
+      }
+     ]
+    },
+    "f4": {
+     "column": "f4",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 49443,
+     "distinct_method": "exact",
+     "minimum": "80000",
+     "maximum": "215959",
+     "top_values": [
+      [
+       "204724",
+       15
+      ],
+      [
+       "162301",
+       15
+      ],
+      [
+       "194639",
+       14
+      ],
+      [
+       "132257",
+       14
+      ],
+      [
+       "184936",
+       14
+      ],
+      [
+       "172755",
+       14
+      ],
+      [
+       "85248",
+       14
+      ],
+      [
+       "170105",
+       14
+      ],
+      [
+       "154309",
+       14
+      ],
+      [
+       "90333",
+       13
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "133237",
+      "194947",
+      "210650",
+      "195331",
+      "195155"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "time_int",
+       "match_rate": 0.845,
+       "sample_size": 400
+      }
+     ]
+    },
+    "f5": {
+     "column": "f5",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 5,
+     "distinct_method": "exact",
+     "minimum": "1",
+     "maximum": "10",
+     "top_values": [
+      [
+       "1",
+       119753
+      ],
+      [
+       "2",
+       40322
+      ],
+      [
+       "3",
+       19754
+      ],
+      [
+       "5",
+       12028
+      ],
+      [
+       "10",
+       8143
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "1",
+      "1",
+      "1",
+      "10",
+      "1"
+     ],
+     "detectors": []
+    },
+    "f6": {
+     "column": "f6",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 165028,
+     "distinct_method": "exact",
+     "minimum": "1.01",
+     "maximum": "4999.98",
+     "top_values": [
+      [
+       "4635.61",
+       6
+      ],
+      [
+       "1562.70",
+       6
+      ],
+      [
+       "664.76",
+       5
+      ],
+      [
+       "4437.81",
+       5
+      ],
+      [
+       "1759.70",
+       5
+      ],
+      [
+       "876.43",
+       5
+      ],
+      [
+       "2430.41",
+       5
+      ],
+      [
+       "176.81",
+       5
+      ],
+      [
+       "2635.35",
+       5
+      ],
+      [
+       "1427.30",
+       5
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "152.24",
+      "4268.44",
+      "4748.74",
+      "316.02",
+      "1273.03"
+     ],
+     "detectors": []
+    },
+    "f7": {
+     "column": "f7",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 177318,
+     "distinct_method": "exact",
+     "minimum": "1.04",
+     "maximum": "49993.50",
+     "top_values": [
+      [
+       "1573.90",
+       6
+      ],
+      [
+       "834.18",
+       5
+      ],
+      [
+       "2390.20",
+       5
+      ],
+      [
+       "745.68",
+       5
+      ],
+      [
+       "3540.27",
+       5
+      ],
+      [
+       "3359.08",
+       5
+      ],
+      [
+       "1759.70",
+       5
+      ],
+      [
+       "2737.90",
+       5
+      ],
+      [
+       "291.87",
+       4
+      ],
+      [
+       "3480.52",
+       4
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "152.24",
+      "4268.44",
+      "4748.74",
+      "3160.20",
+      "1273.03"
+     ],
+     "detectors": []
+    },
+    "f8": {
+     "column": "f8",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 3,
+     "distinct_method": "exact",
+     "minimum": "CN",
+     "maximum": "RT",
+     "top_values": [
+      [
+       "OK",
+       180020
+      ],
+      [
+       "CN",
+       11869
+      ],
+      [
+       "RT",
+       8111
+      ]
+     ],
+     "min_length": 2,
+     "max_length": 2,
+     "avg_length": 2.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "OK",
+      "OK",
+      "OK",
+      "OK",
+      "OK"
+     ],
+     "detectors": []
+    },
+    "f9": {
+     "column": "f9",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 140,
+     "distinct_method": "exact",
+     "minimum": "S001",
+     "maximum": "S999",
+     "top_values": [
+      [
+       "S028",
+       5016
+      ],
+      [
+       "S031",
+       5011
+      ],
+      [
+       "S005",
+       4997
+      ],
+      [
+       "S032",
+       4988
+      ],
+      [
+       "S004",
+       4982
+      ],
+      [
+       "S010",
+       4981
+      ],
+      [
+       "S024",
+       4975
+      ],
+      [
+       "S001",
+       4964
+      ],
+      [
+       "S035",
+       4959
+      ],
+      [
+       "S030",
+       4956
+      ]
+     ],
+     "min_length": 4,
+     "max_length": 4,
+     "avg_length": 4.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "S010",
+      "S016",
+      "S018",
+      "S022",
+      "S006"
+     ],
+     "detectors": []
+    },
+    "f10": {
+     "column": "f10",
+     "method": "exact",
+     "rows": 200000,
+     "non_null": 200000,
+     "distinct": 2,
+     "distinct_method": "exact",
+     "minimum": "TRY",
+     "maximum": "USD",
+     "top_values": [
+      [
+       "TRY",
+       194019
+      ],
+      [
+       "USD",
+       5981
+      ]
+     ],
+     "min_length": 3,
+     "max_length": 3,
+     "avg_length": 3.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "TRY",
+      "TRY",
+      "TRY",
+      "TRY",
+      "TRY"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "currency_code",
+       "match_rate": 1.0,
+       "sample_size": 400
+      }
+     ]
+    }
+   },
+   "identities": [
+    {
+     "expression": "f7 = f5 \u00d7 f6",
+     "columns": [
+      "f5",
+      "f6",
+      "f7"
+     ],
+     "holds_rate": 1.0,
+     "kind": "arithmetic"
+    }
+   ],
+   "aliases": {
+    "f1": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "transaction_id"
+     }
+    ],
+    "f2": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "customer_code"
+     }
+    ],
+    "f5": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "quantity"
+     }
+    ],
+    "f6": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "unit_price"
+     }
+    ],
+    "f7": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "amount"
+     }
+    ],
+    "f8": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "status_code"
+     }
+    ],
+    "f9": [
+     {
+      "view": "rpt.v_legacy_transactions",
+      "alias": "store_code"
+     }
+    ]
+   },
+   "tests": {}
+  },
+  {
+   "table": "legacy.tb_mst01",
+   "profiling_available": true,
+   "tests_pending": false,
+   "columns": {
+    "c01": {
+     "column": "c01",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17765,
+     "distinct": 17765,
+     "distinct_method": "exact",
+     "minimum": "C00000001",
+     "maximum": "C90000249",
+     "top_values": [
+      [
+       "C00013035",
+       1
+      ],
+      [
+       "C00001731",
+       1
+      ],
+      [
+       "C00015747",
+       1
+      ],
+      [
+       "C00001864",
+       1
+      ],
+      [
+       "C00003695",
+       1
+      ],
+      [
+       "C00002306",
+       1
+      ],
+      [
+       "C00024030",
+       1
+      ],
+      [
+       "C00007197",
+       1
+      ],
+      [
+       "C00024282",
+       1
+      ],
+      [
+       "C00014481",
+       1
+      ]
+     ],
+     "min_length": 9,
+     "max_length": 9,
+     "avg_length": 9.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "C00012617",
+      "C00012618",
+      "C00012619",
+      "C00012622",
+      "C00012623"
+     ],
+     "detectors": []
+    },
+    "c02": {
+     "column": "c02",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17765,
+     "distinct": 1501,
+     "distinct_method": "exact",
+     "minimum": "AHMET ACAR",
+     "maximum": "ZEYNEP YILMAZ",
+     "top_values": [
+      [
+       "UNKNOWN CUSTOMER",
+       250
+      ],
+      [
+       "SOFIA YILDIZ",
+       23
+      ],
+      [
+       "DENIZ OZDEMIR",
+       22
+      ],
+      [
+       "TOLGA OZDEMIR",
+       22
+      ],
+      [
+       "ELIF KOC",
+       22
+      ],
+      [
+       "ZEYNEP ERDOGAN",
+       22
+      ],
+      [
+       "LAURA AKSOY",
+       22
+      ],
+      [
+       "ZEYNEP MULLER",
+       21
+      ],
+      [
+       "ESRA ARSLAN",
+       21
+      ],
+      [
+       "FATMA OZKAN",
+       21
+      ]
+     ],
+     "min_length": 7,
+     "max_length": 15,
+     "avg_length": 11.076086956521738,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "IREM SIMSEK",
+      "JOHN YILDIZ",
+      "MELIS OZKAN",
+      "HASAN ASLAN",
+      "FATMA OZKAN"
+     ],
+     "detectors": []
+    },
+    "c03": {
+     "column": "c03",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17765,
+     "distinct": 2,
+     "distinct_method": "exact",
+     "minimum": "N",
+     "maximum": "Y",
+     "top_values": [
+      [
+       "Y",
+       15735
+      ],
+      [
+       "N",
+       2030
+      ]
+     ],
+     "min_length": 1,
+     "max_length": 1,
+     "avg_length": 1.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "Y",
+      "Y",
+      "Y",
+      "Y",
+      "Y"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "boolean_text",
+       "match_rate": 1.0,
+       "sample_size": 184
+      }
+     ]
+    },
+    "c04": {
+     "column": "c04",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17515,
+     "distinct": 10,
+     "distinct_method": "exact",
+     "minimum": "ADANA",
+     "maximum": "KONYA",
+     "top_values": [
+      [
+       "ANKARA",
+       1877
+      ],
+      [
+       "KONYA",
+       1828
+      ],
+      [
+       "ADANA",
+       1762
+      ],
+      [
+       "KAYSERI",
+       1755
+      ],
+      [
+       "ANTALYA",
+       1738
+      ],
+      [
+       "GAZIANTEP",
+       1719
+      ],
+      [
+       "ESKISEHIR",
+       1718
+      ],
+      [
+       "ISTANBUL",
+       1718
+      ],
+      [
+       "BURSA",
+       1715
+      ],
+      [
+       "IZMIR",
+       1685
+      ]
+     ],
+     "min_length": 5,
+     "max_length": 9,
+     "avg_length": 6.608695652173913,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "ESKISEHIR",
+      "ESKISEHIR",
+      "ANKARA",
+      "KONYA",
+      "GAZIANTEP"
+     ],
+     "detectors": []
+    },
+    "c05": {
+     "column": "c05",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17765,
+     "distinct": 3665,
+     "distinct_method": "exact",
+     "minimum": "20150122",
+     "maximum": "20251213",
+     "top_values": [
+      [
+       "20190101",
+       253
+      ],
+      [
+       "20200907",
+       17
+      ],
+      [
+       "20230110",
+       16
+      ],
+      [
+       "20210309",
+       15
+      ],
+      [
+       "20200919",
+       14
+      ],
+      [
+       "20221014",
+       14
+      ],
+      [
+       "20180523",
+       14
+      ],
+      [
+       "20221119",
+       14
+      ],
+      [
+       "20220910",
+       14
+      ],
+      [
+       "20210303",
+       14
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "20171209",
+      "20190214",
+      "20220909",
+      "20240101",
+      "20160502"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "date_int",
+       "match_rate": 1.0,
+       "sample_size": 184
+      }
+     ]
+    },
+    "c06": {
+     "column": "c06",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 15759,
+     "distinct": 15759,
+     "distinct_method": "exact",
+     "minimum": "905001114476",
+     "maximum": "905599948523",
+     "top_values": [
+      [
+       "905109812023",
+       1
+      ],
+      [
+       "905433446344",
+       1
+      ],
+      [
+       "905346253494",
+       1
+      ],
+      [
+       "905566213666",
+       1
+      ],
+      [
+       "905356816257",
+       1
+      ],
+      [
+       "905513021688",
+       1
+      ],
+      [
+       "905553585176",
+       1
+      ],
+      [
+       "905322054550",
+       1
+      ],
+      [
+       "905481405556",
+       1
+      ],
+      [
+       "905594518560",
+       1
+      ]
+     ],
+     "min_length": 12,
+     "max_length": 12,
+     "avg_length": 12.0,
+     "numeric_parse_rate": 1.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "905548124525",
+      "905346567944",
+      "905526089278",
+      "905213227037",
+      "905069273674"
+     ],
+     "detectors": [
+      {
+       "semantic_type": "phone",
+       "match_rate": 1.0,
+       "sample_size": 158
+      },
+      {
+       "semantic_type": "numeric_text",
+       "match_rate": 1.0,
+       "sample_size": 158
+      }
+     ]
+    },
+    "c07": {
+     "column": "c07",
+     "method": "exact",
+     "rows": 17765,
+     "non_null": 17515,
+     "distinct": 6,
+     "distinct_method": "exact",
+     "minimum": "",
+     "maximum": "50000.00",
+     "top_values": [
+      [
+       "25000.00",
+       3211
+      ],
+      [
+       "50000.00",
+       3210
+      ],
+      [
+       "5000.00",
+       3122
+      ],
+      [
+       "15000.00",
+       3120
+      ],
+      [
+       "10000.00",
+       3100
+      ],
+      [
+       "",
+       1752
+      ]
+     ],
+     "min_length": 0,
+     "max_length": 8,
+     "avg_length": 6.875,
+     "numeric_parse_rate": 0.8804347826086957,
+     "date_parse_rate": null,
+     "sample_values": [
+      "5000.00",
+      "5000.00",
+      "",
+      "5000.00",
+      ""
+     ],
+     "detectors": [
+      {
+       "semantic_type": "numeric_text",
+       "match_rate": 0.8804347826086957,
+       "sample_size": 184
+      }
+     ]
+    }
+   },
+   "identities": [],
+   "aliases": {},
+   "tests": {}
+  },
+  {
+   "table": "hr.departments",
+   "profiling_available": true,
+   "tests_pending": false,
+   "columns": {
+    "dept_id": {
+     "column": "dept_id",
+     "method": "exact",
+     "rows": 12,
+     "non_null": 12,
+     "distinct": 12,
+     "distinct_method": "exact",
+     "minimum": "1",
+     "maximum": "12",
+     "top_values": [
+      [
+       "1",
+       1
+      ],
+      [
+       "9",
+       1
+      ],
+      [
+       "4",
+       1
+      ],
+      [
+       "8",
+       1
+      ],
+      [
+       "12",
+       1
+      ],
+      [
+       "6",
+       1
+      ],
+      [
+       "3",
+       1
+      ],
+      [
+       "10",
+       1
+      ],
+      [
+       "11",
+       1
+      ],
+      [
+       "2",
+       1
+      ]
+     ],
+     "min_length": null,
+     "max_length": null,
+     "avg_length": null,
+     "numeric_parse_rate": null,
+     "date_parse_rate": null,
+     "sample_values": [
+      "1",
+      "2",
+      "3",
+      "4",
+      "5"
+     ],
+     "detectors": []
+    },
+    "dept_code": {
+     "column": "dept_code",
+     "method": "exact",
+     "rows": 12,
+     "non_null": 12,
+     "distinct": 12,
+     "distinct_method": "exact",
+     "minimum": "ANL",
+     "maximum": "STR",
+     "top_values": [
+      [
+       "MGT",
+       1
+      ],
+      [
+       "ANL",
+       1
+      ],
+      [
+       "LOG",
+       1
+      ],
+      [
+       "ITS",
+       1
+      ],
+      [
+       "SAL",
+       1
+      ],
+      [
+       "STR",
+       1
+      ],
+      [
+       "CSV",
+       1
+      ],
+      [
+       "HRS",
+       1
+      ],
+      [
+       "PUR",
+       1
+      ],
+      [
+       "LEG",
+       1
+      ]
+     ],
+     "min_length": 3,
+     "max_length": 3,
+     "avg_length": 3.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "MGT",
+      "SAL",
+      "MKT",
+      "FIN",
+      "HRS"
+     ],
+     "detectors": []
+    },
+    "name": {
+     "column": "name",
+     "method": "exact",
+     "rows": 12,
+     "non_null": 12,
+     "distinct": 12,
+     "distinct_method": "exact",
+     "minimum": "Analytics",
+     "maximum": "Store Operations",
+     "top_values": [
+      [
+       "Logistics",
+       1
+      ],
+      [
+       "Marketing",
+       1
+      ],
+      [
+       "Purchasing",
+       1
+      ],
+      [
+       "Finance",
+       1
+      ],
+      [
+       "Store Operations",
+       1
+      ],
+      [
+       "Information Technology",
+       1
+      ],
+      [
+       "Sales",
+       1
+      ],
+      [
+       "Management",
+       1
+      ],
+      [
+       "Legal",
+       1
+      ],
+      [
+       "Customer Service",
+       1
+      ]
+     ],
+     "min_length": 5,
+     "max_length": 22,
+     "avg_length": 11.083333333333334,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "Management",
+      "Sales",
+      "Marketing",
+      "Finance",
+      "Human Resources"
+     ],
+     "detectors": []
+    },
+    "cost_center": {
+     "column": "cost_center",
+     "method": "exact",
+     "rows": 12,
+     "non_null": 12,
+     "distinct": 12,
+     "distinct_method": "exact",
+     "minimum": "CC-100",
+     "maximum": "CC-510",
+     "top_values": [
+      [
+       "CC-320",
+       1
+      ],
+      [
+       "CC-220",
+       1
+      ],
+      [
+       "CC-510",
+       1
+      ],
+      [
+       "CC-200",
+       1
+      ],
+      [
+       "CC-100",
+       1
+      ],
+      [
+       "CC-210",
+       1
+      ],
+      [
+       "CC-400",
+       1
+      ],
+      [
+       "CC-410",
+       1
+      ],
+      [
+       "CC-230",
+       1
+      ],
+      [
+       "CC-500",
+       1
+      ]
+     ],
+     "min_length": 6,
+     "max_length": 6,
+     "avg_length": 6.0,
+     "numeric_parse_rate": 0.0,
+     "date_parse_rate": null,
+     "sample_values": [
+      "CC-100",
+      "CC-200",
+      "CC-210",
+      "CC-300",
+      "CC-310"
+     ],
+     "detectors": []
+    }
+   },
+   "identities": [],
+   "aliases": {},
+   "tests": {}
+  }
+ ]
+}

@@ -1,0 +1,88 @@
+{
+ "table_verdict": "plausible",
+ "table_notes": [
+  "Nothing but the profile describes this table; 'customer master' is an inference from the set of columns."
+ ],
+ "columns": [
+  {
+   "name": "c01",
+   "verdict": "plausible",
+   "counter_evidence": [
+    "Unique and not null, but nothing states that it identifies a customer."
+   ],
+   "evidence": [
+    "prof:distinct",
+    "nullability"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c02",
+   "verdict": "plausible",
+   "counter_evidence": [
+    "1.5k distinct values over 18k rows (8%) is low for personal names; the values repeat often."
+   ],
+   "evidence": [
+    "prof:distinct",
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c03",
+   "verdict": "plausible",
+   "counter_evidence": [
+    "What Y stands for is not stated."
+   ],
+   "evidence": [
+    "det:boolean_text",
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c04",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c05",
+   "verdict": "plausible",
+   "counter_evidence": [
+    "One date, 2019-01-01, is over-represented, which looks like a default rather than a registration."
+   ],
+   "evidence": [
+    "det:date_int",
+    "prof:top_values"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c06",
+   "verdict": "supported",
+   "counter_evidence": [],
+   "evidence": [
+    "det:phone",
+    "prof:length"
+   ],
+   "better_interpretation": null
+  },
+  {
+   "name": "c07",
+   "verdict": "doubtful",
+   "counter_evidence": [
+    "Stored as text with 10% empty strings; only six values, which fits a tier at least as well as a limit."
+   ],
+   "evidence": [
+    "det:numeric_text",
+    "prof:top_values",
+    "type"
+   ],
+   "better_interpretation": "Credit tier expressed as an amount."
+  }
+ ]
+}

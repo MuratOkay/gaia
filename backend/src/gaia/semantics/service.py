@@ -10,6 +10,15 @@ skipped when its current ``table_semantic`` row has the same
 this run. ``--force`` overrides it. Row-count changes alone never trigger
 re-reasoning, because they are data signals (OUTLINE §10).
 
+Phase 3B (prompt generation 2, ``semantics.prompt_major``): every table gets
+an evidence block rendered from an ``EvidenceSource`` — by default the stored
+Phase 3A profiles, tests and view lineage when profiling is enabled for the
+target, else catalog only — its hash joins the skip key — so a table is re-reasoned
+exactly when its evidence changes meaningfully — and columns are scored with
+``heuristic-v2`` from an evidence ledger that is stored with the version.
+Columns the machine cannot resolve go to ``semantics.review_item``. Views are
+reasoned after tables.
+
 Concurrency: LLM work runs in worker threads, at most ``llm.concurrency`` at a
 time. All database writes happen on the event loop, one table at a time,
 with a commit after each table, so an interrupted run keeps the tables it
@@ -37,7 +46,19 @@ from gaia.llm.base import LLMClient
 from gaia.llm.cache import KVCache
 from gaia.llm.embeddings import EmbeddingClient
 from gaia.llm.structured import CallRecord
+from gaia.profiling.summary import EvidenceSource, NoEvidence, TableEvidenceInput
 from gaia.semantics.bundle import TableBundle, build_bundle, build_catalog_index
+from gaia.semantics.evidence import (
+    Exposure,
+    Ledger,
+    RenderedEvidence,
+    build_ledger,
+    column_coverage,
+    is_unused,
+    next_stage,
+    pending_claim_tests,
+    render_evidence,
+)
 from gaia.semantics.reasoner import (
     DeclaredJoin,
     ReasonerSettings,
@@ -45,7 +66,8 @@ from gaia.semantics.reasoner import (
     TableReasoner,
     reasoning_messages,
 )
-from gaia.semantics.scoring import ColumnScore, score_column, summarize_scores
+from gaia.semantics.review import importance, review_reasons
+from gaia.semantics.scoring import ColumnScore, score_column, score_column_v2, summarize_scores
 
 logger = logging.getLogger(__name__)
 
@@ -110,6 +132,10 @@ class ReasoningReport:
     distribution: dict[str, Any] = field(default_factory=dict)
     histogram: list[tuple[str, int]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
+    prompt_major: int = 1
+    exposure: str | None = None
+    review: dict[str, int] = field(default_factory=dict)
+    coverage: dict[str, int] = field(default_factory=dict)
 
     def count(self, action: str) -> int:
         return sum(1 for r in self.results if r.action == action)
@@ -195,6 +221,16 @@ def select_tables(
     return ordered
 
 
+def _fk_degree(snapshot: Snapshot) -> dict[str, int]:
+    """Declared foreign keys touching each table, in either direction."""
+    degree: dict[str, int] = {}
+    for t in snapshot.tables:
+        for rel in t.relations:
+            for name in (f"{rel.from_schema}.{rel.from_table}", f"{rel.to_schema}.{rel.to_table}"):
+                degree[name] = degree.get(name, 0) + 1
+    return degree
+
+
 def declared_joins(snapshot: Snapshot) -> set[DeclaredJoin]:
     return {
         (
@@ -222,6 +258,32 @@ def _critique_dict(crit) -> dict[str, Any] | None:
     }
 
 
+@dataclass
+class EvidenceContext:
+    """What the v2 path knows about one table besides its bundle."""
+
+    rendered: RenderedEvidence
+    source_input: TableEvidenceInput | None
+    profiling_available: bool
+    table_rows: int | None
+    fk_degree: int
+
+
+@dataclass
+class ColumnExtras:
+    """Per column, for persistence after the version is written."""
+
+    ledger: Ledger | None = None
+    review: dict[str, Any] | None = None
+
+
+def _detected_type(summary) -> str | None:
+    if summary is None:
+        return None
+    strong = [d for d in summary.detectors if d.match_rate >= 0.95]
+    return max(strong, key=lambda d: d.match_rate).semantic_type if strong else None
+
+
 def build_rows(
     outcome: TableOutcome,
     *,
@@ -236,9 +298,16 @@ def build_rows(
     critique_prompt_version: str,
     model: str,
     thinking: bool,
+    context: EvidenceContext | None = None,
+    extras: dict[str, ColumnExtras] | None = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[ColumnScore]]:
     """Score every column and map the outcome to ``table_semantic`` /
-    ``column_semantic`` field dictionaries. Pure; no database access."""
+    ``column_semantic`` field dictionaries. Pure; no database access.
+
+    With ``context`` (Phase 3B) columns are scored with heuristic-v2 from an
+    evidence ledger; ``extras`` is filled with each column's ledger and review
+    decision for the caller to persist.
+    """
     assert outcome.reasoning is not None
     bundle: TableBundle = outcome.bundle
     reasoning = outcome.reasoning
@@ -252,17 +321,65 @@ def build_rows(
             outcome.notes.append(f"column {col.name} has no live catalog row; skipped")
             continue
         crit = critiques.get(col.name)
-        score = score_column(
-            col,
-            bundle.facts[col.name],
-            bundle,
-            crit,
-            settings.scoring,
-            settings.profiling,
-        )
+        facts = bundle.facts[col.name]
+        v2: dict[str, Any] = {}
+        if context is not None and settings.scoring.version == "heuristic-v2":
+            ev_in = context.source_input
+            ledger = build_ledger(col, facts, bundle, ev_in, settings.scoring.v2.strengths)
+            score = score_column_v2(
+                col, facts, bundle, crit, settings.scoring, settings.profiling,
+                ledger=ledger, evidence_refs=context.rendered.refs.get(col.name, set()),
+                alias_names=[a.alias for a in ev_in.aliases.get(col.name, [])] if ev_in else None,
+            )
+            summary = ev_in.columns.get(col.name) if ev_in is not None else None
+            coverage = column_coverage(col.name, ev_in)
+            unused = is_unused(summary)
+            pending = pending_claim_tests(
+                col.role, facts, ev_in,
+                [f"{h.to_schema}.{h.to_table}.{h.to_columns[0]}"
+                 for h in outcome.join_hints
+                 if h.from_columns == [col.name] and len(h.to_columns) == 1],
+            ) if context.profiling_available else []
+            exhausted = next_stage(coverage, ev_in, context.profiling_available, pending) is None
+            reasons = review_reasons(
+                score, ledger=ledger, critique=crit, exhausted=exhausted, unused=unused,
+                bands=settings.profiling,
+            )
+            weight = importance(facts, context.table_rows, context.fk_degree)
+            if extras is not None:
+                extras[col.name] = ColumnExtras(
+                    ledger=ledger,
+                    review=(
+                        {
+                            "reasons": reasons,
+                            "score": score.calibrated_score,
+                            "importance": weight,
+                            "priority": round((1 - score.calibrated_score) * weight, 6),
+                            "coverage": coverage,
+                        }
+                        if reasons
+                        else None
+                    ),
+                )
+            v2 = {
+                "semantic_type": _detected_type(summary),
+                "claimed_semantic_type": col.semantic_type,
+                "coverage": coverage,
+                "unused": unused,
+            }
+        else:
+            score = score_column(
+                col,
+                facts,
+                bundle,
+                crit,
+                settings.scoring,
+                settings.profiling,
+            )
         scores.append(score)
         column_rows.append(
-            {
+            v2
+            | {
                 "table_id": table_id,
                 "column_id": column_ids[col.name],
                 "run_id": run_id,
@@ -327,7 +444,7 @@ def build_rows(
         "score_breakdown": {
             "aggregate": "mean_of_columns",
             "columns": summary,
-            "weights_version": settings.scoring.weights_version,
+            "weights_version": scores[0].weights_version if scores else None,
             "calibrator": settings.scoring.calibrator,
         },
         "critique": (
@@ -344,6 +461,12 @@ def build_rows(
             "notes": outcome.notes,
         },
     }
+    if context is not None:
+        table_row.update(
+            evidence_hash=context.rendered.hash,
+            exposure=context.rendered.exposure,
+            chunks=outcome.chunks,
+        )
     return table_row, column_rows, scores
 
 
@@ -366,6 +489,7 @@ async def run_reasoning(
     embedder: EmbeddingClient | None = None,
     cache: KVCache | None = None,
     snapshot_loader: Callable[[dict], Snapshot] | None = None,
+    evidence_source: EvidenceSource | None = None,
 ) -> ReasoningReport:
     started = time.perf_counter()
     store = SemanticsStore(session)
@@ -414,7 +538,28 @@ async def run_reasoning(
         temperature=settings.llm.temperature,
         validation_retries=settings.semantics.validation_retries,
         cache_ttl_s=settings.cache.ttl_s.llm,
+        prompt_major=settings.semantics.prompt_major,
+        context_budget_tokens=settings.llm.context_budget_tokens,
     )
+    major = settings.semantics.prompt_major
+    if evidence_source is None and major >= 2:
+        # Deferred: gaia.profiling.service imports this module.
+        from gaia.profiling.service import load_profile_evidence, profiling_enabled
+
+        if profiling_enabled(settings, label):
+            # Phase 3A: stored profiles, tests and view lineage. Tables not yet
+            # profiled are catalog-only with more evidence still to come.
+            evidence_source = await load_profile_evidence(
+                settings, session, label, data_source.id, snapshot
+            )
+        else:
+            # Catalog-only mode: nothing beyond the catalog will come, so
+            # coverage is final and low scores go to the review queue.
+            evidence_source = NoEvidence()
+    if evidence_source is None:
+        evidence_source = NoEvidence()
+    exposure = Exposure.from_settings(settings)
+    fk_degree = _fk_degree(snapshot)
     # The client is built lazily: a run that skips every table, or a dry
     # run, needs no API key.
     reasoner: TableReasoner | None = None
@@ -434,8 +579,8 @@ async def run_reasoning(
     from gaia.semantics.critique import critique_prompt
     from gaia.semantics.reasoner import reasoning_prompt
 
-    prompt_version = reasoning_prompt().version
-    critique_prompt_version = critique_prompt().version
+    prompt_version = reasoning_prompt(major).version
+    critique_prompt_version = critique_prompt(major).version
 
     report = ReasoningReport(
         run_id=None,
@@ -447,6 +592,8 @@ async def run_reasoning(
         thinking=thinking,
         critique_thinking=critique_thinking,
         dry_run=options.dry_run,
+        prompt_major=major,
+        exposure=exposure.mode if major >= 2 else None,
     )
 
     # Plain values only from here on: the session commits after every table.
@@ -456,16 +603,41 @@ async def run_reasoning(
     current = await store.current_table_semantics(table_ids.values())
 
     # -- decide what to reason -------------------------------------------------
-    todo: list[tuple[TableSnapshot, TableBundle]] = []
+    todo: list[tuple[TableSnapshot, TableBundle, EvidenceContext | None]] = []
     for table in scope:
         bundle = build_bundle(table, dialect=snapshot.dialect)
+        context: EvidenceContext | None = None
+        if major >= 2:
+            ev_in = evidence_source.table_evidence(table.qualified_name)
+            context = EvidenceContext(
+                rendered=render_evidence(bundle, ev_in, exposure),
+                source_input=ev_in,
+                # The table's own verdict wins (e.g. SELECT denied on one table).
+                profiling_available=bool(
+                    ev_in.profiling_available if ev_in is not None
+                    else evidence_source.profiling_available
+                ),
+                table_rows=table.estimated_rows,
+                fk_degree=fk_degree.get(table.qualified_name, 0),
+            )
         cur = current.get(table_ids[(table.schema, table.name)])
+        evidence_same = context is None or (
+            cur is not None and cur.evidence_hash == context.rendered.hash
+        )
+        # A version whose critique failed is incomplete: its columns cannot be
+        # auto-approved, so it is re-run (the reasoning answer usually comes from
+        # the response cache; only the critique goes to the model again).
+        critique_missing = cur is not None and (
+            not cur.critique or cur.critique.get("verdict") == "not_assessed"
+        )
         unchanged = (
             cur is not None
             and cur.structure_hash == bundle.structure_hash
             and cur.prompt_version == prompt_version
             and cur.critique_prompt_version == critique_prompt_version
             and cur.model == model
+            and evidence_same
+            and not critique_missing
         )
         if unchanged and not options.force:
             report.results.append(
@@ -483,13 +655,19 @@ async def run_reasoning(
             critique_prompt_version,
         ):
             why = "prompt changed"
+        elif not evidence_same:
+            why = "evidence changed"
+        elif critique_missing:
+            why = "critique missing"
         else:
             why = "forced"
-        todo.append((table, bundle))
+        todo.append((table, bundle, context))
         if options.dry_run:
             rendered = None
             if options.show_bundles:
-                rendered = reasoning_messages(bundle, index)[1].content
+                rendered = reasoning_messages(
+                    bundle, index, context.rendered if context else None, major
+                )[1].content
             report.results.append(
                 TableResult(
                     table.qualified_name,
@@ -571,7 +749,7 @@ async def _execute(
     store: SemanticsStore,
     report: ReasoningReport,
     *,
-    todo: list[tuple[TableSnapshot, TableBundle]],
+    todo: list[tuple[TableSnapshot, TableBundle, EvidenceContext | None]],
     get_reasoner: Callable[[], TableReasoner],
     embed: bool,
     embedder: EmbeddingClient | None,
@@ -584,63 +762,104 @@ async def _execute(
 ) -> None:
     semaphore = asyncio.Semaphore(max(1, settings.llm.concurrency))
 
-    async def work(table: TableSnapshot, bundle: TableBundle) -> tuple[TableSnapshot, TableOutcome]:
+    async def work(
+        table: TableSnapshot, bundle: TableBundle, context: EvidenceContext | None
+    ) -> tuple[TableSnapshot, TableOutcome, EvidenceContext | None]:
         async with semaphore:
-            return table, await asyncio.to_thread(get_reasoner().run, bundle)
+            evidence = context.rendered if context is not None else None
+            outcome = await asyncio.to_thread(get_reasoner().run, bundle, evidence)
+            return table, outcome, context
 
     columns_written = 0
     failed = 0
     critiques_failed = 0
-    tasks = [asyncio.create_task(work(t, b)) for t, b in todo]
+    # Views are reasoned after tables: a computed view column means something
+    # in terms of its inputs (A8). Within a wave, tables run concurrently.
+    waves = [
+        [item for item in todo if item[0].kind != "view"],
+        [item for item in todo if item[0].kind == "view"],
+    ]
+    tasks: list[asyncio.Task] = []
     try:
-        for next_done in asyncio.as_completed(tasks):
-            table, outcome = await next_done
-            table_id = table_ids[(table.schema, table.name)]
-            await store.record_calls(
-                outcome.calls, run_id=run_id, data_source_id=data_source_id, table_id=table_id
-            )
-            result = TableResult(table.qualified_name, "failed", calls=outcome.calls)
-
-            if not outcome.ok:
-                failed += 1
-                result.detail = outcome.error or "unknown error"
-                logger.warning("reasoning failed for %s: %s", table.qualified_name, result.detail)
-            else:
-                cols = columns_by_table.get(table_id, {})
-                table_row, column_rows, _scores = build_rows(
-                    outcome,
-                    settings=settings,
-                    data_source_id=data_source_id,
-                    table_id=table_id,
-                    snapshot_id=snapshot_id,
-                    run_id=run_id,
-                    column_ids={name: cid for name, (cid, _h) in cols.items()},
-                    column_hashes={name: h for name, (_cid, h) in cols.items()},
-                    prompt_version=report.prompt_version,
-                    critique_prompt_version=report.critique_prompt_version,
-                    model=report.model,
-                    thinking=report.thinking,
+        for wave in waves:
+            tasks = [asyncio.create_task(work(t, b, c)) for t, b, c in wave]
+            for next_done in asyncio.as_completed(tasks):
+                table, outcome, context = await next_done
+                table_id = table_ids[(table.schema, table.name)]
+                await store.record_calls(
+                    outcome.calls, run_id=run_id, data_source_id=data_source_id, table_id=table_id
                 )
-                await store.write_table_version(table_row, column_rows)
-                report.inferred_hints += await store.upsert_inferred_join_hints(
-                    data_source_id,
-                    outcome.join_hints,
-                    run_id=run_id,
-                    prompt_version=report.prompt_version,
-                    model=report.model,
-                )
-                columns_written += len(column_rows)
-                result.action = "reasoned"
-                result.columns = len(column_rows)
-                result.critique_ok = outcome.critique is not None
-                result.mean_score = table_row["calibrated_score"]
-                if outcome.critique is None:
-                    critiques_failed += 1
-                    result.detail = f"critique failed: {outcome.critique_error}"
-                report.notes.extend(f"{table.qualified_name}: {n}" for n in outcome.notes)
+                result = TableResult(table.qualified_name, "failed", calls=outcome.calls)
 
-            report.results.append(result)
-            await session.commit()
+                if not outcome.ok:
+                    failed += 1
+                    result.detail = outcome.error or "unknown error"
+                    logger.warning(
+                        "reasoning failed for %s: %s", table.qualified_name, result.detail
+                    )
+                else:
+                    cols = columns_by_table.get(table_id, {})
+                    extras: dict[str, ColumnExtras] = {}
+                    table_row, column_rows, _scores = build_rows(
+                        outcome,
+                        settings=settings,
+                        data_source_id=data_source_id,
+                        table_id=table_id,
+                        snapshot_id=snapshot_id,
+                        run_id=run_id,
+                        column_ids={name: cid for name, (cid, _h) in cols.items()},
+                        column_hashes={name: h for name, (_cid, h) in cols.items()},
+                        prompt_version=report.prompt_version,
+                        critique_prompt_version=report.critique_prompt_version,
+                        model=report.model,
+                        thinking=report.thinking,
+                        context=context,
+                        extras=extras,
+                    )
+                    _sem, column_sems = await store.write_table_version(table_row, column_rows)
+                    if context is not None:
+                        by_column = {cid: name for name, (cid, _h) in cols.items()}
+                        ledgers, reviews = {}, {}
+                        for sem in column_sems:
+                            name = by_column.get(sem.column_id)
+                            extra = extras.get(name) if name else None
+                            if extra is None:
+                                continue
+                            if extra.ledger is not None:
+                                ledgers[sem.id] = extra.ledger.items
+                            if extra.review is not None:
+                                reviews[sem.id] = (sem.column_id, extra.review)
+                            report.coverage[sem.coverage] = report.coverage.get(sem.coverage, 0) + 1
+                        await store.write_evidence_items(table_id, ledgers)
+                        queued = await store.replace_review_items(
+                            data_source_id,
+                            table_id,
+                            [s.column_id for s in column_sems],
+                            reviews,
+                        )
+                        for reasons in queued:
+                            for reason in reasons:
+                                report.review[reason] = report.review.get(reason, 0) + 1
+                        report.review["queued"] = report.review.get("queued", 0) + len(queued)
+                    report.inferred_hints += await store.upsert_inferred_join_hints(
+                        data_source_id,
+                        outcome.join_hints,
+                        run_id=run_id,
+                        prompt_version=report.prompt_version,
+                        model=report.model,
+                    )
+                    columns_written += len(column_rows)
+                    result.action = "reasoned"
+                    result.columns = len(column_rows)
+                    result.critique_ok = outcome.critique is not None
+                    result.mean_score = table_row["calibrated_score"]
+                    if outcome.critique is None:
+                        critiques_failed += 1
+                        result.detail = f"critique failed: {outcome.critique_error}"
+                    report.notes.extend(f"{table.qualified_name}: {n}" for n in outcome.notes)
+
+                report.results.append(result)
+                await session.commit()
     finally:
         for task in tasks:
             task.cancel()

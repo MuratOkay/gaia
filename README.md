@@ -12,7 +12,11 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 > Status: **Phases 0, 1 and 2 complete and verified live.** Phase 3 (evidence
 > collection, profiling and re-reasoning) is **approved** (2026-11-14). Its
 > pre-work 3.P — a PostgreSQL development target and the PostgreSQL dialect — is
-> done and verified in a sandbox; sub-phase 3.0 is next. See [PHASES.md](PHASES.md).
+> done and verified in a sandbox; sub-phase 3.0 (timeouts, probe hardening,
+> re-measurement) is code complete and waits for runs on the real SQL Server;
+> **3B (reasoning with evidence, heuristic-v2, review queue) is done in the
+> sandbox**. What to run on your machine, in order:
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**. See [PHASES.md](PHASES.md).
 
 ---
 
@@ -57,13 +61,16 @@ make dev-api                  # http://127.0.0.1:8000/health
 ## Status
 
 **Phases 0, 1 and 2** are complete and verified end to end against the live
-SQL Server target. Phase 3 is approved; its PostgreSQL pre-work (3.P) is done.
+SQL Server target. Phase 3 is approved: 3.P is done, 3.0 is code complete, and
+3B (reasoning with evidence) and 3A (evidence collection) are done in the
+sandbox on PostgreSQL; the owner's host runs are listed in
+[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md).
 
 | Check | Result |
 |---|---|
 | Metadata DB + Redis | healthy; 6 extensions, 6 schemas |
 | Alembic | `0003 (head)` |
-| `make check-target` | 7/7 PASS — `nge_small`, 68 tables, 607 columns, read-only proven |
+| `make check-target` | 7/7 PASS — `nge_small`, 68 tables, 607 columns, read-only proven (since 3.0: 9 checks, read-only proven from permissions too) |
 | `make check-embed` | `bge-m3`, 1024 dims |
 | `make check-llm` | plain + JSON mode + thinking + usage |
 | `make introspect` | 71 objects / 607 columns captured, idempotent on re-run |
@@ -71,7 +78,7 @@ SQL Server target. Phase 3 is approved; its PostgreSQL pre-work (3.P) is done.
 | `make reason` | 10 tables / 99 columns reasoned, 109 embeddings, 94 join hints |
 | re-run `make reason` | `calls=0` — zero LLM calls, 0.3 s |
 | score breakdown | 99/99 sum exactly to `raw_score` |
-| `pytest` | 211 passed, 2 skipped (Ollama live tests) — with the PostgreSQL integration tests enabled (3.P) |
+| `pytest` | 357 passed, 8 skipped (Ollama live, SQL Server live) — with the PostgreSQL integration tests enabled (3A, sandbox); 365 expected on the host |
 
 Four non-obvious facts worth remembering:
 
@@ -115,8 +122,50 @@ corrective retry, scoring, a new version in `semantics.table_semantic` /
 failures and raw payloads) in `audit.llm_call`. New semantics are then
 embedded with Ollama `bge-m3` into `semantics.embedding`.
 
-A re-run skips any table whose structure hash, prompt versions and model are
-unchanged, so it makes zero LLM calls. Other options: `--schema`, `--limit`,
+A re-run skips any table whose structure hash, prompt versions, model and —
+since Phase 3B — evidence hash are unchanged, so it makes zero LLM calls. A table
+whose critique failed is re-run until it has one.
+
+### Phase 3B: reasoning with evidence (the default)
+
+`semantics.prompt_major: 2` and `scoring.version: heuristic-v2` are the defaults.
+Each table gets an evidence block next to its bundle; columns are scored from an
+evidence ledger (stored in `semantics.evidence_item`), and what the machine
+cannot settle goes to the review queue (`semantics.review_item`):
+
+```bash
+make reason TARGET=demo_pg ARGS="--table legacy.tb_trx02"        # evidence from the profile store (3A)
+make reason TARGET=demo_pg ARGS="--evidence-file ev.json ..."      # or profiles as JSON (gaia.profiling.summary)
+make review TARGET=demo_pg                                         # the SME queue, highest priority first
+make reason ARGS="--replay /tmp/replay ..."                         # answers from files; model recorded as 'replay'
+```
+
+### Phase 3A: evidence from the data
+
+Profiling reads the target (only `SELECT`, read-only session, timeouts, MAXDOP,
+page and time budgets, one run per data source) and stores aggregates — never
+sample rows — in the `profiling` schema (migration `0005`):
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head    # adds 0005_profiling
+make profile-dry TARGET=demo_pg          # plan: profile / reuse / skip, no target reads
+make profile     TARGET=demo_pg          # Stage 1: profiles, view lineage, join candidates
+make reason      TARGET=demo_pg          # Stage 2: reasoning with that evidence
+make profile-tests TARGET=demo_pg        # Stage 3: tests of the model's claims
+make reason      TARGET=demo_pg          # re-reasons only tables whose evidence changed
+```
+
+A second `make profile` inside the freshness window (same structure, row count
+within 20 %, younger than 30 days) reads no data. `--report` lists every join
+candidate tested, `--force` re-profiles, `--ignore-window` runs outside
+`profiling.window`. SQL Server may auto-create statistics while profiling; the
+run lists them (footprint). Turn profiling off for a target with
+`targets.<name>.profiling_enabled: false` — reasoning then uses catalog evidence
+only and routes low scores to review.
+
+Switching from Phase 2 prompts re-reasons every table once (the prompt version
+changes). To keep Phase 2 behaviour: `semantics.prompt_major: 1` and
+`scoring.version: heuristic-v1`. Other options: `--schema`, `--limit`,
 `--no-thinking`, `--force`, `--no-embed`, `--no-cache`, `--show-bundles`
 (with `--dry-run`, prints the exact prompt).
 
@@ -148,12 +197,23 @@ without the cache.
 (with a fake LLM and a fake embedder) against a **disposable** database. It
 runs only when `GAIA_TEST_DATABASE_URL` is set and the database name contains
 `test`, because it drops and recreates the `catalog`, `semantics` and `audit`
-schemas:
+schemas. Without it those tests are *skipped* — which is why the single-column
+re-reasoning check never ran on the host before 3.0.
 
 ```bash
-docker exec gaia-metadata-db createdb -U gaia gaia_test
-GAIA_TEST_DATABASE_URL=postgresql+asyncpg://gaia:<password>@127.0.0.1:5433/gaia_test make test
+make test-db                                   # creates gaia_test in the metadata container
+GAIA_TEST_DATABASE_URL=postgresql+asyncpg://gaia:<password>@127.0.0.1:5433/gaia_test \
+GAIA_TEST_PG_TARGET_URL=postgresql://gaia_ro:<pw>@127.0.0.1:5434/gaia_target_pg \
+GAIA_TEST_MSSQL=1 \
+make test                                      # everything, including live target tests
+make test ARGS="tests/integration/test_semantics_pipeline_pg.py -k single_column"
 ```
+
+`GAIA_TEST_MSSQL=1` runs the live SQL Server checks (statement timeout, probe,
+catalog determinism, the profiler on the smallest and the largest table, module
+definitions and view lineage) against the configured target with the read-only
+login. `GAIA_TEST_PG_TARGET_URL` adds the PostgreSQL target: the dialect, the
+whole 3A pipeline (`test_profiling_pg.py`) and the replay fixtures.
 
 ## Target database
 
@@ -237,7 +297,12 @@ Key decisions already fixed:
 | `make reset-db` | destroy and re-initialise the metadata DB |
 | `make psql` / `make redis-cli` | shells into the containers |
 | `make test` | run the test suite |
-| `make reason-dry` / `make reason` | Phase 2 reasoning over the stored snapshot (`ARGS=...`, `TARGET=...`) |
+| `make profile-dry` / `make profile` | Phase 3A Stage 1: profile the target, view lineage, join candidates (`ARGS=...`, `TARGET=...`) |
+| `make profile-tests` | Phase 3A Stage 3: tests of the stored claims (after `make reason`) |
+| `make reason-dry` / `make reason` | reasoning over the stored snapshot and evidence (`ARGS=...`, `TARGET=...`) |
+| `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
+| `make test-db` | create the disposable `gaia_test` database for the integration tests |
+| `make review` | the SME review queue, highest priority first (`TARGET=...`) |
 | `make pg-target-up` / `pg-target-seed` / `pg-target-psql` | PostgreSQL development target |
 | `make pull-embed` | pull the embedding model |
 
@@ -248,8 +313,9 @@ embeddings) is verified against `nge_small` and committed as `3585eba`; its
 acceptance checklist and open items are in PHASES.md.
 
 **Phase 3** (approved 2026-11-14) runs in gated sub-phases: **3.P** PostgreSQL
-target and dialect (done) → **3.0** preconditions → **3A** evidence collection →
-**3B** scoring v2 and reasoning with evidence → **3C** evaluation on a name-blind
-worst-case simulation. The 99 columns reasoned so far are 65 `deep_profile`,
+target and dialect (done) → **3.0** preconditions (code complete; SQL Server runs
+pending) → **3B** reasoning with evidence and scoring v2 (done in the sandbox,
+built before 3A at the owner's request) → **3A** evidence collection (done in the
+sandbox) → **3C** evaluation on a name-blind worst-case simulation. The 99 columns reasoned so far are 65 `deep_profile`,
 32 `deep_profile_flagged` and 2 `abstain`; they are the catalog-only baseline
 (condition N-C). SME review moves forward into Phase 5 (roadmap R1).

@@ -16,18 +16,30 @@ Every session Gaia opens against a PostgreSQL target gets:
 
 Settings are applied with ``SET`` after connecting rather than as startup
 ``options``, because connection poolers such as PgBouncer reject the latter.
+
+``GuardedCursor`` translates ``statement_timeout`` cancellations
+(``QueryCanceled``) into ``StatementTimeout`` and ``lock_timeout`` expiries
+(``LockNotAvailable``) into ``LockTimeout``, matching the SQL Server dialect.
+
+``autocommit=True`` runs every statement in its own read-only transaction
+(``default_transaction_read_only``). Measurements use it: after a timeout
+inside a transaction PostgreSQL aborts the whole transaction, so later
+statements could not run.
 """
 
 from __future__ import annotations
 
 from collections.abc import Iterator
 from contextlib import contextmanager
+from typing import Any
 
 import psycopg
+from psycopg import errors
 
 from gaia.core.config import TargetConfig
+from gaia.dialects.errors import LockTimeout, StatementTimeout
 
-__all__ = ["connect_params", "session"]
+__all__ = ["GuardedCursor", "connect_params", "session"]
 
 
 def connect_params(target: TargetConfig) -> dict[str, object]:
@@ -45,29 +57,79 @@ def connect_params(target: TargetConfig) -> dict[str, object]:
     return params
 
 
+class GuardedCursor:
+    """A psycopg cursor whose ``execute`` raises Gaia's timeout errors."""
+
+    def __init__(self, cursor: psycopg.Cursor) -> None:
+        self._cur = cursor
+
+    def execute(self, query: Any, params: Any = None) -> GuardedCursor:
+        try:
+            if params is None:
+                self._cur.execute(query)  # no placeholder parsing: LIKE '%' stays literal
+            else:
+                self._cur.execute(query, params)
+        except errors.QueryCanceled as exc:
+            if "statement timeout" not in str(exc):
+                raise
+            raise StatementTimeout(
+                f"statement timed out: {exc}", dialect="postgres", statement=str(query)
+            ) from exc
+        except errors.LockNotAvailable as exc:
+            raise LockTimeout(
+                f"lock timeout: {exc}", dialect="postgres", statement=str(query)
+            ) from exc
+        return self
+
+    def fetchone(self) -> Any:
+        return self._cur.fetchone()
+
+    def fetchall(self) -> list[Any]:
+        return self._cur.fetchall()
+
+    def fetchmany(self, size: int) -> list[Any]:
+        return self._cur.fetchmany(size)
+
+    @property
+    def description(self) -> Any:
+        return self._cur.description
+
+
 @contextmanager
 def session(
-    target: TargetConfig, *, isolation: str = "repeatable_read", read_only: bool = True
-) -> Iterator[psycopg.Cursor]:
-    """Yield a cursor inside one hardened transaction; always rolled back."""
-    conn = psycopg.connect(**connect_params(target), autocommit=False)
+    target: TargetConfig,
+    *,
+    isolation: str = "repeatable_read",
+    read_only: bool = True,
+    autocommit: bool = False,
+    statement_timeout_s: int | None = None,
+) -> Iterator[GuardedCursor]:
+    """Yield a cursor of a hardened session; a transaction is always rolled back."""
+    conn = psycopg.connect(**connect_params(target), autocommit=autocommit)
     try:
-        conn.isolation_level = (
-            psycopg.IsolationLevel.REPEATABLE_READ
-            if isolation == "repeatable_read"
-            else psycopg.IsolationLevel.READ_COMMITTED
-        )
-        conn.read_only = read_only
+        if not autocommit:
+            conn.isolation_level = (
+                psycopg.IsolationLevel.REPEATABLE_READ
+                if isolation == "repeatable_read"
+                else psycopg.IsolationLevel.READ_COMMITTED
+            )
+            conn.read_only = read_only
         limits = target.limits
-        with conn.cursor() as cur:
+        timeout_s = (
+            limits.statement_timeout_s if statement_timeout_s is None else statement_timeout_s
+        )
+        with conn.cursor() as raw:
+            cur = GuardedCursor(raw)
+            if autocommit and read_only:
+                cur.execute("SET default_transaction_read_only = on")
             cur.execute("SET search_path = pg_catalog")
-            cur.execute(f"SET statement_timeout = {int(limits.statement_timeout_s) * 1000}")
+            cur.execute(f"SET statement_timeout = {max(0, int(timeout_s)) * 1000}")
             cur.execute(f"SET lock_timeout = {int(limits.lock_timeout_ms)}")
             cur.execute(
-                "SET idle_in_transaction_session_timeout = "
-                f"{max(60, int(limits.statement_timeout_s) * 4) * 1000}"
+                f"SET idle_in_transaction_session_timeout = {max(60, int(timeout_s) * 4) * 1000}"
             )
             yield cur
-        conn.rollback()
+        if not autocommit:
+            conn.rollback()
     finally:
         conn.close()

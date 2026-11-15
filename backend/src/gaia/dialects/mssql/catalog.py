@@ -18,7 +18,8 @@ Deliberate choices, each verified against SQL Server 2025:
 * **Only ``is_ms_shipped = 0``** objects are read, so system tables never leak
   into the semantic model.
 * Every session is hardened: read-uncommitted, lock timeout, and a statement
-  timeout, because this runs against production replicas.
+  timeout (applied since Phase 3.0; before that it was configured but not
+  set), because this runs against production replicas.
 """
 
 from __future__ import annotations
@@ -32,6 +33,7 @@ from typing import Any
 import pyodbc
 
 from gaia.core.config import TargetConfig
+from gaia.dialects.mssql.connection import GuardedCursor, session
 from gaia.introspect.snapshot import (
     ColumnSnapshot,
     ConstraintSnapshot,
@@ -121,34 +123,17 @@ class MssqlCatalogReader:
     # -- connection --------------------------------------------------------
 
     @contextmanager
-    def _session(self) -> Iterator[pyodbc.Cursor]:
-        """Open a hardened read-only session and yield a single cursor.
+    def _session(self) -> Iterator[GuardedCursor]:
+        """A hardened read-only session with a **single** cursor.
 
-        A **single** cursor is used for the whole read. Creating another cursor
-        while the first is unreferenced lets Python garbage-collect it, and
-        pyodbc then loses track of the active statement handle — subsequent
-        ``fetchone()`` calls silently return ``None``. Keeping one cursor
-        avoids that entirely.
+        See ``gaia.dialects.mssql.connection``: isolation, lock timeout and —
+        since Phase 3.0 — the statement timeout are applied there. One cursor
+        only: creating a second while the first is unreferenced makes pyodbc
+        lose the active statement handle, and ``fetchone()`` then silently
+        returns ``None`` (a Phase 1 defect).
         """
-        conn = pyodbc.connect(
-            self.config.odbc_connection_string(),
-            timeout=self.config.limits.connect_timeout_s,
-            autocommit=False,
-        )
-        try:
-            cur = conn.cursor()
-            isolation = self.config.limits.isolation
-            if isolation == "read_uncommitted":
-                cur.execute("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED")
-            else:
-                cur.execute("SET TRANSACTION ISOLATION LEVEL READ COMMITTED")
-            cur.execute(f"SET LOCK_TIMEOUT {self.config.limits.lock_timeout_ms}")
-            cur.execute("SET NOCOUNT ON")
+        with session(self.config) as cur:
             yield cur
-            conn.rollback()
-        finally:
-            conn.close()
-
 
     # -- public API --------------------------------------------------------
 
@@ -220,14 +205,14 @@ class MssqlCatalogReader:
     # -- helpers -----------------------------------------------------------
 
     @staticmethod
-    def _scalar(cur: pyodbc.Cursor, sql: str) -> Any:
+    def _scalar(cur: GuardedCursor, sql: str) -> Any:
         cur.execute(sql)
         row = cur.fetchone()
         return None if row is None else row[0]
 
     # -- catalog queries ---------------------------------------------------
 
-    def _read_objects(self, cur: pyodbc.Cursor) -> list[tuple[int, str, str, str]]:
+    def _read_objects(self, cur: GuardedCursor) -> list[tuple[int, str, str, str]]:
         """Tables and views, excluding system objects."""
         cur.execute(
             """
@@ -248,7 +233,7 @@ class MssqlCatalogReader:
         ]
 
     def _read_columns(
-        self, cur: pyodbc.Cursor
+        self, cur: GuardedCursor
     ) -> dict[int, list[tuple[int, ColumnSnapshot]]]:
         """All columns keyed by owning object_id.
 
@@ -313,7 +298,7 @@ class MssqlCatalogReader:
         return result
 
     def _read_comments(
-        self, cur: pyodbc.Cursor, *, minor_id_zero: bool
+        self, cur: GuardedCursor, *, minor_id_zero: bool
     ) -> dict[Any, str]:
         """``MS_Description`` extended properties.
 
@@ -344,7 +329,7 @@ class MssqlCatalogReader:
                 out[(int(major_id), int(minor_id))] = text
         return out
 
-    def _read_column_defaults(self, cur: pyodbc.Cursor) -> dict[tuple[int, int], str]:
+    def _read_column_defaults(self, cur: GuardedCursor) -> dict[tuple[int, int], str]:
         cur.execute(
             """
             SELECT dc.parent_object_id, dc.parent_column_id, dc.definition
@@ -361,7 +346,7 @@ class MssqlCatalogReader:
 
 
     def _read_key_and_check_constraints(
-        self, cur: pyodbc.Cursor
+        self, cur: GuardedCursor
     ) -> dict[int, list[ConstraintSnapshot]]:
         """PK, unique and check constraints, with ordered column lists."""
         out: dict[int, list[ConstraintSnapshot]] = {}
@@ -420,7 +405,7 @@ class MssqlCatalogReader:
             )
         return out
 
-    def _read_foreign_keys(self, cur: pyodbc.Cursor) -> dict[int, list[RelationSnapshot]]:
+    def _read_foreign_keys(self, cur: GuardedCursor) -> dict[int, list[RelationSnapshot]]:
         """Foreign keys, grouped per parent object with column order preserved."""
         cur.execute(
             """
@@ -486,7 +471,7 @@ class MssqlCatalogReader:
         return out
 
 
-    def _read_indexes(self, cur: pyodbc.Cursor) -> dict[int, list[IndexSnapshot]]:
+    def _read_indexes(self, cur: GuardedCursor) -> dict[int, list[IndexSnapshot]]:
         cur.execute(
             """
             SELECT i.object_id, i.name, i.is_primary_key, i.is_unique,
@@ -551,7 +536,7 @@ class MssqlCatalogReader:
         return out
 
 
-    def _read_partitions(self, cur: pyodbc.Cursor) -> dict[int, dict[str, Any]]:
+    def _read_partitions(self, cur: GuardedCursor) -> dict[int, dict[str, Any]]:
         """Row counts and size, preferring the DMV, falling back to sys.partitions."""
         out: dict[int, dict[str, Any]] = {}
 
@@ -603,7 +588,7 @@ class MssqlCatalogReader:
             }
         return out
 
-    def _read_stats(self, cur: pyodbc.Cursor) -> dict[int, dict[str, Any]]:
+    def _read_stats(self, cur: GuardedCursor) -> dict[int, dict[str, Any]]:
         """Statistics freshness, feeding the data hash.
 
         ``modification_counter`` counts changes since the last statistics

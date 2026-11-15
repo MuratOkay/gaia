@@ -43,8 +43,18 @@ class DialectTypes:
 _MSSQL = DialectTypes(
     dialect="mssql",
     numeric=frozenset(
-        {"tinyint", "smallint", "int", "bigint", "decimal", "numeric", "money", "smallmoney",
-         "float", "real"}
+        {
+            "tinyint",
+            "smallint",
+            "int",
+            "bigint",
+            "decimal",
+            "numeric",
+            "money",
+            "smallmoney",
+            "float",
+            "real",
+        }
     ),
     temporal=frozenset(
         {"date", "datetime", "datetime2", "smalldatetime", "datetimeoffset", "time"}
@@ -61,8 +71,22 @@ _MSSQL = DialectTypes(
 _POSTGRES = DialectTypes(
     dialect="postgres",
     numeric=frozenset(
-        {"smallint", "integer", "int", "bigint", "int2", "int4", "int8", "numeric", "decimal",
-         "real", "double precision", "float4", "float8", "money"}
+        {
+            "smallint",
+            "integer",
+            "int",
+            "bigint",
+            "int2",
+            "int4",
+            "int8",
+            "numeric",
+            "decimal",
+            "real",
+            "double precision",
+            "float4",
+            "float8",
+            "money",
+        }
     ),
     temporal=frozenset({"date", "timestamp", "timestamptz", "time", "timetz"}),
     text=frozenset({"char", "varchar", "text", "bpchar", "citext", "name"}),
@@ -163,7 +187,10 @@ def _type_info(dialect: str, data_type: str, is_enum: bool) -> TypeInfo:
     while raw.endswith("[]"):
         raw = raw[:-2].rstrip()
     return TypeInfo(
-        base=base_type(raw), length=type_length(raw), types=types, is_array=is_array,
+        base=base_type(raw),
+        length=type_length(raw),
+        types=types,
+        is_array=is_array,
         is_enum=is_enum,
     )
 

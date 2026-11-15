@@ -11,17 +11,18 @@ import json
 
 from gaia.llm.base import Message
 from gaia.semantics.bundle import TableBundle
+from gaia.semantics.evidence import RenderedEvidence
 from gaia.semantics.prompts import Prompt, load_prompt
 from gaia.semantics.schemas import TableReasoning
 
 __all__ = ["critique_messages", "critique_prompt"]
 
 
-def critique_prompt() -> Prompt:
-    return load_prompt("critique_table", 1)
+def critique_prompt(major: int = 1) -> Prompt:
+    return load_prompt("critique_table", major)
 
 
-def _claims(reasoning: TableReasoning) -> dict:
+def _claims(reasoning: TableReasoning, major: int = 1) -> dict:
     """Only the claims under review, not the reasoner's own evidence or
     confidence, so the critic is not anchored by them."""
     return {
@@ -45,16 +46,24 @@ def _claims(reasoning: TableReasoning) -> dict:
                     "values": c.value_domain.values,
                 },
             }
+            | ({"semantic_type": c.semantic_type} if major >= 2 else {})
             for c in reasoning.columns
         ],
     }
 
 
-def critique_messages(bundle: TableBundle, reasoning: TableReasoning) -> list[Message]:
-    user = (
-        "Table bundle (json):\n"
-        f"{bundle.render()}\n\n"
+def critique_messages(
+    bundle: TableBundle,
+    reasoning: TableReasoning,
+    evidence: RenderedEvidence | None = None,
+    major: int = 1,
+) -> list[Message]:
+    """v1: bundle + claims (Phase 2, unchanged). v2: bundle + evidence + claims."""
+    parts = ["Table bundle (json):\n" f"{bundle.render()}"]
+    if major >= 2 and evidence is not None:
+        parts.append("Evidence (json):\n" f"{evidence.render()}")
+    parts.append(
         "Proposed interpretation to review (json):\n"
-        f"{json.dumps(_claims(reasoning), indent=2, ensure_ascii=False)}"
+        f"{json.dumps(_claims(reasoning, major), indent=2, ensure_ascii=False)}"
     )
-    return [Message("system", critique_prompt().text), Message("user", user)]
+    return [Message("system", critique_prompt(major).text), Message("user", "\n\n".join(parts))]

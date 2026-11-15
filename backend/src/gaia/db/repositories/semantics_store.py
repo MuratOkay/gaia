@@ -34,8 +34,10 @@ from gaia.db.models.catalog import (
 from gaia.db.models.semantics import (
     ColumnSemantic,
     Embedding,
+    EvidenceItem,
     JoinHint,
     ReasoningRun,
+    ReviewItem,
     TableSemantic,
 )
 from gaia.introspect.snapshot import Snapshot
@@ -522,6 +524,87 @@ class SemanticsStore:
             )
         await self.session.flush()
         return len(targets)
+
+    # -- evidence ledger and review queue (Phase 3B) ---------------------------------
+
+    async def write_evidence_items(
+        self, table_id: uuid.UUID, ledgers: dict[uuid.UUID, Sequence[Any]]
+    ) -> int:
+        """Store each column version's ledger (``semantics.evidence.EvidenceItem``)."""
+        count = 0
+        for column_semantic_id, items in ledgers.items():
+            for item in items:
+                self.session.add(
+                    EvidenceItem(
+                        column_semantic_id=column_semantic_id,
+                        table_id=table_id,
+                        kind=item.kind,
+                        direction=item.direction,
+                        strength=item.strength,
+                        source=item.source,
+                        ref=item.ref,
+                        detail=item.detail or None,
+                    )
+                )
+                count += 1
+        await self.session.flush()
+        return count
+
+    async def replace_review_items(
+        self,
+        data_source_id: uuid.UUID,
+        table_id: uuid.UUID,
+        column_ids: Sequence[uuid.UUID],
+        reviews: dict[uuid.UUID, tuple[uuid.UUID, dict[str, Any]]],
+    ) -> list[list[str]]:
+        """Supersede the open items of these columns, then queue the new ones.
+
+        A newer scored version always supersedes the previous open item, so the
+        queue never shows a score that is no longer current. Decisions taken
+        by an SME (status ``done``/``dismissed``) are never touched.
+        """
+        if column_ids:
+            await self.session.execute(
+                update(ReviewItem)
+                .where(ReviewItem.column_id.in_(list(column_ids)), ReviewItem.status == "open")
+                .values(status="superseded", resolved_at=func.now())
+                .execution_options(synchronize_session=False)
+            )
+        queued: list[list[str]] = []
+        for column_semantic_id, (column_id, review) in reviews.items():
+            self.session.add(
+                ReviewItem(
+                    data_source_id=data_source_id,
+                    table_id=table_id,
+                    column_id=column_id,
+                    column_semantic_id=column_semantic_id,
+                    subject_kind="column",
+                    reasons=list(review["reasons"]),
+                    priority=review["priority"],
+                    score=review["score"],
+                    importance=review["importance"],
+                    coverage=review["coverage"],
+                    status="open",
+                )
+            )
+            queued.append(list(review["reasons"]))
+        await self.session.flush()
+        return queued
+
+    async def open_review_items(
+        self, data_source_id: uuid.UUID, limit: int = 50
+    ) -> list[tuple[ReviewItem, TableRecord, ColumnRecord | None, ColumnSemantic | None]]:
+        """The queue, highest priority first."""
+        rows = await self.session.execute(
+            select(ReviewItem, TableRecord, ColumnRecord, ColumnSemantic)
+            .join(TableRecord, TableRecord.id == ReviewItem.table_id)
+            .outerjoin(ColumnRecord, ColumnRecord.id == ReviewItem.column_id)
+            .outerjoin(ColumnSemantic, ColumnSemantic.id == ReviewItem.column_semantic_id)
+            .where(ReviewItem.data_source_id == data_source_id, ReviewItem.status == "open")
+            .order_by(ReviewItem.priority.desc(), TableRecord.object_name, ColumnRecord.ordinal)
+            .limit(limit)
+        )
+        return [tuple(r) for r in rows.all()]
 
     # -- reporting -------------------------------------------------------------------
 

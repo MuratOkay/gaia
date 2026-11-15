@@ -11,6 +11,17 @@ Works from the latest stored snapshot (run ``make introspect`` first). Tables
 whose structure hash, prompt versions and model are unchanged are skipped, so
 a re-run over an unchanged schema makes zero LLM calls.
 
+Phase 3 (prompt generation 2, the default): each table also gets an evidence
+block — the stored profiles, tests and view lineage from ``make profile`` when
+profiling is enabled for the target, else catalog only. ``--evidence-file``
+replaces the store with a JSON document (format: ``gaia.profiling.summary``),
+e.g. for replayed fixtures.
+
+``--replay DIR`` answers from files instead of a provider (``gaia.llm.replay``):
+requests appear in ``DIR/requests``; answers written to ``DIR/responses`` are
+used on the next run. Such runs are recorded with model ``replay``, never under
+a provider's name, so they cannot be mistaken for measurements of a real model.
+
 Exit codes: 0 = all reasoned or skipped; 1 = aborted; 2 = some tables or
 critiques failed (their raw payloads are in ``audit.llm_call``).
 """
@@ -29,6 +40,8 @@ from gaia.llm.base import LLMError
 from gaia.llm.cache import build_cache
 from gaia.llm.deepseek import build_client
 from gaia.llm.embeddings import build_embedding_client
+from gaia.llm.replay import ReplayLLMClient, pending_requests
+from gaia.profiling.summary import JsonFileEvidence
 from gaia.semantics.service import ReasoningOptions, ReasoningReport, run_reasoning
 
 
@@ -38,6 +51,8 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
     print(f"model          : {report.model}")
     print(f"prompts        : {report.prompt_version} / {report.critique_prompt_version}")
     print(f"thinking       : semantics={report.thinking} critique={report.critique_thinking}")
+    if report.prompt_major >= 2:
+        print(f"generation     : 2 (evidence, heuristic-v2); values exposed as {report.exposure}")
     if report.run_id:
         print(f"run            : {report.run_id}")
     print()
@@ -82,6 +97,10 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
         f"cache_hits={report.embedding_cache_hits}"
     )
     print(f"join hints     : fk={report.fk_hints} inferred={report.inferred_hints}")
+    if report.coverage:
+        print(f"coverage       : {dict(sorted(report.coverage.items()))}")
+    if report.prompt_major >= 2:
+        print(f"review queue   : {dict(sorted(report.review.items())) or 'nothing queued'}")
     if report.stale_marked and any(report.stale_marked.values()):
         print(f"marked stale   : {report.stale_marked}")
 
@@ -122,10 +141,19 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
+    if args.replay:
+        settings = settings.model_copy(
+            update={"llm": settings.llm.model_copy(
+                update={"provider": "replay", "replay_dir": args.replay, "model": "replay"})}
+        )
     if settings.unresolved_env:
         print(f"WARN unresolved env placeholders: {', '.join(settings.unresolved_env)}")
 
     def llm_factory():
+        if settings.llm.provider == "replay":
+            if not settings.llm.replay_dir:
+                raise LLMError("llm.provider is replay but llm.replay_dir is not set")
+            return ReplayLLMClient(settings.llm.replay_dir)
         if not settings.llm.api_key:
             raise LLMError(
                 "DEEPSEEK_API_KEY is not set; required for reasoning (not for --dry-run)"
@@ -163,6 +191,9 @@ async def _run(args: argparse.Namespace) -> int:
                 llm_factory=llm_factory,
                 embedder=embedder,
                 cache=cache,
+                evidence_source=JsonFileEvidence(args.evidence_file)
+                if args.evidence_file
+                else None,
             )
     finally:
         if embedder is not None:
@@ -170,6 +201,13 @@ async def _run(args: argparse.Namespace) -> int:
         await dispose_engine()
 
     _print_report(report, cost_report=args.cost_report)
+    if settings.llm.provider == "replay" and settings.llm.replay_dir:
+        pending = pending_requests(settings.llm.replay_dir)
+        if pending:
+            print(f"\nreplay: {len(pending)} request(s) awaiting an answer in "
+                  f"{settings.llm.replay_dir}/responses/:")
+            for p in pending:
+                print(f"  {p['key']}  {p['purpose']:<9} {p['table']}")
     if report.count("failed") or any(r.critique_ok is False for r in report.results):
         return 2
     return 0
@@ -200,6 +238,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-embed", action="store_true", help="skip the embedding step")
     parser.add_argument("--no-cache", action="store_true", help="bypass the Redis response cache")
     parser.add_argument("--cost-report", action="store_true", help="print every LLM call")
+    parser.add_argument(
+        "--replay", metavar="DIR", help="answer from files in DIR (model recorded as 'replay')"
+    )
+    parser.add_argument(
+        "--evidence-file", metavar="JSON",
+        help="evidence from a JSON file instead of the profile store (fixtures, experiments)",
+    )
     args = parser.parse_args(argv)
 
     try:

@@ -1,0 +1,61 @@
+# make profile TARGET=demo_pg ARGS="--report" — sandbox, PostgreSQL 16, demo_pg scale 1 (seed 42), 2026-11-14
+# First run on an empty profile store; the second run reused all 24 tables with 0 data queries in 0.5 s.
+# Pages are estimates from catalog sizes (logical 8 KB pages), not measured I/O.
+
+data source    : demo_pg (postgres)
+stage          : 1
+run            : fccfcf92-ef53-416b-be64-dee3fa30281d
+
+  crm.addresses              profiled      small       q=11  pages~8,372      1176 ms
+  crm.customer_notes         profiled      small       q=2   pages~194         299 ms
+  crm.customers              profiled      small       q=17  pages~8,064      1564 ms
+  finance.currencies         profiled      small       q=2   pages~2             4 ms
+  finance.fx_rates           profiled      small       q=2   pages~50          101 ms
+  finance.gl_entries         profiled      small       q=9   pages~56,760     3196 ms
+  finance.invoices           profiled      small       q=9   pages~19,974     1618 ms
+  hr.departments             profiled      small       q=2   pages~2             5 ms
+  hr.employees               profiled      small       q=2   pages~20          125 ms
+  legacy.tb_mst01            profiled      small       q=9   pages~1,800       670 ms
+  legacy.tb_prm03            profiled      small       q=2   pages~2            11 ms
+  legacy.tb_trx02            profiled      small       q=11  pages~22,988     2064 ms
+  legacy.xx_aux              profiled      small       q=2   pages~64          100 ms
+  product.categories         profiled      small       q=2   pages~2             4 ms
+  product.price_history      profiled      small       q=2   pages~100         155 ms
+  product.products           profiled      small       q=2   pages~98          290 ms
+  product.suppliers          profiled      small       q=2   pages~4            20 ms
+  rpt.mv_product_margin      skipped        (view)
+  rpt.v_customer_overview    skipped        (view)
+  rpt.v_daily_sales          skipped        (view)
+  rpt.v_legacy_transactions  skipped        (view)
+  sales.order_events         profiled      small       q=8   pages~44,507     2444 ms
+  sales.order_lines          profiled      small       q=11  pages~58,740     2294 ms
+  sales.orders               profiled      small       q=19  pages~81,090     4000 ms
+  sales.payments             profiled      small       q=10  pages~23,518     2452 ms
+  sales.returns              profiled      small       q=7   pages~1,546       419 ms
+  store.inventory            profiled      small       q=7   pages~1,074       385 ms
+  store.stores               profiled      small       q=2   pages~2             8 ms
+
+tables         : {'profiled': 24, 'skipped': 4}
+modules        : {'new': 4, 'changed': 0, 'unchanged': 0, 'gone': 0}
+view lineage   : {'pass_through': 16, 'computed': 12, 'unresolved': 0}
+target         : data queries=169 catalog queries=25 pages~330,747 wall=25.4s
+join candidates: tested=17 kept=8 passed(>=95% of rows)=6
+  finance.gl_entries.doc_ref             -> finance.invoices.invoice_no             90% rows  90% values
+  hr.employees.salary_currency           -> finance.currencies.currency_code       100% rows 100% values
+  hr.employees.salary_currency           -> hr.departments.dept_code                 0% rows   0% values  (not kept)
+  legacy.tb_mst01.c01                    -> crm.customers.customer_code            100% rows 100% values
+  legacy.tb_prm03.grp                    -> hr.departments.dept_code                67% rows  20% values  (not kept)
+  legacy.tb_prm03.grp                    -> finance.currencies.currency_code         0% rows   0% values  (not kept)
+  legacy.tb_prm03.k                      -> store.stores.store_code                 67% rows  67% values
+  legacy.tb_trx02.f10                    -> finance.currencies.currency_code       100% rows 100% values
+  legacy.tb_trx02.f10                    -> hr.departments.dept_code                 0% rows   0% values  (not kept)
+  legacy.tb_trx02.f2                     -> crm.customers.customer_code             99% rows  99% values
+  legacy.tb_trx02.f9                     -> store.stores.store_code                 98% rows  33% values
+  sales.orders.currency_code             -> finance.currencies.currency_code       100% rows 100% values
+  sales.orders.currency_code             -> hr.departments.dept_code                 0% rows   0% values  (not kept)
+  sales.orders.source_system             -> finance.currencies.currency_code         0% rows   0% values  (not kept)
+  sales.orders.source_system             -> hr.departments.dept_code                 0% rows   0% values  (not kept)
+  sales.returns.reason_code              -> finance.currencies.currency_code         0% rows   0% values  (not kept)
+  sales.returns.reason_code              -> hr.departments.dept_code                 0% rows   0% values  (not kept)
+footprint      : statistics 213 -> 213, new: 0
+                 PostgreSQL creates statistics only by ANALYZE; anything here is autovacuum running concurrently, not Gaia
