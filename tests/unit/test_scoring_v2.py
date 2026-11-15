@@ -175,3 +175,26 @@ def test_data_can_satisfy_a_type_rule_that_names_would_otherwise_decide():
     weak_fit = weak.breakdown()["components"]["coherence"]["signals"]["checks"]["role_type_fit"]
     assert weak_fit["value"] == 0.0
     assert strong.raw_score > weak.raw_score
+
+
+def test_a_code_with_a_foreign_key_is_not_contradicted():
+    """Owner run 2026-11-15: payments.currency_code (FK to the currency table)
+    claimed as a code was contradicted by its own FK (0.61, queued), while the
+    same kind of column claimed as a reference scored 0.78. An FK supports a
+    code, says nothing about a dimension, and still contradicts a measure."""
+    code_fk = ColumnFacts(name="c", data_type="char(3)", nullable=False, foreign_keys=["fk:x"],
+                          foreign_keys_trusted=True)
+    code = {"role": "code", "value_domain": {"kind": "enumeration", "source": "foreign_key"}}
+    as_code = _score(code_fk, _m(**code))
+    as_ref = _score(code_fk, _m(**REF))
+    items = as_code.breakdown()["components"]["evidence_support"]["signals"]["items"]
+    assert [(i["kind"], i["direction"]) for i in items] == [("foreign_key", "supports")]
+    checks = as_code.breakdown()["components"]["coherence"]["signals"]["checks"]
+    assert checks["fk_role_fit"]["value"] == 1.0 and checks["fk_domain_fit"]["value"] == 1.0
+    assert abs(as_code.raw_score - as_ref.raw_score) < 0.01
+    name = _score(code_fk, _m(role="dimension", value_domain={"kind": "free"}))
+    assert "fk_role_fit" not in name.breakdown()["components"]["coherence"]["signals"]["checks"]
+    assert not name.breakdown()["components"]["evidence_support"]["signals"]["items"]
+    measure = _score(code_fk, _m(role="measure"))
+    items = measure.breakdown()["components"]["evidence_support"]["signals"]["items"]
+    assert ("foreign_key", "contradicts") in {(i["kind"], i["direction"]) for i in items}

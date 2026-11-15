@@ -153,12 +153,43 @@ class CatalogIndex:
         return qualified in self.columns
 
 
-def build_catalog_index(snapshot: Snapshot) -> CatalogIndex:
+def _unique_keys(table: TableSnapshot) -> list[list[str]]:
+    """Alternate keys: unique constraints and unfiltered, enabled unique indexes
+    that are not the primary key, in a stable order."""
+    pk = next((c.columns for c in table.constraints if c.kind == "primary_key"), None)
+    keys: list[list[str]] = []
+    for con in table.constraints:
+        if con.kind == "unique" and con.columns:
+            keys.append(list(con.columns))
+    for idx in table.indexes:
+        cols = [c["name"] for c in idx.columns if not c.get("included")]
+        if idx.is_unique and not idx.filter_definition and not idx.is_disabled and cols:
+            keys.append(cols)
+    out: list[list[str]] = []
+    for key in sorted(keys, key=lambda k: (len(k), k)):
+        if key != (list(pk) if pk else None) and key not in out:
+            out.append(key)
+    return out
+
+
+def build_catalog_index(snapshot: Snapshot, *, unique_keys: bool = False) -> CatalogIndex:
+    """The object list. ``unique_keys`` (prompt generation 2) also lists
+    alternate keys: with primary keys alone the model aimed code columns at
+    surrogate ids (owner run 2026-11-15: ``f2 -> customers.customer_id`` and
+    ``store_code -> stores.store_id``, where ``customer_code`` and
+    ``store_code`` are the unique keys the values live in)."""
     entries: list[str] = []
     columns: dict[str, set[str]] = {}
     for table in sorted(snapshot.tables, key=lambda t: (t.schema, t.name)):
         pk = next((c for c in table.constraints if c.kind == "primary_key"), None)
-        suffix = f" (pk: {', '.join(pk.columns)})" if pk and pk.columns else ""
+        parts = [f"pk: {', '.join(pk.columns)}"] if pk and pk.columns else []
+        if unique_keys:
+            alternates = [
+                k[0] if len(k) == 1 else f"({', '.join(k)})" for k in _unique_keys(table)
+            ]
+            if alternates:
+                parts.append(f"unique: {', '.join(alternates)}")
+        suffix = f" ({'; '.join(parts)})" if parts else ""
         kind = " [view]" if table.kind == "view" else ""
         entries.append(f"- {table.qualified_name}{kind}{suffix}")
         columns[table.qualified_name] = {c.name for c in table.columns}

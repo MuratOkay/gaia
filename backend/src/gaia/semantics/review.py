@@ -12,8 +12,9 @@ are *not* queued: an SME's time is the scarcest resource (premise A1). Unused
 columns (empty or constant) are never queued.
 
 Extra tags explain the item: ``contradiction`` (a contradicting evidence item
-of strength >= 0.5) and ``critique_disagrees`` (the critique said doubtful or
-contradicted).
+of strength >= 0.5), ``critique_disagrees`` (the critique said doubtful or
+contradicted) and ``test_not_run`` (a Stage 3 test of the claim could not run:
+budget, timeout, or a target that no longer exists).
 
 ``priority = (1 - score) x importance``, where importance (0.05..1) reflects how
 much a wrong meaning would cost: table size, foreign-key degree, and whether
@@ -63,4 +64,6 @@ def review_reasons(
         reasons.append("contradiction")
     if critique is not None and critique.verdict in ("doubtful", "contradicted"):
         reasons.append("critique_disagrees")
+    if ledger is not None and ledger.inconclusive:
+        reasons.append("test_not_run")
     return reasons

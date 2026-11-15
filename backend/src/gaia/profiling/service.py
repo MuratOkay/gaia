@@ -32,8 +32,10 @@ import asyncio
 import hashlib
 import logging
 import math
+import re
 import time
 import uuid
+from collections import Counter
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
@@ -58,18 +60,23 @@ from gaia.profiling.budget import (
     table_pages,
 )
 from gaia.profiling.joins import (
-    CHANCE_MAX,
+    KEEP_RATE,
     family,
     find_candidates,
     inclusion_test,
-    integer_chance,
+    integer_density,
     single_keys,
     topk_test,
     uniqueness_test,
 )
 from gaia.profiling.lineage import parse_view_lineage
-from gaia.profiling.statistics import TableProfileResult, profile_table
-from gaia.profiling.summary import ColumnProfileSummary, TableEvidenceInput
+from gaia.profiling.statistics import (
+    TableProfileResult,
+    column_pages,
+    join_sample,
+    profile_table,
+)
+from gaia.profiling.summary import ColumnProfileSummary, TableEvidenceInput, VerificationResult
 from gaia.semantics.bundle import build_bundle
 from gaia.semantics.evidence import pending_claim_tests
 from gaia.semantics.service import select_tables
@@ -113,6 +120,7 @@ class TableAction:
     pages: int = 0
     runtime_ms: int = 0
     size_class: str | None = None
+    notes: list[str] = field(default_factory=list)  # every note (detail: the first two)
 
 
 @dataclass
@@ -127,6 +135,10 @@ class ProfileReport:
     lineage: dict[str, int] = field(default_factory=dict)
     joins: list[dict[str, Any]] = field(default_factory=list)
     tests: list[dict[str, Any]] = field(default_factory=list)
+    # Stage 1: samples re-drawn from earlier-profiled tables for new parents (D12)
+    join_samples: int = 0
+    # Stage 3: what the claim tests did to the model's join hints (refuted / restored)
+    hints: Counter[str] = field(default_factory=Counter)
     footprint: dict[str, Any] | None = None
     queries: int = 0  # data queries (read table rows)
     catalog_queries: int = 0
@@ -497,6 +509,7 @@ async def _stage1(
                 budget_cfg.max_runtime_per_table_s,
                 run_budget,
                 statement_timeout_s=budget_cfg.statement_timeout_s,
+                time_rule=budget_cfg.time_rule,
             )
             if run_budget.remaining() <= 0:
                 await _write_skip(
@@ -548,6 +561,7 @@ async def _stage1(
                     pages=result.pages,
                     runtime_ms=result.runtime_ms,
                     size_class=result.size_class,
+                    notes=list(result.notes),
                 )
             )
 
@@ -564,12 +578,15 @@ async def _stage1(
                 column_ids,
                 run_budget,
                 budget_cfg.max_join_tests,
+                cfg=cfg,
             )
 
         after = await worker.call(profiler.stats_inventory, cur)
         # Data queries: statements that read table rows (profiles, join tests);
         # the rest read the catalog (modules, privileges, statistics metadata).
-        report.queries = sum(r.queries for r in report.results) + len(report.joins)
+        report.queries = (
+            sum(r.queries for r in report.results) + len(report.joins) + report.join_samples
+        )
         report.catalog_queries = profiler.queries - total_start - report.queries
     report.pages = run_budget.pages
     if before is not None and after is not None:
@@ -684,8 +701,14 @@ async def _discover_joins(
     column_ids: dict[uuid.UUID, dict[str, uuid.UUID]],
     run_budget: RunBudget,
     max_tests: int,
+    *,
+    cfg=None,
 ) -> None:
-    """Stage 1 join candidates among profiled tables (parents: any current profile)."""
+    """Stage 1 join candidates among profiled tables (parents: any current profile).
+
+    Children are the tables profiled in this run, and (D12) the tables profiled
+    in earlier runs against the parents profiled in this one: sample values are
+    never stored, so their values are drawn again, for those tables only."""
     summaries: dict[str, dict[str, ColumnProfileSummary]] = {}
     evidence = await store.load_evidence(ctx.data_source_id, ctx.snapshot, enabled=True)
     for t in ctx.snapshot.tables:
@@ -702,6 +725,16 @@ async def _discover_joins(
     types = {
         (t.qualified_name, c.name): c.data_type for t in ctx.snapshot.tables for c in t.columns
     }
+    if cfg is not None:
+        extra, extra_values = await _reused_children(
+            store, ctx, fresh, summaries, parent_values, profiler, worker, report, run_budget,
+            cfg,
+        )
+        candidates += extra
+        child_values.update(extra_values)
+        missing = {ctx.table_ids[c.child_table] for c in extra} - set(column_ids)
+        if missing:
+            column_ids.update(await store.column_ids(missing))
     if len(candidates) > max_tests:
         report.notes.append(
             f"join candidates: {len(candidates)} found, {max_tests} tested "
@@ -730,6 +763,10 @@ async def _discover_joins(
                 origin="candidate",
                 specific=cand.specific,
                 parent_type=types.get((cand.parent_table, cand.parent_column)),
+                child_type=types.get((cand.child_table, cand.child_column)),
+                density=integer_density(
+                    summaries.get(cand.parent_table, {}).get(cand.parent_column)
+                ),
             )
         except Exception as exc:
             report.notes.append(
@@ -745,7 +782,7 @@ async def _discover_joins(
             "parent": f"{cand.parent_table}.{cand.parent_column}",
             "rate": result.metric,
             "passed": result.passed,
-            "specific": cand.specific,
+            "specific": result.specific,  # decided by the outcome (joins.chance_of_hits)
             "reason": cand.reason,
             "distinct_rate": round(outcome.distinct_rate, 4),
             "kept": outcome.worth_keeping,
@@ -766,6 +803,97 @@ async def _discover_joins(
             runtime_ms=runtime,
         )
         await session.commit()
+
+
+async def _reused_children(
+    store: ProfileStore,
+    ctx: _Context,
+    fresh: dict[str, TableProfileResult],
+    summaries: dict[str, dict[str, ColumnProfileSummary]],
+    parent_values: dict[tuple[str, str], Any],
+    profiler,
+    worker: _TargetThread,
+    report: ProfileReport,
+    run_budget: RunBudget,
+    cfg,
+) -> tuple[list, dict[tuple[str, str], Any]]:
+    """Candidates from tables profiled in earlier runs to parents profiled now."""
+    tables = {t.qualified_name: t for t in ctx.snapshot.tables if t.kind == "table"}
+    new_parents = {name for name in fresh if name in tables and single_keys(tables[name])}
+    reused = [
+        name for name in summaries if name in tables and name not in fresh
+    ]
+    if not new_parents or not reused:
+        return [], {}
+    # 1. a cheap pre-filter from what the stored profiles already say
+    stand_in = {
+        (name, col): [(v, int(n)) for v, n in (s.top_values or [])]
+        + [(v, 1) for v in s.sample_values or []]
+        for name in reused
+        for col, s in summaries[name].items()
+    }
+    stand_in = {k: v for k, v in stand_in.items() if v}
+    maybe = find_candidates(
+        ctx.snapshot, summaries, stand_in, parent_values, parents_in=new_parents
+    )
+    children = {c.child_table for c in maybe if c.child_table in ctx.table_ids}
+    existing = await store.current_tests(ctx.table_ids[n] for n in children)
+    done = {
+        (name, t.column_name, t.test_id)
+        for name in children
+        for t in existing.get(ctx.table_ids[name], [])
+    }
+    wanted: dict[str, set[str]] = {}
+    for cand in maybe:
+        key = (cand.child_table, cand.child_column, f"inc:{cand.parent_table}.{cand.parent_column}")
+        if key not in done:
+            wanted.setdefault(cand.child_table, set()).add(cand.child_column)
+    if not wanted:
+        return [], {}
+    # 2. real values, one sample statement per table
+    budget = cfg.budget
+    values: dict[tuple[str, str], Any] = {}
+    for name in sorted(wanted):
+        table = tables[name]
+        cols = [(c.name, c.data_type) for c in table.columns if c.name in wanted[name]]
+        exprs = [(n, profiler.sample_expr(n, dt)) for n, dt in cols]
+        exprs = [(n, e) for n, e in exprs if e is not None]
+        if not exprs:
+            continue
+        whole = (table.estimated_rows or 0) <= budget.sample_target_rows
+        cost = _sample_cost(table, budget)
+        if run_budget.pages + cost > run_budget.max_pages:
+            report.notes.append("join candidates of earlier-profiled tables: run page budget")
+            break
+        sql = profiler.sample_sql(
+            profiler.table(table.schema, table.name), [e for _n, e in exprs],
+            budget.sample_target_rows, table.estimated_rows, cfg.seed, whole,
+        )
+        try:
+            rows = await worker.call(profiler.query, worker.cur, sql, None,
+                                     budget.max_sample_rows)
+        except Exception as exc:
+            report.notes.append(f"{name}: join sample failed: {type(exc).__name__}: "
+                                f"{scrub(str(exc))}")
+            continue
+        run_budget.pages += cost
+        report.join_samples += 1
+        for i, (col, _e) in enumerate(exprs):
+            column = [r[i] for r in rows]
+            column = [None if isinstance(v, str) and not v.strip() else v for v in column]
+            if any(v is not None for v in column):
+                values[(name, col)] = join_sample(column, budget.join_test_values, cfg.seed)
+    found = [
+        c for c in find_candidates(ctx.snapshot, summaries, values, parent_values,
+                                   parents_in=new_parents)
+        if (c.child_table, c.child_column, f"inc:{c.parent_table}.{c.parent_column}") not in done
+    ]
+    if found:
+        report.notes.append(
+            f"join candidates: {len(wanted)} earlier-profiled table(s) re-sampled against "
+            f"{len(new_parents)} newly profiled parent(s)"
+        )
+    return found, values
 
 
 # -- Stage 3 ---------------------------------------------------------------------------------
@@ -808,11 +936,12 @@ async def run_stage3(
                 roles[(table_id, by_column_id[column_id][1])] = role
     hints: dict[tuple[str, str], list[str]] = {}
     skipped_composite = 0
+    statuses = ("inferred", "refuted") if options.force else ("inferred",)
     for h in await session.scalars(
         select(JoinHint).where(
             JoinHint.data_source_id == ctx.data_source_id,
             JoinHint.source == "llm",
-            JoinHint.status == "inferred",
+            JoinHint.status.in_(statuses),
         )
     ):
         if len(h.from_columns) != 1 or len(h.to_columns) != 1:
@@ -954,11 +1083,44 @@ async def _stage3_tests(
                     budget_cfg.max_runtime_per_table_s,
                     run_budget,
                     statement_timeout_s=budget_cfg.statement_timeout_s,
+                    time_rule=budget_cfg.time_rule,
                 ),
             )
             kind, _, target = key.partition(":")
             started_test = time.perf_counter()
             label = f"{table.qualified_name}.{column}"
+
+            async def not_run(reason: str, *, _key: str = key, _kind: str = kind,
+                              _label: str = label, _table_id=table_id, _column_id=column_id,
+                              _column: str = column, _target: str = target,
+                              _started: float = started_test) -> None:
+                """A claim test that cannot run is recorded as inconclusive, so the
+                column is not escalated forever (it goes to the SME instead); a
+                later ``--force`` run retries it."""
+                report.notes.append(f"{_label} {_key}: not run ({reason})")
+                result = VerificationResult(
+                    test_id=_key,
+                    kind=_TEST_KINDS.get(_kind, _kind),
+                    passed=False,
+                    metric=None,
+                    detail=f"not run: {reason}",
+                    origin="claim",
+                    conclusive=False,
+                )
+                await store.write_test(
+                    data_source_id=ctx.data_source_id,
+                    table_id=_table_id,
+                    column_id=_column_id,
+                    column_name=_column,
+                    result=result,
+                    stage=3,
+                    target=_target if _kind == "inc" else None,
+                    method="not_run",
+                    runtime_ms=int((time.perf_counter() - _started) * 1000),
+                )
+                await session.commit()
+                report.tests.append(_test_entry(_label, _key, False, None, "not run"))
+
             try:
                 if kind == "inc":
                     adopted = next(
@@ -973,13 +1135,24 @@ async def _stage3_tests(
                     )
                     if adopted is not None and not options.force:
                         row = await store.adopt_test(adopted)
+                        report.hints[await _hint_outcome(
+                            session, ctx, table, column, target, row.passed, row.metric
+                        )] += 1
                         report.tests.append(
                             _test_entry(label, row.test_id, row.passed, row.metric, "adopted")
                         )
                         await session.commit()
                         continue
                     pt, _, pc = target.rpartition(".")
-                    parent_table = tables[pt]
+                    parent_table = tables.get(pt)
+                    if parent_table is None or pc not in {c.name for c in parent_table.columns}:
+                        await not_run(f"{target} is not in the current catalog")
+                        continue
+                    expr = profiler.sample_expr(column, types.get((table.qualified_name,
+                                                                   column), ""))
+                    if expr is None:
+                        await not_run("the column's type cannot be sampled")
+                        continue
                     # An index seek per value on a key; a scan otherwise.
                     seek = pc in single_keys(parent_table)
                     cost = _sample_cost(table, budget_cfg) + (
@@ -989,24 +1162,35 @@ async def _stage3_tests(
                     )
                     refusal = budget.refusal(cost)
                     if refusal:
-                        report.notes.append(f"{label} {key}: not run ({refusal})")
+                        if refusal.startswith("run page budget"):
+                            report.notes.append(f"{label} {key}: not run ({refusal})")
+                        else:
+                            await not_run(refusal)
                         continue
-                    sql = profiler.values_sql(
+                    # An unbiased set of values (3A correction 3, now in Stage 3 too):
+                    # rows of the sample in seeded random order, not the most
+                    # frequent values, which over-represent heavy hitters.
+                    whole = _whole(table, budget_cfg)
+                    sql = profiler.sample_sql(
                         profiler.table(table.schema, table.name),
-                        column,
-                        budget_cfg.join_test_values,
+                        [expr],
                         budget_cfg.sample_target_rows,
                         table.estimated_rows,
                         cfg.seed,
-                        _whole(table, budget_cfg),
+                        whole,
                     )
-                    rows = await worker.call(profiler.query, cur, sql)
-                    weighted = [(r[0], int(r[1])) for r in rows]
-                    specific = True
+                    rows = await worker.call(
+                        profiler.query, cur, sql, None, budget_cfg.max_sample_rows
+                    )
+                    weighted = join_sample(
+                        [r[0] for r in rows], budget_cfg.join_test_values, cfg.seed
+                    )
+                    density = None
                     if family(dialect, types.get((pt, pc), "")) == "integer":
                         parent_ev = evidence.table_evidence(pt)
-                        parent = parent_ev.columns.get(pc) if parent_ev else None
-                        specific = integer_chance(parent, len(weighted)) < CHANCE_MAX
+                        density = integer_density(
+                            parent_ev.columns.get(pc) if parent_ev else None
+                        )
                     outcome = await worker.call(
                         inclusion_test,
                         profiler,
@@ -1016,24 +1200,32 @@ async def _stage3_tests(
                         weighted,
                         stage=3,
                         origin="claim",
-                        specific=specific,
                         parent_type=types.get((pt, pc)),
+                        child_type=types.get((table.qualified_name, column)),
+                        density=density,
                     )
                     result = outcome.result
-                    method = "exact" if _whole(table, budget_cfg) else "sampled_pages"
+                    method = "exact" if whole else "sampled_pages"
                 elif kind == "uniq":
-                    cost = 2 * table_pages(table)
+                    cost = 2 * column_pages(table, table_pages(table),
+                                             profiler.is_columnstore(table))
                     refusal = budget.refusal(cost)
                     if refusal:
-                        report.notes.append(f"{label} {key}: not run ({refusal})")
+                        if refusal.startswith("run page budget"):
+                            report.notes.append(f"{label} {key}: not run ({refusal})")
+                        else:
+                            await not_run(refusal)
                         continue
                     result = await worker.call(uniqueness_test, profiler, cur, table, column)
                     method, target = "exact", None
                 elif kind == "topk":
-                    cost = table_pages(table)
+                    cost = column_pages(table, table_pages(table), profiler.is_columnstore(table))
                     refusal = budget.refusal(cost)
                     if refusal:
-                        report.notes.append(f"{label} {key}: not run ({refusal})")
+                        if refusal.startswith("run page budget"):
+                            report.notes.append(f"{label} {key}: not run ({refusal})")
+                        else:
+                            await not_run(refusal)
                         continue
                     result, _top = await worker.call(
                         topk_test,
@@ -1048,9 +1240,10 @@ async def _stage3_tests(
                 else:
                     continue
             except Exception as exc:
-                report.notes.append(f"{label} {key} failed: {type(exc).__name__}: {exc}")
+                await not_run(f"{type(exc).__name__}: {scrub(str(exc))}")
                 continue
             budget.spend(cost)
+            budget.observe(time.perf_counter() - started_test)
             await store.write_test(
                 data_source_id=ctx.data_source_id,
                 table_id=table_id,
@@ -1062,6 +1255,10 @@ async def _stage3_tests(
                 method=method,
                 runtime_ms=int((time.perf_counter() - started_test) * 1000),
             )
+            if kind == "inc":
+                report.hints[await _hint_outcome(
+                    session, ctx, table, column, target, result.passed, result.metric
+                )] += 1
             await session.commit()
             report.tests.append(
                 _test_entry(label, result.test_id, result.passed, result.metric, method)
@@ -1085,6 +1282,57 @@ def _test_entry(
     column: str, test_id: str, passed: bool, metric: float | None, method: str
 ) -> dict[str, Any]:
     return {"column": column, "test": test_id, "passed": passed, "metric": metric, "method": method}
+
+
+_TEST_KINDS = {"inc": "inclusion", "uniq": "uniqueness", "topk": "topk_exact"}
+_QUOTED = re.compile(r"'[^']*'|\"[^\"]*\"")
+
+
+def scrub(message: str, limit: int = 200) -> str:
+    """A driver error without the data values it quotes (a conversion error
+    echoes the offending value, which may be personal data); first line only."""
+    first = message.strip().splitlines()[0] if message.strip() else ""
+    return _QUOTED.sub("'…'", first)[:limit]
+
+
+async def _hint_outcome(
+    session: AsyncSession,
+    ctx: _Context,
+    table: TableSnapshot,
+    column: str,
+    target: str,
+    passed: bool,
+    metric: float | None,
+) -> str:
+    """Feed a claim's inclusion test back into the model's join hint (D2):
+    clearly failed (< 50 % of rows found) -> ``refuted``; passed -> ``inferred``
+    again if it had been refuted. Between the two (orphans, a polymorphic
+    column) the hint stays as it is, for the SME."""
+    pt, _, pc = target.rpartition(".")
+    to_schema, _, to_table = pt.partition(".")
+    hints = await session.scalars(
+        select(JoinHint).where(
+            JoinHint.data_source_id == ctx.data_source_id,
+            JoinHint.source == "llm",
+            JoinHint.from_schema == table.schema,
+            JoinHint.from_table == table.name,
+            JoinHint.to_schema == to_schema,
+            JoinHint.to_table == to_table,
+        )
+    )
+    outcome = "unchanged"
+    for hint in hints:
+        if list(hint.from_columns) != [column] or list(hint.to_columns) != [pc]:
+            continue
+        if not passed and metric is not None and metric < KEEP_RATE:
+            if hint.status == "inferred":
+                hint.status = "refuted"
+                outcome = "refuted"
+        elif passed and hint.status == "refuted":
+            hint.status = "inferred"
+            outcome = "restored"
+    await session.flush()
+    return outcome
 
 
 # -- evidence for reasoning ------------------------------------------------------------------

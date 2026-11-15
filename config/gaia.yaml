@@ -149,6 +149,9 @@ profiling:
     max_pages_per_run: 50000000
     max_runtime_per_table_s: 180
     statement_timeout_s: 60
+    # D50: adaptive = plan a statement at twice the slowest so far on the table
+    # (min 5 s); strict = at its full timeout (a hard ceiling, some budget unused)
+    time_rule: adaptive
     maxdop: 2                   # PostgreSQL: max_parallel_workers_per_gather
     work_mem_mb: null           # PostgreSQL only
     max_join_tests: 500

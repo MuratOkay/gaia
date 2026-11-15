@@ -98,3 +98,30 @@ def test_no_statement_starts_that_could_outlive_the_ceiling():
     assert "could run past the 180 s ceiling" in budget.refusal(1)
     fresh = TableBudget(10**9, 180, RunBudget(10**9), statement_timeout_s=60)
     assert fresh.refusal(1) is None
+
+
+def test_adaptive_time_rule_plans_with_what_statements_took():
+    """D50 (owner, 2026-11-15): dw.sales_wide's ~4 s column statements were refused
+    at 120 s of 180 because each was planned at its full 60 s timeout."""
+    import time
+
+    def at(elapsed, rule):
+        return TableBudget(10**9, 180, RunBudget(10**9), statement_timeout_s=60,
+                           started=time.perf_counter() - elapsed, time_rule=rule)
+
+    strict, adaptive = at(130, "strict"), at(130, "adaptive")
+    for b in (strict, adaptive):
+        b.observe(4.0)
+    assert "could run past" in strict.refusal(1)
+    assert adaptive.refusal(1) is None  # planned 8 s, fits
+    late = at(175, "adaptive")
+    late.observe(4.0)
+    assert "would likely run past" in late.refusal(1)
+    first = at(130, "adaptive")  # nothing observed yet: the full timeout
+    assert "could run past" in first.refusal(1)
+    slow = at(130, "adaptive")
+    slow.observe(60.0)  # a timeout was observed: back to the hard rule
+    assert "could run past" in slow.refusal(1)
+    quick = at(0, "adaptive")
+    quick.observe(0.1)
+    assert quick.expected_s() == 5.0  # never planned below 5 s

@@ -89,20 +89,48 @@ class PostgresProfiler(PostgresMeasure):
             return f"{c}::text"  # enums, domains over unknown types, uuid, inet ...
         return c
 
-    def scan_sql(self, t: str, columns: list[tuple[str, str]]) -> tuple[str, list[tuple[str, str]]]:
+    @staticmethod
+    def blank_is_null(data_type: str) -> bool:
+        """Text columns whose empty or blank values count as NULL (owner
+        decision 2026-11-15: legacy systems store "no value" as '')."""
+        return type_info("postgres", data_type).is_text
+
+    def scan_sql(
+        self, t: str, columns: list[tuple[str, str]], distinct: set[str] | None = None
+    ) -> tuple[str, list[tuple[str, str]]]:
+        """Batched aggregates; ``distinct``: columns whose exact distinct count is
+        read in the same pass (columnstore, one column per statement)."""
         parts, layout = ["count(*)"], [("*", "rows")]
         for name, data_type in columns:
             c, kind = quote(name), self.kind(data_type)
-            parts.append(f"count({c})")
+            blank = self.blank_is_null(data_type)
+            keep = f" FILTER (WHERE btrim({c}) <> '')" if blank else ""
+            parts.append(f"count({c}){keep}")
             layout.append((name, "non_null"))
+            if blank:
+                parts.append(f"count(*) FILTER (WHERE btrim({c}) = '')")
+                layout.append((name, "empty"))
             if kind not in ("count_only", "equality_only"):
                 expr = f"{c}::int" if kind == "bit" else c
-                parts += [f"min({expr})::text", f"max({expr})::text"]
+                parts += [f"min({expr}){keep}::text", f"max({expr}){keep}::text"]
                 layout += [(name, "min"), (name, "max")]
+            if distinct and name in distinct:
+                parts.append(f"count(DISTINCT {c}){keep}")
+                layout.append((name, "distinct"))
             if type_info("postgres", data_type).is_text:
-                parts += [f"min(length({c}))", f"max(length({c}))", f"avg(length({c}))::float8"]
+                parts += [
+                    f"min(length({c})){keep}",
+                    f"max(length({c})){keep}",
+                    f"avg(length({c})){keep}::float8",
+                ]
                 layout += [(name, "min_len"), (name, "max_len"), (name, "avg_len")]
         return f"SELECT {', '.join(parts)} FROM {t}", layout
+
+    def _present(self, c: str, data_type: str | None) -> str:
+        """WHERE condition: a value, not NULL and (text) not blank."""
+        if data_type and self.blank_is_null(data_type):
+            return f"{c} IS NOT NULL AND btrim({c}) <> ''"
+        return f"{c} IS NOT NULL"
 
     def sample_sql(
         self, t: str, exprs: list[str], rows: int, estimated: int | None, seed: int, whole: bool
@@ -110,11 +138,29 @@ class PostgresProfiler(PostgresMeasure):
         source = t if whole else f"{t} {self._sample(rows, estimated, seed)}"
         return f"SELECT {', '.join(exprs)} FROM {source}"
 
-    def topk_sql(self, t: str, name: str, limit: int) -> str:
+    def topk_sql(self, t: str, name: str, limit: int, data_type: str | None = None) -> str:
         c = quote(name)
         return (
-            f"SELECT {c}::text, count(*) FROM {t} WHERE {c} IS NOT NULL "
+            f"SELECT {c}::text, count(*) FROM {t} WHERE {self._present(c, data_type)} "
             f"GROUP BY {c} ORDER BY count(*) DESC, {c} LIMIT {int(limit)}"
+        )
+
+    def topk_batch_sql(self, t: str, columns: list[tuple[str, str]], limit: int) -> str:
+        """Exact top-k of several columns in one scan: ``GROUPING SETS`` with one
+        set per column, ranked per set (values as text, like ``topk_sql``)."""
+        cols = [quote(n) for n, _dt in columns]
+        keys = ", ".join(cols)
+        sets = ", ".join(f"({c})" for c in cols)
+        values = ", ".join(f"{c}::text AS v{i}" for i, c in enumerate(cols))
+        names = ", ".join(f"v{i}" for i in range(len(cols)))
+        inner = (
+            f"SELECT GROUPING({keys}) AS gid, {values}, count(*) AS n FROM {t} "
+            f"GROUP BY GROUPING SETS ({sets})"
+        )
+        return (
+            f"SELECT gid, {names}, n FROM (SELECT gid, {names}, n, row_number() OVER "
+            f"(PARTITION BY gid ORDER BY n DESC) AS rk FROM ({inner}) g) r "
+            f"WHERE rk <= {int(limit)}"
         )
 
     def approx_distinct_batch_sql(self, t: str, names: list[str]) -> str | None:
@@ -138,30 +184,27 @@ class PostgresProfiler(PostgresMeasure):
             (list(values),),
         )
 
-    def values_sql(
-        self,
-        t: str,
-        name: str,
-        limit: int,
-        rows: int,
-        estimated: int | None,
-        seed: int,
-        whole: bool,
-    ) -> str:
-        """Distinct values of one column for an inclusion test (Stage 3), most frequent first."""
-        c = quote(name)
-        source = t if whole else f"{t} {self._sample(rows, estimated, seed)}"
+    def range_count_sql(self, parent: str, column: str, low: int, high: int) -> tuple[str, Any]:
+        """Keys of the parent between two values (an index range count): the key's
+        density where a child's values lie (``joins._local_density``)."""
+        c = quote(column)
         return (
-            f"SELECT {c}, count(*) FROM {source} WHERE {c} IS NOT NULL "
-            f"GROUP BY {c} ORDER BY count(*) DESC, {c} LIMIT {int(limit)}"
+            f"SELECT count(*) FROM {parent} WHERE {c} BETWEEN %s AND %s",
+            (int(low), int(high)),
         )
 
-    def uniqueness_sql(self, t: str, name: str) -> str:
+    def uniqueness_sql(self, t: str, name: str, data_type: str | None = None) -> str:
         c = quote(name)
-        return f"SELECT count(*) FROM (SELECT {c} FROM {t} WHERE {c} IS NOT NULL GROUP BY {c}) g"
+        return (
+            f"SELECT count(*) FROM (SELECT {c} FROM {t} WHERE {self._present(c, data_type)} "
+            f"GROUP BY {c}) g"
+        )
 
-    def non_null_sql(self, t: str, name: str) -> str:
-        return f"SELECT count({quote(name)}) FROM {t}"
+    def non_null_sql(self, t: str, name: str, data_type: str | None = None) -> str:
+        c = quote(name)
+        if data_type and self.blank_is_null(data_type):
+            return f"SELECT count({c}) FILTER (WHERE btrim({c}) <> '') FROM {t}"
+        return f"SELECT count({c}) FROM {t}"
 
     # -- modules ------------------------------------------------------------------------------
 

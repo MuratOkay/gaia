@@ -139,8 +139,8 @@ def test_a_time_budget_used_up_stops_every_query():
 
 
 def test_a_timed_out_statement_degrades_one_metric():
-    profiler = FakeProfiler({"shop.orders": (COLUMNS, _rows(20_000))}, fail={"topk"},
-                            estimate=None)
+    profiler = FakeProfiler({"shop.orders": (COLUMNS, _rows(20_000))},
+                            fail={"topk", "topk_batch"}, estimate=None)
     cfg = ProfilingBudget(full_scan_max_pages=10)
     result = _profile(profiler, _table(20_000, 20_000 * 100), cfg)
     status = result.metrics["status"]["distinct"]
@@ -148,6 +148,60 @@ def test_a_timed_out_statement_degrades_one_metric():
     assert result.columns["status"].distinct_method == "sampled"
     assert result.status == "partial"
     assert result.row_count == 20_000  # everything else still ran
+    # the batch failed first, then each column on its own; the CLI says so (D5)
+    assert any("batched top-k not run" in n for n in result.notes)
+    assert any(n.startswith("distinct of ") and "StatementTimeout" in n for n in result.notes)
+
+
+def test_low_cardinality_columns_share_one_grouping_sets_scan():
+    """Owner run 2026-11-15: one top-k scan per low-cardinality column ran into
+    the per-table page budget after 2-4 columns on SQL Server's large tables."""
+    profiler = FakeProfiler({"shop.orders": (COLUMNS, _rows(40_000))})
+    cfg = ProfilingBudget(full_scan_max_pages=10)
+    result = _profile(profiler, _table(40_000, 40_000 * 100), cfg)
+    batches = [sql for sql in profiler.log if sql[0] == "topk_batch"]
+    assert len(batches) == 1 and {"qty", "status"} <= set(batches[0][2])
+    assert not any(sql[0] == "topk" for sql in profiler.log)
+    assert result.columns["status"].distinct == 3
+    assert result.columns["status"].distinct_method == "exact"
+    assert result.metrics["status"]["distinct"]["source"] == "batched top-k scan"
+    _provenance_complete(result)
+
+
+def test_columnstore_scans_column_by_column_and_counts_exactly():
+    """3.0 measurement: the 28-column scan of dw.sales_wide took 60 s (= the
+    statement timeout); single-column aggregates took 0.1-2 s, and an exact
+    distinct count was cheaper than APPROX_COUNT_DISTINCT."""
+
+    class Columnstore(FakeProfiler):
+        def is_columnstore(self, table):
+            return True
+
+    profiler = Columnstore({"shop.orders": (COLUMNS, _rows(40_000))}, approx=True,
+                           fail=set())
+    cfg = ProfilingBudget(full_scan_max_pages=10)
+    result = _profile(profiler, _table(40_000, 40_000 * 100), cfg)
+    assert result.size_class == "columnstore"
+    scans = [sql for sql in profiler.log if sql[0] == "scan"]
+    assert len(scans) == len(COLUMNS) and all(len(s[2]) == 1 for s in scans)
+    assert not any(sql[0] in ("approx", "uniq") for sql in profiler.log)  # counted in the scan
+    assert result.columns["email"].distinct_method == "exact"
+    assert result.columns["email"].distinct == len({r[6] for r in _rows(40_000) if r[6]})
+    assert result.row_count == 40_000
+    assert result.pages < 40_000 * 100 // 8192 * 4  # per-column estimates, not the table each
+
+
+def test_the_sample_runs_first_so_a_slow_scan_cannot_starve_it():
+    """Owner run 2026-11-15: the batched scan of dw.sales_wide timed out at 60 s and
+    the 0.2 s sample was then refused by the 120 s ceiling -> `failed`."""
+    profiler = FakeProfiler({"shop.orders": (COLUMNS, _rows(20_000))}, fail={"scan"})
+    cfg = ProfilingBudget(full_scan_max_pages=10, statement_timeout_s=60)
+    budget = TableBudget(10_000_000, 120.0, RunBudget(50_000_000), statement_timeout_s=60)
+    result = profile_table(profiler, object(), _table(20_000, 20_000 * 100), dialect="postgres",
+                           cfg=cfg, budget=budget, seed=42)
+    assert profiler.log[0][0] == "sample"
+    assert result.status == "partial" and result.sample_rows > 0
+    assert result.columns["qty"].method == "sampled_pages"
 
 
 def test_join_sample_is_row_representative_and_deterministic():
@@ -172,3 +226,26 @@ def test_temporal_granularity():
     assert granularity([date(2020 + i // 12, i % 12 + 1, 1) for i in range(30)]) == "month"
     assert granularity([date(2000 + i, 1, 1) for i in range(30)]) == "year"
     assert granularity([base]) is None  # too few values to tell
+
+
+def test_blank_text_is_null():
+    """Owner decision 2026-11-15: '' and '   ' are NULL. Legacy tb_mst01.c07 (a
+    credit limit stored as text, 10 % blank) parsed as 88 % numeric and was
+    contradicted as a measure."""
+    rng = random.Random(3)  # noqa: S311 (test data)
+    cols = ["id", "limit_text"]
+    rows = [(i, rng.choice(["", "  ", None]) if i % 10 == 0 else f"{rng.randint(1, 50)}000.00")
+            for i in range(1, 2_001)]
+    table = TableSnapshot(
+        schema="shop", name="orders", kind="table", estimated_rows=2_000, size_bytes=2_000 * 40,
+        columns=[ColumnSnapshot("id", 1, "integer", False),
+                 ColumnSnapshot("limit_text", 2, "varchar(20)", True)],
+        constraints=[ConstraintSnapshot("pk", "primary_key", ["id"])],
+    )
+    for cfg in (ProfilingBudget(), ProfilingBudget(full_scan_max_pages=1, sample_target_rows=500)):
+        result = _profile(FakeProfiler({"shop.orders": (cols, rows)}), table, cfg)
+        c = result.columns["limit_text"]
+        assert c.numeric_parse_rate == 1.0, cfg  # blanks no longer count against numbers
+        assert 0.08 < c.null_fraction < 0.12 and c.empty
+        assert c.minimum != "" and (c.min_length or 0) >= 7
+        assert all(v.strip() for v, _n in c.top_values)

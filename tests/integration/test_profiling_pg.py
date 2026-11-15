@@ -33,7 +33,13 @@ from gaia.core.config import (
 )
 from gaia.db.models.catalog import ColumnRecord, TableRecord
 from gaia.db.models.profiling import TableProfile, VerificationTest
-from gaia.db.models.semantics import ColumnSemantic, EvidenceItem, JoinHint
+from gaia.db.models.semantics import (
+    ColumnSemantic,
+    EvidenceItem,
+    JoinHint,
+    ReviewItem,
+    TableSemantic,
+)
 from gaia.db.repositories.profile_store import ProfileStore
 from gaia.db.repositories.snapshot_store import SnapshotStore
 from gaia.dialects.postgres.profiler import PostgresProfiler
@@ -316,5 +322,225 @@ async def test_stage3_tests_claims_then_reasoning_reruns_only_changed_tables(
     assert actions["sales.orders"][0] == "reasoned"
     assert actions["crm.customers"][0] == "skipped" and actions["hr.employees"][0] == "skipped"
     async with factory() as s:
-        kinds = set((await s.scalars(sa.select(EvidenceItem.kind))).all())
-    assert "test_inclusion" in kinds
+        coverage = await s.scalar(sa.select(ColumnSemantic.coverage).where(
+            ColumnSemantic.column_id == ids["legacy.tb_trx02.f2"],
+            ColumnSemantic.is_current.is_(True)))
+        kinds = {(k, d) for k, d in (await s.execute(
+            sa.select(EvidenceItem.kind, EvidenceItem.direction))).all()}
+    assert coverage == "targeted"
+    # the fake model calls f2 a dimension: values found in a key say nothing
+    # about a name (evidence.JOIN_NEUTRAL_ROLES), so no test item contradicts it
+    assert ("test_inclusion", "contradicts") not in kinds
+
+
+@pytest.mark.asyncio
+async def test_join_hints_follow_the_model_and_the_tests(
+    pg_session_factory, fake_llm, fake_embedder
+):
+    """Owner run 2026-11-15, three defects on one path:
+
+    * the model aimed f2 / f9 (codes) at integer primary keys; the conversion
+      error left those claims untested forever (D1) -> they now fail and the
+      hints are ``refuted``;
+    * hints from an earlier answer stayed ``inferred`` after the model had moved
+      on (D2) -> re-reasoning a table stales the hints it no longer proposes;
+    * a claim test that cannot run is recorded as inconclusive, so the column is
+      no longer "pending" forever (D1).
+    """
+    factory = pg_session_factory
+    await _introspect(factory)
+    settings = _settings()
+    scope = ["legacy.tb_trx02", "crm.customers", "store.stores", "legacy.xx_aux"]
+    async with factory() as s:
+        await run_profiling(settings, s, ProfileOptions(target="demo_pg", tables=scope))
+
+    async def reason():
+        async with factory() as s:
+            return await run_reasoning(settings, s, ReasoningOptions(target="demo_pg",
+                                                                     tables=scope),
+                                       llm_factory=lambda: fake_llm, embedder=fake_embedder)
+
+    await reason()
+    hints = [("legacy.tb_trx02.f2", "crm.customers.customer_id"),
+             ("legacy.tb_trx02.f9", "store.stores.store_id"),
+             ("legacy.xx_aux.id", "crm.customers.customer_id")]
+    async with factory() as s:
+        ds = await s.scalar(sa.select(TableRecord.data_source_id).limit(1))
+        for src, dst in hints:
+            fs, ft, fc = src.split(".")
+            ts, tt, tc = dst.split(".")
+            s.add(JoinHint(data_source_id=ds, from_schema=fs, from_table=ft, from_columns=[fc],
+                           to_schema=ts, to_table=tt, to_columns=[tc], source="llm",
+                           status="inferred", confidence=0.6))
+        await s.commit()
+
+    # 1. type-mismatched claims are tested and fail; xx_aux.id is refused by a
+    #    table page budget of 1 page and recorded as "not run"
+    async with factory() as s:
+        report = await run_stage3(settings, s, ProfileOptions(
+            target="demo_pg", tables=["legacy.tb_trx02"]))
+    results = {(t["column"], t["test"]): t for t in report.tests}
+    f2 = results[("legacy.tb_trx02.f2", "inc:crm.customers.customer_id")]
+    f9 = results[("legacy.tb_trx02.f9", "inc:store.stores.store_id")]
+    assert not f2["passed"] and f2["metric"] == 0.0
+    assert not f9["passed"] and f9["metric"] == 0.0
+    assert not any("failed" in n for n in report.notes), report.notes
+    assert report.hints["refuted"] == 2
+    tight = _settings(max_pages_per_table=1)
+    async with factory() as s:
+        refused = await run_stage3(tight, s, ProfileOptions(
+            target="demo_pg", tables=["legacy.xx_aux"]))
+    assert [t["method"] for t in refused.tests] == ["not run"]
+    async with factory() as s:
+        again = await run_stage3(tight, s, ProfileOptions(target="demo_pg", tables=scope,
+                                                           dry_run=True))
+        stored = (await s.scalars(sa.select(VerificationTest).where(
+            VerificationTest.column_name == "id", VerificationTest.is_current.is_(True)))).one()
+        snapshot = await _introspect(factory)
+        evidence = await ProfileStore(s).load_evidence(ds, snapshot, enabled=True)
+    assert not [r for r in again.results if r.qualified_name.endswith(("f2", "f9", ".id"))]
+    assert stored.method == "not_run" and stored.metric is None
+    (xx_test,) = evidence.table_evidence("legacy.xx_aux").tests["id"]
+    assert xx_test.conclusive is False
+
+    # 2. re-reasoning: the fake model proposes no join for tb_trx02, so a hint
+    #    from "an earlier answer" becomes stale; refuted ones stay refuted
+    async with factory() as s:
+        s.add(JoinHint(data_source_id=ds, from_schema="legacy", from_table="tb_trx02",
+                       from_columns=["f10"], to_schema="finance", to_table="currencies",
+                       to_columns=["currency_code"], source="llm", status="inferred",
+                       confidence=0.6))
+        await s.execute(sa.update(ColumnSemantic).where(ColumnSemantic.is_current.is_(True))
+                        .values(prompt_version="older"))  # force one re-reasoning
+        await s.commit()
+    await reason()
+    async with factory() as s:
+        status = {(h.from_columns[0], h.to_columns[0]): h.status for h in (await s.scalars(
+            sa.select(JoinHint).where(JoinHint.source == "llm"))).all()}
+    assert status[("f2", "customer_id")] == "refuted"
+    assert status[("f9", "store_id")] == "refuted"
+    assert status[("f10", "currency_code")] == "stale"
+
+
+@pytest.mark.asyncio
+async def test_views_inherit_and_rescoring_needs_no_model(
+    pg_session_factory, fake_llm, fake_embedder
+):
+    """Owner decisions 2026-11-15: pass-through view columns take their base
+    column's meaning without an LLM call (1, 3); stored answers are re-scored
+    without the model when only what the scorer reads has changed (1, D9)."""
+    factory = pg_session_factory
+    await _introspect(factory)
+    settings = _settings()
+    scope = ["legacy.tb_trx02", "rpt.v_legacy_transactions"]
+    async with factory() as s:
+        await run_profiling(settings, s, ProfileOptions(target="demo_pg", tables=scope))
+
+    async def reason(cfg=settings, **kw):
+        async with factory() as s:
+            return await run_reasoning(cfg, s, ReasoningOptions(target="demo_pg", tables=scope,
+                                                                **kw),
+                                       llm_factory=lambda: fake_llm, embedder=fake_embedder)
+
+    first = await reason()
+    assert first.count("reasoned") == 2
+    view_requests = [m for m in fake_llm.requests
+                     if '"table": "rpt.v_legacy_transactions"' in m[1].content]
+    assert view_requests  # the computed column still goes to the model ...
+    for messages in view_requests:  # ... alone: the pass-through columns are context
+        asked = re.search(r'"columns": \[(.*?)\]', messages[1].content, re.S).group(1)
+        assert '"transaction_date"' in asked and '"customer_code"' not in asked
+
+    async with factory() as s:
+        rows = (await s.execute(
+            sa.select(ColumnRecord.column_name, TableRecord.object_name, ColumnSemantic)
+            .join(ColumnSemantic, ColumnSemantic.column_id == ColumnRecord.id)
+            .join(TableRecord, TableRecord.id == ColumnRecord.table_id)
+            .where(ColumnSemantic.is_current.is_(True)))).all()
+        queued = set((await s.scalars(sa.select(ColumnRecord.column_name).join(
+            ReviewItem, ReviewItem.column_id == ColumnRecord.id).where(
+            ReviewItem.status == "open"))).all())
+    sem = {(t, c): s for c, t, s in rows}
+    view_col, base_col = sem[("v_legacy_transactions", "customer_code")], sem[("tb_trx02", "f2")]
+    assert view_col.score_breakdown["inherited_from"] == "legacy.tb_trx02.f2"
+    assert (view_col.business_name, view_col.role, view_col.calibrated_score) == (
+        base_col.business_name, base_col.role, base_col.calibrated_score)
+    assert "customer_code" not in queued and "store_code" not in queued  # never queued
+    assert "transaction_id" in {c for (t, c) in sem if t == "v_legacy_transactions"}
+
+    # a hint an earlier answer proposed from a pass-through column goes stale on the
+    # next version of the view: the join belongs to the base column
+    async with factory() as s:
+        ds = await s.scalar(sa.select(TableRecord.data_source_id).limit(1))
+        s.add(JoinHint(data_source_id=ds, from_schema="rpt", from_table="v_legacy_transactions",
+                       from_columns=["customer_code"], to_schema="crm", to_table="customers",
+                       to_columns=["customer_id"], source="llm", status="inferred",
+                       confidence=0.6))
+        await s.commit()
+
+    # nothing changed: nothing reasoned, nothing re-scored
+    fake_llm.calls.clear()
+    again = await reason()
+    assert again.count("skipped") == 2 and sum(fake_llm.calls.values()) == 0
+
+    # the scorer's inputs change (a strength), the model's do not: re-score only
+    tuned = _settings()
+    tuned.scoring.v2.strengths.view_alias = 0.55
+    rescored = await reason(tuned)
+    assert rescored.count("rescored") == 2 and sum(fake_llm.calls.values()) == 0
+    async with factory() as s:
+        versions = dict((await s.execute(
+            sa.select(TableRecord.object_name, TableSemantic.version)
+            .join(TableSemantic, TableSemantic.table_id == TableRecord.id)
+            .where(TableSemantic.is_current.is_(True)))).all())
+    assert versions == {"tb_trx02": 2, "v_legacy_transactions": 2}
+    async with factory() as s:
+        hint = await s.scalar(sa.select(JoinHint.status).where(
+            JoinHint.from_table == "v_legacy_transactions"))
+    assert hint == "stale"
+
+    # evidence the model would see changes (a new claim test): `make reason` would
+    # re-reason; `make rescore` scores the stored answer against it, no model call,
+    # and keeps the answer's evidence hash so a later `make reason` still re-reasons
+    async with factory() as s:
+        ds = await s.scalar(sa.select(TableRecord.data_source_id).limit(1))
+        trx = await s.scalar(sa.select(TableRecord.id).where(TableRecord.object_name ==
+                                                               "tb_trx02"))
+        s.add(VerificationTest(data_source_id=ds, table_id=trx, column_name="f1",
+                               test_id="uniq:f1", kind="uniqueness", stage=3, origin="claim",
+                               specific=True, passed=True, metric=1.0, detail="200k of 200k",
+                               method="exact", runtime_ms=1, is_current=True))
+        await s.commit()
+    only = await reason(tuned, rescore_only=True)
+    assert {r.qualified_name: r.action for r in only.results}["legacy.tb_trx02"] == "rescored"
+    assert sum(fake_llm.calls.values()) == 0
+    plan = await reason(tuned, dry_run=True)
+    assert {r.qualified_name: (r.action, r.detail) for r in plan.results}[
+        "legacy.tb_trx02"] == ("would_reason", "evidence changed")
+
+
+@pytest.mark.asyncio
+async def test_join_candidates_reach_tables_profiled_in_an_earlier_run(pg_session_factory):
+    """Owner run 2026-11-15 (D12): the Phase 2 scope was profiled before its
+    parents were, and later runs never paired its columns with them."""
+    factory = pg_session_factory
+    await _introspect(factory)
+    settings = _settings()
+    async with factory() as s:
+        early = await run_profiling(settings, s, ProfileOptions(
+            target="demo_pg", tables=["legacy.tb_trx02"]))
+    assert not any(j["child"] == "legacy.tb_trx02.f2" for j in early.joins)  # no parent yet
+    async with factory() as s:
+        later = await run_profiling(settings, s, ProfileOptions(
+            target="demo_pg", tables=["crm.customers", "store.stores"]))
+    found = {(j["child"], j["parent"]): j for j in later.joins}
+    f2 = found[("legacy.tb_trx02.f2", "crm.customers.customer_code")]
+    assert f2["passed"] and f2["kept"]
+    assert ("legacy.tb_trx02.f9", "store.stores.store_code") in found
+    assert later.join_samples == 1  # one sample statement for the earlier table
+    assert any("re-sampled" in n for n in later.notes)
+    async with factory() as s:
+        again = await run_profiling(settings, s, ProfileOptions(
+            target="demo_pg", tables=["crm.customers", "store.stores"], force=True))
+    assert not any(j["child"].startswith("legacy.") for j in again.joins)  # already tested
+    assert again.join_samples == 0  # and not even sampled again

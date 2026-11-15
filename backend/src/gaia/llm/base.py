@@ -8,7 +8,7 @@ generation) programs against these types.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, runtime_checkable
+from typing import Literal, Protocol, runtime_checkable
 
 Role = Literal["system", "user", "assistant"]
 

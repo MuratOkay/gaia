@@ -41,6 +41,7 @@ __all__ = [
 ]
 
 PAGE = 8192
+ADAPTIVE_MIN_S = 5.0  # D50: the shortest plan for any statement
 
 
 def table_pages(table: TableSnapshot) -> int:
@@ -83,16 +84,37 @@ class TableBudget:
     statement_timeout_s: float = 0.0
     started: float = field(default_factory=time.perf_counter)
     pages: int = 0
+    # D50: "adaptive" plans with what this table's statements actually took;
+    # "strict" with the full statement timeout.
+    time_rule: str = "strict"
+    slowest_s: float | None = None
 
     @property
     def elapsed_s(self) -> float:
         return time.perf_counter() - self.started
 
+    def observe(self, seconds: float) -> None:
+        """A statement on this table took ``seconds`` (a timeout counts in full)."""
+        self.slowest_s = seconds if self.slowest_s is None else max(self.slowest_s, seconds)
+
+    def expected_s(self) -> float:
+        """How long the next statement is planned to take."""
+        if self.time_rule != "adaptive" or self.slowest_s is None:
+            return self.statement_timeout_s
+        return min(self.statement_timeout_s, max(ADAPTIVE_MIN_S, 2 * self.slowest_s))
+
     def refusal(self, cost_pages: int) -> str | None:
         """Why a query of this cost may not start, or None when it may."""
         if self.elapsed_s >= self.max_seconds:
             return f"time budget ({self.max_seconds:.0f} s per table) used up"
-        if self.elapsed_s + self.statement_timeout_s > self.max_seconds:
+        expected = self.expected_s()
+        if self.elapsed_s + expected > self.max_seconds:
+            if expected < self.statement_timeout_s:
+                return (
+                    f"time budget: a statement started now would likely run past the "
+                    f"{self.max_seconds:.0f} s ceiling (planned {expected:.0f} s: twice the "
+                    f"slowest so far)"
+                )
             return (
                 f"time budget: a statement started now could run past the "
                 f"{self.max_seconds:.0f} s ceiling (statement timeout "

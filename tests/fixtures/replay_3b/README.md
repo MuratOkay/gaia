@@ -45,6 +45,13 @@ unchanged — this evidence file contains none of those fields, so the answers
 are still answers to what the prompts show — and the expected result below was
 re-verified on a fresh metadata database.
 
+**Re-keyed 2026-11-15 (3A fixes).** The object list in every generation-2
+reasoning prompt now names alternate (unique) keys as well as primary keys, so
+the three reasoning requests have new keys; the critique requests are
+unchanged. None of the three answers proposes a join, so they are still
+answers to what the prompts show; the expected result is unchanged and was
+re-verified.
+
 Request keys are hashes of the exact prompts. If the run reports requests
 *awaiting an answer*, your prompts differ from the sandbox's — most likely
 because PostgreSQL 18 renders a type or default differently from 16 in the

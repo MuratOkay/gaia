@@ -35,6 +35,25 @@ def _rows(n=2_000):
             for i in range(1, n + 1)]
 
 
+def _top_level(text: str) -> list[str]:
+    """Split a select list at commas outside parentheses and quotes."""
+    parts, depth, quoted, current = [], 0, False, ""
+    for ch in text:
+        if ch == "'":
+            quoted = not quoted
+        elif not quoted and ch == "(":
+            depth += 1
+        elif not quoted and ch == ")":
+            depth -= 1
+        if ch == "," and depth == 0 and not quoted:
+            parts.append(current.strip())
+            current = ""
+        else:
+            current += ch
+    parts.append(current.strip())
+    return parts
+
+
 class ScriptedCursor:
     def __init__(self, rows):
         self.rows = rows
@@ -51,11 +70,16 @@ class ScriptedCursor:
         self.description = [("c",)]
         if sql.startswith("SELECT COUNT_BIG(*), COUNT_BIG("):
             out = [len(self.rows)]
-            for expr in sql[len("SELECT COUNT_BIG(*), "):sql.index(" FROM ")].split(", "):
-                m = re.match(r"(COUNT_BIG|MIN|MAX|AVG)\((.*)\)$", expr)
+            for expr in _top_level(sql[len("SELECT COUNT_BIG(*), "):sql.index(" FROM ")]):
+                m = re.match(r"(COUNT_BIG|MIN|MAX|AVG|SUM)\((.*)\)$", expr)
                 fn, arg = m.group(1), m.group(2)
                 name = re.search(r"\[(\w+)\]", arg).group(1)
                 values = self._column(name)
+                if fn == "SUM":  # SUM(CASE WHEN [c] = '' THEN 1 ELSE 0 END): blanks
+                    out.append(sum(1 for v in values if isinstance(v, str) and not v.strip()))
+                    continue
+                if "NULLIF(" in arg:  # blank text is NULL
+                    values = [v for v in values if not (isinstance(v, str) and not v.strip())]
                 if "CAST([" in arg and "AS int" in arg:
                     values = [int(v) for v in values]
                 if "LEN(" in arg:

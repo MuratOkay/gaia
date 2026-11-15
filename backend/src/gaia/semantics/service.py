@@ -28,7 +28,10 @@ finished.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
+import math
 import time
 import uuid
 from collections.abc import Callable
@@ -48,12 +51,14 @@ from gaia.llm.embeddings import EmbeddingClient
 from gaia.llm.structured import CallRecord
 from gaia.profiling.summary import EvidenceSource, NoEvidence, TableEvidenceInput
 from gaia.semantics.bundle import TableBundle, build_bundle, build_catalog_index
+from gaia.semantics.chunking import chunk_bundle
 from gaia.semantics.evidence import (
     Exposure,
     Ledger,
     RenderedEvidence,
     build_ledger,
     column_coverage,
+    detected_type,
     is_unused,
     next_stage,
     pending_claim_tests,
@@ -64,9 +69,11 @@ from gaia.semantics.reasoner import (
     ReasonerSettings,
     TableOutcome,
     TableReasoner,
+    ValidatedJoin,
     reasoning_messages,
 )
 from gaia.semantics.review import importance, review_reasons
+from gaia.semantics.schemas import ColumnCritique, TableCritique, TableReasoning
 from gaia.semantics.scoring import ColumnScore, score_column, score_column_v2, summarize_scores
 
 logger = logging.getLogger(__name__)
@@ -97,12 +104,16 @@ class ReasoningOptions:
     force: bool = False
     embed: bool | None = None  # None = config (semantics.embed_after_reasoning)
     show_bundles: bool = False
+    # make rescore: never call the model; score the stored answers against
+    # today's evidence (with force: every table, even with unchanged inputs)
+    rescore_only: bool = False
 
 
 @dataclass
 class TableResult:
     qualified_name: str
-    action: str  # reasoned | skipped | failed | would_reason
+    # reasoned | rescored | skipped | failed | needs_reasoning | would_reason | would_rescore
+    action: str
     detail: str = ""
     columns: int = 0
     critique_ok: bool | None = None
@@ -129,6 +140,7 @@ class ReasoningReport:
     stale_marked: dict[str, int] = field(default_factory=dict)
     fk_hints: dict[str, int] = field(default_factory=dict)
     inferred_hints: int = 0
+    staled_hints: int = 0  # model hints the new answers no longer propose
     distribution: dict[str, Any] = field(default_factory=dict)
     histogram: list[tuple[str, int]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -136,6 +148,7 @@ class ReasoningReport:
     exposure: str | None = None
     review: dict[str, int] = field(default_factory=dict)
     coverage: dict[str, int] = field(default_factory=dict)
+    rescore_only: bool = False
 
     def count(self, action: str) -> int:
         return sum(1 for r in self.results if r.action == action)
@@ -277,13 +290,6 @@ class ColumnExtras:
     review: dict[str, Any] | None = None
 
 
-def _detected_type(summary) -> str | None:
-    if summary is None:
-        return None
-    strong = [d for d in summary.detectors if d.match_rate >= 0.95]
-    return max(strong, key=lambda d: d.match_rate).semantic_type if strong else None
-
-
 def build_rows(
     outcome: TableOutcome,
     *,
@@ -362,7 +368,7 @@ def build_rows(
                     ),
                 )
             v2 = {
-                "semantic_type": _detected_type(summary),
+                "semantic_type": detected_type(summary),
                 "claimed_semantic_type": col.semantic_type,
                 "coverage": coverage,
                 "unused": unused,
@@ -470,6 +476,242 @@ def build_rows(
     return table_row, column_rows, scores
 
 
+# -- re-scoring and inheritance (2026-11-15) ---------------------------------------------
+
+# Bump when the heuristic-v2 ledger or scorer changes what a stored answer scores
+# (not what the model sees): every current version is then re-scored on the next
+# `make reason` / `make rescore`, without an LLM call.
+#   v2.1 (2026-11-15): FK / inclusion roles (D40), specific-before-generic
+#   semantic_type (D6), inconclusive tests, pass-through view columns inherit.
+#   v2.2 (2026-11-15): a failed test of one parent no longer contradicts a
+#   reference whose values were found in another.
+SCORER_REVISION = "v2.2"
+
+_VERDICTS = ("supported", "plausible", "doubtful", "contradicted")
+_MAX_LINEAGE_HOPS = 5
+
+
+@dataclass
+class Inherited:
+    """A pass-through view column and the table column whose meaning it takes."""
+
+    column: str
+    base: str  # schema.table.column (a table, after following view-on-view lineage)
+    base_column_id: uuid.UUID
+    semantic: Any = None  # the base's current ColumnSemantic, once known
+
+
+@dataclass
+class PlanItem:
+    table: TableSnapshot
+    bundle: TableBundle
+    context: EvidenceContext | None
+    action: str  # reason | rescore | skip | needs_reasoning
+    why: str
+    current: Any = None  # TableSemantic
+    focus: list[str] = field(default_factory=list)  # columns the model answers
+    inherit: dict[str, Inherited] = field(default_factory=dict)
+    score_inputs: str | None = None
+
+
+def _evidence_material(context: EvidenceContext) -> Any:
+    """What the ledger and the queue read from the evidence: the rendered,
+    rounded evidence (as in the reasoning skip key, so sub-bucket noise changes
+    nothing) plus what the model is not shown but the ledger uses — a test's
+    origin, specificity and whether it ran."""
+    ev = context.source_input
+    tests = {}
+    if ev is not None:
+        tests = {
+            column: sorted(
+                (t.test_id, t.origin, t.passed, t.specific, t.conclusive) for t in items
+            )
+            for column, items in ev.tests.items()
+        }
+    return {"rendered": context.rendered.stable_projection(), "tests": tests}
+
+
+def score_inputs_hash(
+    settings: Settings,
+    context: EvidenceContext,
+    inherit: dict[str, Inherited],
+) -> str:
+    """Everything a stored answer's scores, queue items and inherited columns
+    depend on besides the answer itself. A change re-scores (no LLM call)."""
+    p = settings.profiling
+    material = {
+        "revision": SCORER_REVISION,
+        "scoring": settings.scoring.model_dump(mode="json"),
+        "bands": [p.accept_at, p.deep_profile_below, p.review_required_below],
+        "evidence": _evidence_material(context),
+        "profiling_available": context.profiling_available,
+        # importance uses log10(rows): a coarse bucket, so row-count drift does
+        # not produce a new version after every introspection
+        "rows": round(math.log10((context.table_rows or 0) + 1), 1),
+        "fk_degree": context.fk_degree,
+        "inherit": sorted(
+            (name, i.base, str(i.semantic.id) if i.semantic is not None else None)
+            for name, i in inherit.items()
+        ),
+    }
+    text = json.dumps(material, sort_keys=True, default=str, ensure_ascii=False)
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def _answered(cur) -> set[str]:
+    payload = (cur.payload or {}) if cur is not None else {}
+    reasoning = payload.get("reasoning") or {}
+    return {c.get("name") for c in reasoning.get("columns") or [] if c.get("name")}
+
+
+def stored_outcome(cur, bundle: TableBundle, column_sems: dict[str, Any]) -> TableOutcome:
+    """The stored answer (and critique) of the current version, as an outcome
+    that can be scored again. ``column_sems``: column name -> current version."""
+    payload = cur.payload or {}
+    outcome = TableOutcome(bundle=bundle, chunks=cur.chunks or 1)
+    data = payload.get("reasoning")
+    if not data:
+        return outcome
+    reasoning = TableReasoning.model_validate(data)
+    wanted = set(bundle.column_names)
+    reasoning.columns = [c for c in reasoning.columns if c.name in wanted]
+    outcome.reasoning = reasoning
+    crit = cur.critique or {}
+    if crit.get("verdict") in _VERDICTS:
+        columns = [
+            ColumnCritique(name=name, **sem.critique)
+            for name, sem in column_sems.items()
+            if name in wanted and sem.critique
+        ]
+        outcome.critique = TableCritique(
+            table_verdict=crit["verdict"], table_notes=crit.get("notes") or [], columns=columns
+        )
+    else:
+        outcome.critique_error = crit.get("error") or "critique not assessed"
+    outcome.join_hints = [
+        ValidatedJoin(**h) for h in payload.get("join_hints_kept") or []
+        if set(h.get("from_columns") or []) <= wanted  # not from an inherited column
+    ]
+    return outcome
+
+
+def inherited_row(
+    item: Inherited,
+    *,
+    table_id: uuid.UUID,
+    column_id: uuid.UUID,
+    run_id: uuid.UUID,
+    column_hash: str,
+    table_structure_hash: str,
+    prompt_version: str,
+    model: str,
+    locale: str,
+) -> dict[str, Any]:
+    """A pass-through view column takes its base column's current meaning and
+    score; no LLM call, no ledger of its own, never queued (owner decision
+    2026-11-15: the base column has been reasoned, the view adds no meaning)."""
+    base = item.semantic
+    return {
+        "table_id": table_id,
+        "column_id": column_id,
+        "run_id": run_id,
+        "status": base.status if base.status in ("auto_approved", "sme_reviewed") else "draft",
+        "band": base.band,
+        "locale": locale,
+        "structure_hash": column_hash,
+        "table_structure_hash": table_structure_hash,
+        "prompt_version": prompt_version,
+        "model": model,
+        "business_name": base.business_name,
+        "purpose": base.purpose,
+        "role": base.role,
+        "entity": base.entity,
+        "unit": base.unit,
+        "value_domain": base.value_domain,
+        "synonyms": list(base.synonyms or []),
+        "example_questions": list(base.example_questions or []),
+        "assumptions": list(base.assumptions or []),
+        "unknowns": list(base.unknowns or []),
+        "alternatives": list(base.alternatives or []),
+        "evidence_refs": [f"lin:{item.column}"],
+        "self_confidence": base.self_confidence,
+        "critique": None,
+        "raw_score": base.raw_score,
+        "calibrated_score": base.calibrated_score,
+        "score_breakdown": {
+            "inherited_from": item.base,
+            "base_semantic_id": str(base.id),
+            "base_version": base.version,
+        },
+        "weights_version": base.weights_version,
+        "calibrator": base.calibrator,
+        "semantic_type": base.semantic_type,
+        "claimed_semantic_type": base.claimed_semantic_type,
+        "coverage": "modules",
+        "unused": bool(base.unused),
+    }
+
+
+def _table_aggregate(table_row: dict[str, Any], column_rows: list[dict[str, Any]],
+                     settings: Settings) -> None:
+    """Table score = mean of all its column scores (inherited ones included)."""
+    raw = [r["raw_score"] for r in column_rows]
+    calibrated = [r["calibrated_score"] for r in column_rows]
+    table_row["raw_score"] = round(sum(raw) / len(raw), 6) if raw else None
+    table_row["calibrated_score"] = (
+        round(sum(calibrated) / len(calibrated), 6) if calibrated else None
+    )
+    breakdown = dict(table_row.get("score_breakdown") or {})
+    breakdown["columns"] = summarize_scores(calibrated, settings.profiling)
+    table_row["score_breakdown"] = breakdown
+    approved = bool(column_rows) and all(r["status"] == "auto_approved" for r in column_rows)
+    table_row["status"] = "auto_approved" if approved else "draft"
+
+
+def inherited_table_row(
+    table: TableSnapshot,
+    bundle: TableBundle,
+    context: EvidenceContext,
+    inherit: dict[str, Inherited],
+    base_tables: dict[str, Any],
+    **fields: Any,
+) -> dict[str, Any]:
+    """Table-level meaning of a view whose every column passes a base column
+    through: stated from the base tables, without an LLM call."""
+    bases = sorted({i.base.rsplit(".", 1)[0] for i in inherit.values()})
+    single = base_tables.get(bases[0]) if len(bases) == 1 else None
+    name = (
+        f"{single.business_name} (view)" if single is not None
+        else f"View over {', '.join(bases)}"
+    )
+    purpose = (
+        f"Shows columns of {', '.join(bases)} under other names, computing nothing; "
+        "each column means what its source column means."
+    )
+    return fields | {
+        "status": "draft",
+        "structure_hash": bundle.structure_hash,
+        "business_name": name,
+        "purpose": purpose,
+        "grain": single.grain if single is not None else None,
+        "entity": single.entity if single is not None else None,
+        "synonyms": [],
+        "assumptions": [],
+        "unknowns": [],
+        "self_confidence": single.self_confidence if single is not None else 0.5,
+        "raw_score": None,
+        "calibrated_score": None,
+        "score_breakdown": {"aggregate": "mean_of_columns", "inherited_from": bases,
+                            "weights_version": "heuristic-v2"},
+        "critique": {"verdict": "inherited", "notes": ["pass-through view: nothing to critique"]},
+        "payload": {"reasoning": None, "inherited": {n: i.base for n, i in inherit.items()},
+                    "join_hints_kept": [], "notes": []},
+        "evidence_hash": context.rendered.hash,
+        "exposure": context.rendered.exposure,
+        "chunks": 0,
+    }
+
+
 def _histogram(scores: list[float]) -> list[tuple[str, int]]:
     bins = [0] * 10
     for s in scores:
@@ -478,6 +720,28 @@ def _histogram(scores: list[float]) -> list[tuple[str, int]]:
 
 
 # -- main entry point -----------------------------------------------------------------
+
+
+@dataclass
+class _Run:
+    """Everything the planning and execution steps share."""
+
+    settings: Settings
+    session: AsyncSession
+    store: SemanticsStore
+    options: ReasoningOptions
+    report: ReasoningReport
+    snapshot: Snapshot
+    evidence_source: EvidenceSource
+    exposure: Exposure
+    fk_degree: dict[str, int]
+    live_tables: dict[tuple[str, str], Any]
+    table_ids: dict[tuple[str, str], uuid.UUID]
+    index: Any
+    major: int
+    model: str
+    prompt_version: str
+    critique_prompt_version: str
 
 
 async def run_reasoning(
@@ -529,7 +793,7 @@ async def run_reasoning(
     embed = settings.semantics.embed_after_reasoning if options.embed is None else options.embed
     model = settings.llm.model
 
-    index = build_catalog_index(snapshot)
+    index = build_catalog_index(snapshot, unique_keys=settings.semantics.prompt_major >= 2)
     reasoner_settings = ReasonerSettings(
         model=model,
         thinking=thinking,
@@ -559,9 +823,8 @@ async def run_reasoning(
     if evidence_source is None:
         evidence_source = NoEvidence()
     exposure = Exposure.from_settings(settings)
-    fk_degree = _fk_degree(snapshot)
-    # The client is built lazily: a run that skips every table, or a dry
-    # run, needs no API key.
+    # The client is built lazily: a run that skips every table, a re-score or a
+    # dry run needs no API key.
     reasoner: TableReasoner | None = None
 
     def get_reasoner() -> TableReasoner:
@@ -594,106 +857,47 @@ async def run_reasoning(
         dry_run=options.dry_run,
         prompt_major=major,
         exposure=exposure.mode if major >= 2 else None,
+        rescore_only=options.rescore_only,
+    )
+    ctx = _Run(
+        settings=settings,
+        session=session,
+        store=store,
+        options=options,
+        report=report,
+        snapshot=snapshot,
+        evidence_source=evidence_source,
+        exposure=exposure,
+        fk_degree=_fk_degree(snapshot),
+        live_tables=live_tables,
+        table_ids={(t.schema, t.name): live_tables[(t.schema, t.name)].id for t in scope},
+        index=index,
+        major=major,
+        model=model,
+        prompt_version=prompt_version,
+        critique_prompt_version=critique_prompt_version,
     )
 
-    # Plain values only from here on: the session commits after every table.
-    data_source_id = data_source.id
-    snapshot_id = snap_record.id
-    table_ids = {(t.schema, t.name): live_tables[(t.schema, t.name)].id for t in scope}
-    current = await store.current_table_semantics(table_ids.values())
-
-    # -- decide what to reason -------------------------------------------------
-    todo: list[tuple[TableSnapshot, TableBundle, EvidenceContext | None]] = []
-    for table in scope:
-        bundle = build_bundle(table, dialect=snapshot.dialect)
-        context: EvidenceContext | None = None
-        if major >= 2:
-            ev_in = evidence_source.table_evidence(table.qualified_name)
-            context = EvidenceContext(
-                rendered=render_evidence(bundle, ev_in, exposure),
-                source_input=ev_in,
-                # The table's own verdict wins (e.g. SELECT denied on one table).
-                profiling_available=bool(
-                    ev_in.profiling_available if ev_in is not None
-                    else evidence_source.profiling_available
-                ),
-                table_rows=table.estimated_rows,
-                fk_degree=fk_degree.get(table.qualified_name, 0),
-            )
-        cur = current.get(table_ids[(table.schema, table.name)])
-        evidence_same = context is None or (
-            cur is not None and cur.evidence_hash == context.rendered.hash
-        )
-        # A version whose critique failed is incomplete: its columns cannot be
-        # auto-approved, so it is re-run (the reasoning answer usually comes from
-        # the response cache; only the critique goes to the model again).
-        critique_missing = cur is not None and (
-            not cur.critique or cur.critique.get("verdict") == "not_assessed"
-        )
-        unchanged = (
-            cur is not None
-            and cur.structure_hash == bundle.structure_hash
-            and cur.prompt_version == prompt_version
-            and cur.critique_prompt_version == critique_prompt_version
-            and cur.model == model
-            and evidence_same
-            and not critique_missing
-        )
-        if unchanged and not options.force:
-            report.results.append(
-                TableResult(table.qualified_name, "skipped", "unchanged since v" + str(cur.version))
-            )
-            continue
-        if cur is None:
-            why = "new"
-        elif cur.structure_hash != bundle.structure_hash:
-            why = "structure changed"
-        elif cur.model != model:
-            why = f"model changed ({cur.model} -> {model})"
-        elif (cur.prompt_version, cur.critique_prompt_version) != (
-            prompt_version,
-            critique_prompt_version,
-        ):
-            why = "prompt changed"
-        elif not evidence_same:
-            why = "evidence changed"
-        elif critique_missing:
-            why = "critique missing"
-        else:
-            why = "forced"
-        todo.append((table, bundle, context))
-        if options.dry_run:
-            rendered = None
-            if options.show_bundles:
-                rendered = reasoning_messages(
-                    bundle, index, context.rendered if context else None, major
-                )[1].content
-            report.results.append(
-                TableResult(
-                    table.qualified_name,
-                    "would_reason",
-                    why,
-                    columns=len(bundle.facts),
-                    rendered=rendered,
-                )
-            )
-
+    # -- decide: tables first; views after the tables they read from -------------
+    tables = [t for t in scope if t.kind != "view"]
+    views = [t for t in scope if t.kind == "view"]
+    first = await _plan(ctx, tables)
     if options.dry_run:
+        reasoned = {i.table.qualified_name for i in first if i.action == "reason"}
+        second = await _plan(ctx, views, assume_reasoned=reasoned)
+        for item in [*first, *second]:
+            _report_plan(ctx, item)
         report.wall_ms = int((time.perf_counter() - started) * 1000)
         return report
 
     # -- bookkeeping before any LLM call -----------------------------------------
-    if todo:
+    if any(i.action == "reason" for i in first):
         get_reasoner()  # fail fast on a misconfigured client, before any write
-    columns_by_table = {
-        tid: {name: (c.id, c.structure_hash) for name, c in cols.items()}
-        for tid, cols in (await store.live_columns(table_ids.values())).items()
-    }
-    report.stale_marked = await store.mark_stale(data_source_id)
-    report.fk_hints = await store.sync_fk_join_hints(data_source_id, snapshot)
+    report.stale_marked = await store.mark_stale(data_source.id)
+    report.fk_hints = await store.sync_fk_join_hints(data_source.id, snapshot)
     run = await store.create_run(
-        data_source_id=data_source_id,
-        snapshot_id=snapshot_id,
+        data_source_id=data_source.id,
+        snapshot_id=snap_record.id,
         status="running",
         model=model,
         prompt_version=prompt_version,
@@ -706,9 +910,10 @@ async def run_reasoning(
             "with_neighbours": options.with_neighbours,
             "limit": options.limit,
             "force": options.force,
+            "rescore_only": options.rescore_only,
         },
         tables_in_scope=len(scope),
-        tables_skipped=report.count("skipped"),
+        tables_skipped=0,
     )
     run_id = run.id
     report.run_id = str(run_id)
@@ -716,19 +921,15 @@ async def run_reasoning(
 
     try:
         await _execute(
-            settings,
-            session,
-            store,
-            report,
-            todo=todo,
+            ctx,
+            first=first,
+            views=views,
             get_reasoner=get_reasoner,
             embed=embed,
             embedder=embedder,
             run_id=run_id,
-            data_source_id=data_source_id,
-            snapshot_id=snapshot_id,
-            table_ids=table_ids,
-            columns_by_table=columns_by_table,
+            data_source_id=data_source.id,
+            snapshot_id=snap_record.id,
             started=started,
         )
     except BaseException as exc:
@@ -743,129 +944,414 @@ async def run_reasoning(
     return report
 
 
+def _report_plan(ctx: _Run, item: PlanItem) -> None:
+    report = ctx.report
+    name = item.table.qualified_name
+    if item.action == "skip":
+        report.results.append(TableResult(name, "skipped", item.why))
+        return
+    if item.action == "needs_reasoning":
+        report.results.append(TableResult(name, "needs_reasoning", item.why))
+        return
+    rendered = None
+    if item.action == "reason" and ctx.options.show_bundles:
+        bundle = _focused(item)
+        evidence = item.context.rendered if item.context else None
+        if evidence is not None and len(item.focus) < len(item.bundle.column_names):
+            evidence = evidence.subset(item.focus)
+        rendered = reasoning_messages(bundle, ctx.index, evidence, ctx.major)[1].content
+    action = "would_reason" if item.action == "reason" else "would_rescore"
+    detail = item.why
+    if item.inherit:
+        detail += f"; {len(item.inherit)} pass-through column(s) inherit"
+    report.results.append(
+        TableResult(name, action, detail, columns=len(item.focus), rendered=rendered)
+    )
+
+
+def _focused(item: PlanItem) -> TableBundle:
+    """The bundle the model answers: all columns, or for a view only those that do
+    not inherit (the rest are context, as in a chunk)."""
+    if not item.inherit or len(item.focus) == len(item.bundle.column_names):
+        return item.bundle
+    part = chunk_bundle(item.bundle, item.focus, 1, 1)
+    part.document["chunk"] = {
+        "part": 1,
+        "of": 1,
+        "note": "answer only the columns under 'columns'; the other columns pass base "
+        "columns through unchanged and take their meanings",
+    }
+    return part
+
+
+async def _inheritance(
+    ctx: _Run, view: TableSnapshot, ev: TableEvidenceInput | None,
+    assume_reasoned: set[str],
+) -> dict[str, Inherited]:
+    """Pass-through columns of a view whose (ultimate) base table column has a
+    meaning, or will have one in this run (dry run)."""
+    if view.kind != "view" or ev is None or not ev.lineage:
+        return {}
+    found: dict[str, tuple[str, str, str]] = {}
+    for column in (c.name for c in view.columns):
+        source = None
+        lineage = ev.lineage.get(column)
+        hops = 0
+        while lineage is not None and lineage.classification == "pass_through" and (
+            lineage.source
+        ) and hops < _MAX_LINEAGE_HOPS:
+            source = lineage.source
+            schema, table, col = source.rsplit(".", 2)
+            base = ctx.snapshot.table(schema, table)
+            if base is None or base.kind != "view":
+                break
+            upstream = ctx.evidence_source.table_evidence(f"{schema}.{table}")
+            lineage = upstream.lineage.get(col) if upstream is not None else None
+            source = None if lineage is None else source
+            hops += 1
+        if source is None:
+            continue
+        schema, table, col = source.rsplit(".", 2)
+        base = ctx.snapshot.table(schema, table)
+        if base is None or base.kind == "view" or (schema, table) not in ctx.live_tables:
+            continue
+        found[column] = (schema, table, col)
+    if not found:
+        return {}
+    base_ids = {ctx.live_tables[(s, t)].id for s, t, _c in found.values()}
+    columns = await ctx.store.live_columns(base_ids)
+    semantics = await ctx.store.current_column_semantics(base_ids)
+    out: dict[str, Inherited] = {}
+    for column, (schema, table, col) in found.items():
+        record = columns.get(ctx.live_tables[(schema, table)].id, {}).get(col)
+        if record is None:
+            continue
+        semantic = semantics.get(record.id)
+        if semantic is None and f"{schema}.{table}" not in assume_reasoned:
+            continue  # the base has no meaning yet: the model reasons this column
+        if semantic is not None and semantic.status == "stale":
+            continue
+        out[column] = Inherited(column, f"{schema}.{table}.{col}", record.id, semantic)
+    return out
+
+
+async def _plan(
+    ctx: _Run, tables: list[TableSnapshot], *, assume_reasoned: set[str] | None = None
+) -> list[PlanItem]:
+    """Per table: reason (LLM), re-score (stored answer, no LLM), or skip."""
+    options, store = ctx.options, ctx.store
+    current = await store.current_table_semantics(
+        ctx.table_ids[(t.schema, t.name)] for t in tables
+    )
+    items: list[PlanItem] = []
+    for table in tables:
+        bundle = build_bundle(table, dialect=ctx.snapshot.dialect)
+        context: EvidenceContext | None = None
+        inherit: dict[str, Inherited] = {}
+        if ctx.major >= 2:
+            ev_in = ctx.evidence_source.table_evidence(table.qualified_name)
+            context = EvidenceContext(
+                rendered=render_evidence(bundle, ev_in, ctx.exposure),
+                source_input=ev_in,
+                # The table's own verdict wins (e.g. SELECT denied on one table).
+                profiling_available=bool(
+                    ev_in.profiling_available if ev_in is not None
+                    else ctx.evidence_source.profiling_available
+                ),
+                table_rows=table.estimated_rows,
+                fk_degree=ctx.fk_degree.get(table.qualified_name, 0),
+            )
+            inherit = await _inheritance(ctx, table, ev_in, assume_reasoned or set())
+        focus = [c for c in bundle.column_names if c not in inherit]
+        cur = current.get(ctx.table_ids[(table.schema, table.name)])
+        evidence_same = context is None or (
+            cur is not None
+            and cur.evidence_hash in (context.rendered.hash, context.rendered.legacy_hash)
+        )
+        # A version whose critique failed is incomplete: its columns cannot be
+        # auto-approved, so it is re-run (the reasoning answer usually comes from
+        # the response cache; only the critique goes to the model again).
+        critique_missing = bool(focus) and cur is not None and (
+            not cur.critique or cur.critique.get("verdict") == "not_assessed"
+        )
+        structure_same = cur is not None and cur.structure_hash == bundle.structure_hash
+        covered = set(focus) <= _answered(cur)
+        if cur is None:
+            why = "new"
+        elif not structure_same:
+            why = "structure changed"
+        elif cur.model != ctx.model:
+            why = f"model changed ({cur.model} -> {ctx.model})"
+        elif (cur.prompt_version, cur.critique_prompt_version) != (
+            ctx.prompt_version, ctx.critique_prompt_version,
+        ):
+            why = "prompt changed"
+        elif not evidence_same:
+            why = "evidence changed"
+        elif critique_missing:
+            why = "critique missing"
+        elif not covered:
+            why = "columns without an answer"
+        elif options.force:
+            why = "forced"
+        else:
+            why = ""
+        needs_model = bool(why) and bool(focus)
+        if options.rescore_only and needs_model:
+            # An explicit re-score scores the stored answer against today's
+            # evidence even when the model would see something new, as long as
+            # the answer still fits the table.
+            if cur is None or not structure_same or not covered:
+                items.append(PlanItem(table, bundle, context, "needs_reasoning",
+                                      why + ": run make reason", cur, focus, inherit))
+                continue
+            needs_model = False
+            why = f"{why}; re-scored, make reason would re-read it"
+        if needs_model:
+            items.append(PlanItem(table, bundle, context, "reason", why, cur, focus, inherit))
+            continue
+        if ctx.major < 2 or context is None:
+            items.append(PlanItem(table, bundle, context, "skip",
+                                  "unchanged since v" + str(cur.version), cur))
+            continue
+        inputs = score_inputs_hash(ctx.settings, context, inherit)
+        stored = ((cur.score_breakdown or {}).get("score_inputs") if cur is not None else None)
+        if cur is not None and stored == inputs and not why and not (
+            options.rescore_only and options.force
+        ):
+            items.append(PlanItem(table, bundle, context, "skip",
+                                  "unchanged since v" + str(cur.version), cur, focus, inherit,
+                                  inputs))
+            continue
+        reason = (
+            "pass-through view" if not focus else
+            why if why else "scoring inputs changed"
+        )
+        items.append(PlanItem(table, bundle, context, "rescore", reason, cur, focus, inherit,
+                              inputs))
+    return items
+
+
 async def _execute(
-    settings: Settings,
-    session: AsyncSession,
-    store: SemanticsStore,
-    report: ReasoningReport,
+    ctx: _Run,
     *,
-    todo: list[tuple[TableSnapshot, TableBundle, EvidenceContext | None]],
+    first: list[PlanItem],
+    views: list[TableSnapshot],
     get_reasoner: Callable[[], TableReasoner],
     embed: bool,
     embedder: EmbeddingClient | None,
     run_id: uuid.UUID,
     data_source_id: uuid.UUID,
     snapshot_id: uuid.UUID,
-    table_ids: dict[tuple[str, str], uuid.UUID],
-    columns_by_table: dict[uuid.UUID, dict[str, tuple[uuid.UUID, str]]],
     started: float,
 ) -> None:
+    settings, session, store, report = ctx.settings, ctx.session, ctx.store, ctx.report
     semaphore = asyncio.Semaphore(max(1, settings.llm.concurrency))
+    columns_by_table = {
+        tid: {name: (c.id, c.structure_hash) for name, c in cols.items()}
+        for tid, cols in (await store.live_columns(ctx.table_ids.values())).items()
+    }
+    counters = {"columns": 0, "failed": 0, "critiques_failed": 0, "reasoned_or_rescored": 0}
 
-    async def work(
-        table: TableSnapshot, bundle: TableBundle, context: EvidenceContext | None
-    ) -> tuple[TableSnapshot, TableOutcome, EvidenceContext | None]:
+    async def work(item: PlanItem) -> tuple[PlanItem, TableOutcome]:
         async with semaphore:
-            evidence = context.rendered if context is not None else None
+            evidence = item.context.rendered if item.context is not None else None
+            bundle = _focused(item)
+            if evidence is not None and bundle is not item.bundle:
+                evidence = evidence.subset(item.focus)
             outcome = await asyncio.to_thread(get_reasoner().run, bundle, evidence)
-            return table, outcome, context
+            return item, outcome
 
-    columns_written = 0
-    failed = 0
-    critiques_failed = 0
-    # Views are reasoned after tables: a computed view column means something
-    # in terms of its inputs (A8). Within a wave, tables run concurrently.
-    waves = [
-        [item for item in todo if item[0].kind != "view"],
-        [item for item in todo if item[0].kind == "view"],
-    ]
-    tasks: list[asyncio.Task] = []
-    try:
-        for wave in waves:
-            tasks = [asyncio.create_task(work(t, b, c)) for t, b, c in wave]
+    async def persist(item: PlanItem, outcome: TableOutcome | None, action: str) -> None:
+        table = item.table
+        table_id = ctx.table_ids[(table.schema, table.name)]
+        result = TableResult(table.qualified_name, "failed",
+                             calls=outcome.calls if outcome else [])
+        if outcome is not None and outcome.calls:
+            await store.record_calls(
+                outcome.calls, run_id=run_id, data_source_id=data_source_id, table_id=table_id
+            )
+        if item.focus and (outcome is None or not outcome.ok):
+            counters["failed"] += 1
+            result.detail = (outcome.error if outcome else None) or "unknown error"
+            logger.warning("reasoning failed for %s: %s", table.qualified_name, result.detail)
+            report.results.append(result)
+            await session.commit()
+            return
+        cols = columns_by_table.get(table_id, {})
+        # A re-scored answer keeps the prompt, model and thinking it was given; a
+        # new answer or a pass-through view carries this run's.
+        stored = action == "rescored" and bool(item.focus) and item.current is not None
+        common = {
+            "data_source_id": data_source_id,
+            "table_id": table_id,
+            "run_id": run_id,
+            "snapshot_id": snapshot_id,
+            "locale": settings.app.locale,
+            "prompt_version": item.current.prompt_version if stored else ctx.prompt_version,
+            "critique_prompt_version": (
+                item.current.critique_prompt_version if stored else ctx.critique_prompt_version
+            ),
+            "model": item.current.model if stored else ctx.model,
+            "thinking": item.current.thinking if stored else report.thinking,
+        }
+        extras: dict[str, ColumnExtras] = {}
+        if item.focus:
+            assert outcome is not None and outcome.reasoning is not None
+            table_row, column_rows, _scores = build_rows(
+                outcome,
+                settings=settings,
+                data_source_id=data_source_id,
+                table_id=table_id,
+                snapshot_id=snapshot_id,
+                run_id=run_id,
+                column_ids={name: cid for name, (cid, _h) in cols.items()},
+                column_hashes={name: h for name, (_cid, h) in cols.items()},
+                prompt_version=common["prompt_version"],
+                critique_prompt_version=common["critique_prompt_version"],
+                model=common["model"],
+                thinking=common["thinking"],
+                context=item.context,
+                extras=extras,
+            )
+            if stored:
+                # The model saw what it saw: keep the answer's evidence hash, so a
+                # later `make reason` still re-reasons if the model-visible
+                # evidence has changed since.
+                table_row["evidence_hash"] = item.current.evidence_hash
+                table_row["exposure"] = item.current.exposure
+        else:
+            assert item.context is not None
+            base_tables = {}
+            bases = {i.base.rsplit(".", 1)[0] for i in item.inherit.values()}
+            base_ids = {ctx.live_tables[tuple(b.split(".", 1))].id: b for b in bases
+                        if tuple(b.split(".", 1)) in ctx.live_tables}
+            for tid, sem in (await store.current_table_semantics(base_ids)).items():
+                base_tables[base_ids[tid]] = sem
+            table_row = inherited_table_row(
+                table, item.bundle, item.context, item.inherit, base_tables, **common
+            )
+            column_rows = []
+        # pass-through view columns: the base column's current meaning
+        if item.inherit:
+            if any(i.semantic is None for i in item.inherit.values()):
+                fresh = await _inheritance(ctx, table, item.context.source_input
+                                           if item.context else None, set())
+                for name, i in item.inherit.items():
+                    if i.semantic is None and name in fresh:
+                        i.semantic = fresh[name].semantic
+            for name, inh in item.inherit.items():
+                if inh.semantic is None or name not in cols:
+                    report.notes.append(
+                        f"{table.qualified_name}.{name}: base {inh.base} has no meaning yet"
+                    )
+                    continue
+                column_rows.append(inherited_row(
+                    inh,
+                    table_id=table_id,
+                    column_id=cols[name][0],
+                    run_id=run_id,
+                    column_hash=cols[name][1],
+                    table_structure_hash=item.bundle.structure_hash,
+                    prompt_version=common["prompt_version"],
+                    model=common["model"],
+                    locale=settings.app.locale,
+                ))
+            _table_aggregate(table_row, column_rows, settings)
+        if item.context is not None and ctx.major >= 2:
+            inputs = score_inputs_hash(settings, item.context, item.inherit)
+            table_row["score_breakdown"] = {
+                **(table_row.get("score_breakdown") or {}), "score_inputs": inputs
+            }
+        _sem, column_sems = await store.write_table_version(table_row, column_rows)
+        if item.context is not None:
+            by_column = {cid: name for name, (cid, _h) in cols.items()}
+            ledgers, reviews = {}, {}
+            for sem in column_sems:
+                name = by_column.get(sem.column_id)
+                report.coverage[sem.coverage] = report.coverage.get(sem.coverage, 0) + 1
+                extra = extras.get(name) if name else None
+                if extra is None:
+                    continue
+                if extra.ledger is not None:
+                    ledgers[sem.id] = extra.ledger.items
+                if extra.review is not None:
+                    reviews[sem.id] = (sem.column_id, extra.review)
+            await store.write_evidence_items(table_id, ledgers)
+            queued = await store.replace_review_items(
+                data_source_id, table_id, [s.column_id for s in column_sems], reviews
+            )
+            for reasons in queued:
+                for reason in reasons:
+                    report.review[reason] = report.review.get(reason, 0) + 1
+            report.review["queued"] = report.review.get("queued", 0) + len(queued)
+        if (action == "reasoned" and outcome is not None) or item.inherit:
+            # A re-scored view drops the hints its inherited columns had proposed:
+            # joins belong to the base column now.
+            written, staled = await store.upsert_inferred_join_hints(
+                data_source_id,
+                outcome.join_hints if outcome is not None else [],
+                run_id=run_id,
+                prompt_version=common["prompt_version"],
+                model=common["model"],
+                table=(table.schema, table.name),
+            )
+            report.inferred_hints += written
+            report.staled_hints += staled
+        counters["columns"] += len(column_rows)
+        counters["reasoned_or_rescored"] += 1
+        result.action = action
+        result.detail = item.why if action == "rescored" else ""
+        result.columns = len(column_rows)
+        result.critique_ok = outcome.critique is not None if outcome and item.focus else None
+        result.mean_score = table_row["calibrated_score"]
+        if action == "reasoned" and outcome is not None and outcome.critique is None:
+            counters["critiques_failed"] += 1
+            result.detail = f"critique failed: {outcome.critique_error}"
+        if outcome is not None:
+            report.notes.extend(f"{table.qualified_name}: {n}" for n in outcome.notes)
+        report.results.append(result)
+        await session.commit()
+
+    async def run_wave(items: list[PlanItem]) -> None:
+        for item in items:
+            if item.action in ("skip", "needs_reasoning"):
+                _report_plan(ctx, item)
+        # no LLM: stored answers scored again, pass-through views inherited
+        for item in (i for i in items if i.action == "rescore"):
+            outcome = None
+            if item.focus:
+                cur = item.current
+                sems = await store.current_column_semantics([cur.table_id])
+                names = columns_by_table.get(cur.table_id, {})
+                by_name = {n: sems[cid] for n, (cid, _h) in names.items() if cid in sems}
+                outcome = stored_outcome(cur, _focused(item), by_name)
+                if outcome.reasoning is None:
+                    report.results.append(TableResult(
+                        item.table.qualified_name, "needs_reasoning",
+                        "no stored answer to re-score: run make reason"))
+                    continue
+            await persist(item, outcome, "rescored")
+        tasks = [asyncio.create_task(work(i)) for i in items if i.action == "reason"]
+        try:
             for next_done in asyncio.as_completed(tasks):
-                table, outcome, context = await next_done
-                table_id = table_ids[(table.schema, table.name)]
-                await store.record_calls(
-                    outcome.calls, run_id=run_id, data_source_id=data_source_id, table_id=table_id
-                )
-                result = TableResult(table.qualified_name, "failed", calls=outcome.calls)
+                item, outcome = await next_done
+                await persist(item, outcome, "reasoned")
+        finally:
+            for task in tasks:
+                task.cancel()
 
-                if not outcome.ok:
-                    failed += 1
-                    result.detail = outcome.error or "unknown error"
-                    logger.warning(
-                        "reasoning failed for %s: %s", table.qualified_name, result.detail
-                    )
-                else:
-                    cols = columns_by_table.get(table_id, {})
-                    extras: dict[str, ColumnExtras] = {}
-                    table_row, column_rows, _scores = build_rows(
-                        outcome,
-                        settings=settings,
-                        data_source_id=data_source_id,
-                        table_id=table_id,
-                        snapshot_id=snapshot_id,
-                        run_id=run_id,
-                        column_ids={name: cid for name, (cid, _h) in cols.items()},
-                        column_hashes={name: h for name, (_cid, h) in cols.items()},
-                        prompt_version=report.prompt_version,
-                        critique_prompt_version=report.critique_prompt_version,
-                        model=report.model,
-                        thinking=report.thinking,
-                        context=context,
-                        extras=extras,
-                    )
-                    _sem, column_sems = await store.write_table_version(table_row, column_rows)
-                    if context is not None:
-                        by_column = {cid: name for name, (cid, _h) in cols.items()}
-                        ledgers, reviews = {}, {}
-                        for sem in column_sems:
-                            name = by_column.get(sem.column_id)
-                            extra = extras.get(name) if name else None
-                            if extra is None:
-                                continue
-                            if extra.ledger is not None:
-                                ledgers[sem.id] = extra.ledger.items
-                            if extra.review is not None:
-                                reviews[sem.id] = (sem.column_id, extra.review)
-                            report.coverage[sem.coverage] = report.coverage.get(sem.coverage, 0) + 1
-                        await store.write_evidence_items(table_id, ledgers)
-                        queued = await store.replace_review_items(
-                            data_source_id,
-                            table_id,
-                            [s.column_id for s in column_sems],
-                            reviews,
-                        )
-                        for reasons in queued:
-                            for reason in reasons:
-                                report.review[reason] = report.review.get(reason, 0) + 1
-                        report.review["queued"] = report.review.get("queued", 0) + len(queued)
-                    report.inferred_hints += await store.upsert_inferred_join_hints(
-                        data_source_id,
-                        outcome.join_hints,
-                        run_id=run_id,
-                        prompt_version=report.prompt_version,
-                        model=report.model,
-                    )
-                    columns_written += len(column_rows)
-                    result.action = "reasoned"
-                    result.columns = len(column_rows)
-                    result.critique_ok = outcome.critique is not None
-                    result.mean_score = table_row["calibrated_score"]
-                    if outcome.critique is None:
-                        critiques_failed += 1
-                        result.detail = f"critique failed: {outcome.critique_error}"
-                    report.notes.extend(f"{table.qualified_name}: {n}" for n in outcome.notes)
-
-                report.results.append(result)
-                await session.commit()
-    finally:
-        for task in tasks:
-            task.cancel()
+    # Views after tables: a computed view column means something in terms of its
+    # inputs (A8), and a pass-through column takes its base column's meaning.
+    await run_wave(first)
+    if views:
+        second = await _plan(ctx, views)
+        if any(i.action == "reason" for i in second):
+            get_reasoner()
+        await run_wave(second)
 
     # -- embeddings ------------------------------------------------------------------------
-    scope_ids = list(table_ids.values())
+    scope_ids = list(ctx.table_ids.values())
     if embed and embedder is not None:
         targets = await store.embedding_targets(
             data_source_id, settings.embeddings.model, table_ids=scope_ids
@@ -895,17 +1381,23 @@ async def _execute(
     report.histogram = _histogram(values)
     report.wall_ms = int((time.perf_counter() - started) * 1000)
 
+    failed = counters["failed"]
     totals = report.totals()
     run = await session.get(ReasoningRun, run_id)
     assert run is not None
-    run.status = "completed" if failed == 0 and critiques_failed == 0 else "completed_with_failures"
-    if todo and failed == len(todo):
+    attempted = report.count("reasoned") + failed
+    run.status = (
+        "completed" if failed == 0 and counters["critiques_failed"] == 0
+        else "completed_with_failures"
+    )
+    if attempted and failed == attempted:
         run.status = "failed"
     run.finished_at = datetime.now(UTC)
     run.tables_reasoned = report.count("reasoned")
+    run.tables_skipped = report.count("skipped")
     run.tables_failed = failed
-    run.critiques_failed = critiques_failed
-    run.columns_written = columns_written
+    run.critiques_failed = counters["critiques_failed"]
+    run.columns_written = counters["columns"]
     run.embeddings_written = report.embeddings_written
     run.llm_calls = totals["llm_calls"]
     run.cache_hits = totals["cache_hits"]
@@ -914,5 +1406,8 @@ async def _execute(
     run.reasoning_tokens = totals["reasoning_tokens"]
     run.cached_tokens = totals["cached_tokens"]
     run.wall_ms = report.wall_ms
-    run.notes = report.notes
+    notes = list(report.notes)
+    if report.count("rescored"):
+        notes.append(f"re-scored without an LLM call: {report.count('rescored')} table(s)")
+    run.notes = notes
     await session.commit()

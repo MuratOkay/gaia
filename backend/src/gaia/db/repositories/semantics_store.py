@@ -20,7 +20,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -351,9 +351,26 @@ class SemanticsStore:
         run_id: uuid.UUID,
         prompt_version: str,
         model: str,
-    ) -> int:
+        table: tuple[str, str] | None = None,
+    ) -> tuple[int, int]:
+        """Store the model's join hints for one reasoned table; returns
+        ``(written, staled)``.
+
+        With ``table`` (the reasoned table), the model's earlier hints *from*
+        that table that the new answer no longer proposes become ``stale``:
+        the current answer is the model's current belief, and only current
+        hints are tested (Stage 3) or used (Phase 4). A stale hint proposed
+        again becomes ``inferred`` again. ``refuted`` (a test of the claim
+        failed) and SME decisions are kept as they are. Before 2026-11-15 old
+        hints stayed ``inferred`` forever (owner run: ``f2 -> customer_id`` from
+        an earlier answer was still tested after the model had moved on to
+        ``customer_code``).
+        """
         written = 0
+        proposed: set[tuple] = set()
         for h in hints:
+            proposed.add((h.from_schema, h.from_table, tuple(h.from_columns), h.to_schema,
+                          h.to_table, tuple(h.to_columns)))
             stmt = pg_insert(JoinHint).values(
                 id=uuid.uuid4(),
                 data_source_id=data_source_id,
@@ -379,16 +396,37 @@ class SemanticsStore:
                     "run_id": run_id,
                     "prompt_version": prompt_version,
                     "model": model,
+                    "status": case(
+                        (JoinHint.status == "stale", "inferred"), else_=JoinHint.status
+                    ),
                     "updated_at": func.now(),
                 },
-                # Only refresh the model's own rows; keep status (an SME may
-                # have rejected it) and never touch FK or SME rows.
+                # Only refresh the model's own rows; keep a rejection or a
+                # refutation, and never touch FK or SME rows.
                 where=JoinHint.source == "llm",
             )
             await self.session.execute(stmt)
             written += 1
+        staled = 0
+        if table is not None:
+            schema, name = table
+            current = await self.session.scalars(
+                select(JoinHint).where(
+                    JoinHint.data_source_id == data_source_id,
+                    JoinHint.source == "llm",
+                    JoinHint.status == "inferred",
+                    JoinHint.from_schema == schema,
+                    JoinHint.from_table == name,
+                )
+            )
+            for hint in current:
+                key = (hint.from_schema, hint.from_table, tuple(hint.from_columns),
+                       hint.to_schema, hint.to_table, tuple(hint.to_columns))
+                if key not in proposed:
+                    hint.status = "stale"
+                    staled += 1
         await self.session.flush()
-        return written
+        return written, staled
 
     # -- embeddings ------------------------------------------------------------------
 
@@ -605,6 +643,20 @@ class SemanticsStore:
             .limit(limit)
         )
         return [tuple(r) for r in rows.all()]
+
+    async def current_column_semantics(
+        self, table_ids: Iterable[uuid.UUID]
+    ) -> dict[uuid.UUID, ColumnSemantic]:
+        """Current column versions of these tables, by catalog column id."""
+        ids = list(table_ids)
+        if not ids:
+            return {}
+        rows = await self.session.scalars(
+            select(ColumnSemantic).where(
+                ColumnSemantic.table_id.in_(ids), ColumnSemantic.is_current.is_(True)
+            )
+        )
+        return {r.column_id: r for r in rows}
 
     # -- reporting -------------------------------------------------------------------
 

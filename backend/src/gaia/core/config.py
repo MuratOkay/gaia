@@ -210,6 +210,12 @@ class ProfilingBudget(BaseModel):
     max_pages_per_run: int = 50_000_000
     max_runtime_per_table_s: int = 180
     statement_timeout_s: int = 60
+    # D50 (owner, 2026-11-15). adaptive: a statement starts when the elapsed time
+    # plus twice the slowest statement so far on the table (at least 5 s, at
+    # most the timeout) fits the ceiling; a pathological statement can overrun
+    # it by at most one statement timeout. strict: it must fit even at its full
+    # timeout (the ceiling is hard; up to one timeout of budget goes unused).
+    time_rule: Literal["adaptive", "strict"] = "adaptive"
     maxdop: int = 2  # SQL Server MAXDOP / PostgreSQL max_parallel_workers_per_gather
     work_mem_mb: int | None = None  # PostgreSQL only; None = server default
     max_join_tests: int = 500  # inclusion tests per run (join candidates)

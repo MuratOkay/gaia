@@ -64,9 +64,12 @@ def _print_report(report: ProfileReport, *, detail: bool) -> None:
             line += f" q={r.queries:<3} pages~{r.pages:<8,} {r.runtime_ms:>6} ms"
         elif r.pages:
             line += f" table pages~{r.pages:,}"
-        if r.detail:
+        if r.detail and not (detail and r.notes):
             line += f"  ({r.detail[:110]})"
         print(line)
+        if detail or r.action == "partial":
+            for note in r.notes:  # why a table is partial (D5)
+                print(f"      - {note}")
     print()
     counts: dict[str, int] = {}
     for r in report.results:
@@ -102,10 +105,13 @@ def _print_report(report: ProfileReport, *, detail: bool) -> None:
         print(f"tests          : {len(report.tests)}")
         for t in report.tests:
             metric = "" if t["metric"] is None else f" metric={t['metric']}"
-            print(
-                f"  {t['column']:<45} {t['test']:<45} "
-                f"{'PASS' if t['passed'] else 'FAIL'}{metric} ({t['method']})"
+            verdict = (
+                "NOT RUN" if t["method"] == "not run" else ("PASS" if t["passed"] else "FAIL")
             )
+            print(f"  {t['column']:<45} {t['test']:<45} {verdict}{metric} ({t['method']})")
+    if report.hints and any(k != "unchanged" for k in report.hints):
+        changed = {k: v for k, v in sorted(report.hints.items()) if k != "unchanged"}
+        print(f"join hints     : {changed} (model hints whose test refuted or restored them)")
     if report.footprint is not None:
         fp = report.footprint
         print(
@@ -185,7 +191,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--report",
         action="store_true",
-        help="every join candidate tested, not only those that passed",
+        help="every join candidate tested, and every note of every table",
     )
     parser.add_argument("--json", action="store_true", help="machine-readable report")
     args = parser.parse_args(argv)

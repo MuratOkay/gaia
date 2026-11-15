@@ -35,6 +35,8 @@ from gaia.semantics.schemas import ColumnMeaning
 
 __all__ = [
     "COVERAGE_LEVELS",
+    "JOINABLE_ROLES",
+    "JOIN_NEUTRAL_ROLES",
     "PERSONAL_TYPES",
     "Check",
     "EvidenceItem",
@@ -42,6 +44,7 @@ __all__ = [
     "RenderedEvidence",
     "build_ledger",
     "column_coverage",
+    "detected_type",
     "next_stage",
     "pending_claim_tests",
     "render_evidence",
@@ -87,6 +90,24 @@ _TYPE_ROLES = {
     "json": {"free-text", "dimension"},
     "xml": {"free-text", "dimension"},
 }
+
+# What a declared FK or a passed inclusion test says about a role (D40, decided
+# 2026-11-15). Both state one fact: the column's values are keys of another
+# table. A role describes how the column is used, not what kind of table it
+# sits in, so a fact table's FKs and a simplified transaction table's FKs are
+# treated alike: the join key is a `reference`, and the dimension it joins to is
+# the *entity* of that reference, not the column's role.
+# * support: reference, identifier (1:1 extension keys) and code — a code is
+#   very often the key of a lookup (a currency code with an FK to the currency
+#   table; owner run: payments.currency_code was contradicted by its own FK);
+# * neutral: dimension (a denormalised lookup name, sales_wide.platform_name ->
+#   platforms.name), flag (a Y/N checked against a table) and timestamp (an
+#   integer date key with an FK to a date dimension, fact_sales.date_key);
+# * contradict: measure and free-text — an amount or a note is never a key.
+# Neither fact is required: most databases declare few FKs (premise A1), and
+# the same rules apply to the inclusion tests that stand in for them.
+JOINABLE_ROLES = frozenset({"reference", "identifier", "code"})
+JOIN_NEUTRAL_ROLES = frozenset({"dimension", "flag", "timestamp"})
 
 _DETECTOR_STRONG = 0.95
 _DETECTOR_WEAK = 0.80
@@ -210,8 +231,9 @@ class RenderedEvidence:
     def render(self) -> str:
         return json.dumps(self.document, indent=2, ensure_ascii=False)
 
-    def stable_projection(self) -> dict[str, Any]:
-        """What the evidence hash covers: the document minus volatile detail."""
+    def stable_projection(self, *, with_origin: bool = False) -> dict[str, Any]:
+        """What the evidence hash covers: the document minus volatile detail.
+        ``with_origin``: as hashed before 2026-11-15 (``legacy_hash``)."""
         doc = dict(self.document)
         columns = []
         for entry in self.document.get("columns", []):
@@ -221,8 +243,13 @@ class RenderedEvidence:
                 if entry["name"] in self.high_cardinality:
                     drop |= set(_VOLATILE_HIGH_CARDINALITY)
                 entry["profile"] = {k: v for k, v in entry["profile"].items() if k not in drop}
-            if "tests" in entry:  # counts and timings in the detail vary per run
-                entry["tests"] = [{k: v for k, v in t.items() if k != "detail"}
+            if "tests" in entry:
+                # Counts in the detail vary per run. The origin is a label: a
+                # Stage 1 candidate adopted as the test of a claim states the same
+                # fact, so it re-scores (the ledger reads the origin) but does not
+                # re-reason (D9, owner decision 2026-11-15).
+                dropped = ("detail",) if with_origin else ("detail", "origin")
+                entry["tests"] = [{k: v for k, v in t.items() if k not in dropped}
                                   for t in entry["tests"]]
             columns.append(entry)
         doc["columns"] = columns
@@ -231,6 +258,15 @@ class RenderedEvidence:
     @property
     def hash(self) -> str:
         material = json.dumps(self.stable_projection(), sort_keys=True, ensure_ascii=False)
+        return hashlib.sha256(f"{self.exposure}|{material}".encode()).hexdigest()
+
+    @property
+    def legacy_hash(self) -> str:
+        """The hash as computed before test origins left it (D9, 2026-11-15): a
+        version stored then still counts as "evidence unchanged" when nothing
+        but the hash format differs, so the upgrade re-reasons nothing."""
+        material = json.dumps(self.stable_projection(with_origin=True), sort_keys=True,
+                              ensure_ascii=False)
         return hashlib.sha256(f"{self.exposure}|{material}".encode()).hexdigest()
 
     def subset(self, columns: list[str]) -> RenderedEvidence:
@@ -264,6 +300,9 @@ def _column_entry(
         if summary.null_fraction is not None:
             prof["nulls"] = pct(summary.null_fraction)
             refs.add("prof:nulls")
+            if summary.empty and summary.rows:
+                # blank text counts as NULL; say how much of "nulls" it is
+                prof["nulls_blank_text"] = pct(summary.empty / summary.rows)
         if summary.distinct is not None:
             prof["distinct"] = count_text(summary.distinct) + (
                 f" ({summary.distinct_method})" if summary.distinct_method else ""
@@ -353,7 +392,7 @@ def _column_entry(
             }.items() if v is not None
         }
         refs.add(f"lin:{name}")
-    tests = ev.tests.get(name, [])
+    tests = [t for t in ev.tests.get(name, []) if t.conclusive]  # "not run" says nothing
     if tests:
         entry["tests"] = [
             {"ref": f"test:{t.test_id}", "kind": t.kind,
@@ -452,6 +491,9 @@ class Ledger:
     # the coherence component, so evidence that contradicts a claim lowers the
     # score below the no-evidence baseline instead of merely cancelling support.
     data_checks: list[Check] = field(default_factory=list)
+    # Claim tests that could not run (budget, timeout): not evidence, but the
+    # SME should know the machine tried (review tag ``test_not_run``).
+    inconclusive: list[str] = field(default_factory=list)
 
     def add(self, kind: str, supports: bool, strength: float, source: str,
             ref: str | None = None, detail: str = "", *, check: bool = False) -> None:
@@ -488,6 +530,26 @@ def _effective_detections(summary: ColumnProfileSummary) -> list:
         if d.semantic_type not in _GENERIC_SUBTYPES
         or not (specific & _GENERIC_SUBTYPES[d.semantic_type])
     ]
+
+
+def detected_type(summary: ColumnProfileSummary | None) -> str | None:
+    """The deterministic ``semantic_type`` of a column: its strongest detection
+    (>= 95 % of sampled values), a specific type before a generic carrier.
+
+    Without the specific-first rule the result depended on detector order: a
+    phone column validates 100 % as ``phone`` *and* as ``numeric_text`` and was
+    stored as ``numeric_text`` (owner run 2026-11-15, ``tb_mst01.c06``).
+    """
+    if summary is None:
+        return None
+    strong = [d for d in summary.detectors if d.match_rate >= _DETECTOR_STRONG]
+    if not strong:
+        return None
+    best = min(
+        strong,
+        key=lambda d: (-d.match_rate, d.semantic_type in _GENERIC_SUBTYPES, d.semantic_type),
+    )
+    return best.semantic_type
 
 
 def _enum_labels(type_definition: str | None) -> list[str]:
@@ -587,9 +649,11 @@ def build_ledger(
     if facts.foreign_keys:
         trusted = facts.foreign_keys_trusted
         ref = facts.foreign_keys[0]
-        if role in ("reference", "identifier"):
+        if role in JOINABLE_ROLES:
             led.add("foreign_key", True,
                     s.foreign_key_trusted if trusted else s.foreign_key_untrusted, "catalog", ref)
+        elif role in JOIN_NEUTRAL_ROLES:
+            pass  # a lookup's name or flag may carry an FK: no statement either way
         else:
             strength = s.foreign_key_role_mismatch * (1.0 if trusted else 0.5)
             led.add("foreign_key", False, strength, "catalog", ref,
@@ -700,7 +764,19 @@ def build_ledger(
 
     # -- verification tests (Stage 1 candidates, Stage 3 claims) ------------------------
     # A test states a fact about the data; what it means depends on the claim.
-    for t in ev.tests.get(facts.name, []):
+    tests = ev.tests.get(facts.name, [])
+    # The column's values were found in *some* key: a reference, whatever other
+    # parent a claim also named. A failed test of another parent then refutes
+    # that parent (its join hint), not the role (owner run 2026-11-15: f2's
+    # refuted hint to customer_id contradicted "reference" although its test
+    # against customer_code had passed).
+    found_somewhere = any(
+        t.kind == "inclusion" and t.conclusive and t.passed and t.specific for t in tests
+    )
+    for t in tests:
+        if not t.conclusive:
+            led.inconclusive.append(t.test_id)
+            continue
         ref = f"test:{t.test_id}"
         if t.kind == "inclusion":  # values are found in another table's key
             if t.passed and not t.specific:
@@ -710,13 +786,15 @@ def build_ledger(
                     led.add("test_inclusion", True, s.profile_check, "test", ref, t.detail,
                             check=True)
             elif t.passed:
-                if role in ("reference", "identifier", "code"):
+                if role in JOINABLE_ROLES:
                     led.add("test_inclusion", True, s.test_passed, "test", ref, t.detail,
                             check=True)
+                elif role in JOIN_NEUTRAL_ROLES:
+                    pass
                 else:
                     led.add("test_inclusion", False, s.test_role_mismatch, "test", ref,
                             f"{t.detail}; claimed as {role}", check=True)
-            elif role == "reference" and t.origin == "claim":
+            elif role == "reference" and t.origin == "claim" and not found_somewhere:
                 # Only a test of the claimed target contradicts; a Stage 1
                 # candidate that failed may simply be the wrong parent.
                 led.add("test_inclusion", False, s.test_failed, "test", ref, t.detail,

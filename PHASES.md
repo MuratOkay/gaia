@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-14 · Status: Phases 0–2 complete and verified · Phase 3 in progress: 3.P done; 3.0 code complete (owner runs pending); **3B and 3A done in the sandbox** (owner verification pending); 3C next. Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
+> Last updated: 2026-11-15 · Status: Phases 0–2 complete and verified · Phase 3 in progress: 3.P done and host-verified; 3.0 owner-verified; 3B and 3A owner-verified with defects — all fixes and the owner's decisions of 2026-11-15 built (OWNER_VERIFICATION §12 pending); **3C harness built**, runs pending (OWNER_VERIFICATION §13). Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -38,7 +38,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 0 | Infrastructure, config, health, target verification | **DONE** | ✅ approved |
 | 1 | Catalog introspection, hashing, incremental diff | **DONE** | ✅ approved |
 | 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
-| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P done; 3.0 code complete; 3B and 3A done (sandbox); 3C next | ✅ approved 2026-11-14 · sub-gates 3.0 / 3A / 3B / 3C open |
+| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P done; 3.0 verified; 3A/3B owner-verified, fixes in progress ("Owner verification (2026-11-15)"); 3C next | ✅ approved 2026-11-14 · sub-gates 3.0 / 3A / 3B / 3C open |
 | 4 | Retrieval, SQL generation (T-SQL + PostgreSQL), guarded execution, data-source management | **planned** | ⬜ |
 | 5 | Web UI: SME review first, then chat (R1) | **planned** | ⬜ |
 | 6 | Evaluation harness, score calibration from SME labels (per model) | **planned** | ⬜ |
@@ -60,8 +60,8 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | 10 tables, 99 columns, 109 embeddings, 94 join hints |
-| Tests | 293 passed, 5 skipped (Ollama live, SQL Server live) — sandbox, with the metadata-store and PostgreSQL-target integration tests enabled (3B); 298 on a host with both |
-| Migrations | `0001`–`0004` (`0004` = 3B evidence ledger and review queue) |
+| Tests | 380 passed, 8 skipped in the sandbox with both PostgreSQL databases (skips: SQL Server live, Ollama live); 388 on a host with everything |
+| Migrations | `0001`–`0006` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`) |
 
 ---
 
@@ -797,9 +797,16 @@ to Phase 4 SQL generation even while the business meaning is still in review.
 - ✅ `alembic/versions/0004_evidence_review.py` — `evidence_item`, `review_item`,
   new columns (3A's profiling tables take the next number, R4)
 
-**3C — evaluation**
-- `tools/evaluate_semantics.py` — name-blind mode, conditions, judge, report
-- A stratified set of 40 columns labelled by the owner (rehearses the SME step)
+**3C — evaluation** · harness built (2026-11-15); runs pending (owner, LLM gateway)
+- ✅ `tools/evaluate_semantics.py` (`make evaluate-plan | evaluate-labels | evaluate |
+  evaluate-judge | evaluate-audit | evaluate-report | evaluate-cost`) and the
+  `gaia.evaluation` package: `blind.py` (name-blind worlds), `runner.py` (conditions,
+  rounds, scoring), `stage3.py` (claim tests of each condition, in memory), `judge.py` +
+  `semantics/prompts/judge_meaning.v1.md`, `metrics.py` (accuracy, AUROC, precision of
+  accepted), `labels.py` (stratified template, loader), `report.py` (criteria, audit),
+  `recorder.py` (every answer on disk: resumable), `cost.py` (criterion 5)
+- ✅ `infra/pg-target/labels.csv` — ground truth of the 24 worst-case `demo_pg` columns
+- ⏳ A stratified set of 40 columns labelled by the owner (`make evaluate-labels`)
 
 ### Acceptance criteria
 
@@ -817,22 +824,25 @@ to Phase 4 SQL generation even while the business meaning is still in review.
       byte-identical to Phase 2 (golden test); scorer type fit identical for every
       role × type combination (oracle test); prompt versions unchanged
 - [x] Reasoning dry run on `demo_pg` selects FK neighbours correctly and renders bundles
-- [ ] Same on the real host with `postgres:18` (owner)
+- [x] Same on the real host with `postgres:18` (owner, 2026-11-15: PostgreSQL 18.7; `check-target`
+      9/9, introspection 28/213, every PostgreSQL live test passes, replay reproduces)
 
 **3.0** — ✔ = verified in the sandbox; SQL Server items need the owner's run
 - [x] A PostgreSQL statement exceeding the timeout is cancelled, raised as
       `StatementTimeout`, and the session survives (live test)
-- [ ] The same on SQL Server — unit-tested against a scripted driver; live test
-      `test_mssql_target_live.py` pending (owner)
+- [x] The same on SQL Server — owner, 2026-11-15: `WAITFOR` cancelled as `StatementTimeout`,
+      session survives (`test_mssql_target_live.py`)
 - [x] The SQL Server probe fails for every write path (sysadmin, writer roles,
       non-read database permissions, object writes, schema `ALTER`, procedure
       `EXECUTE`), aims its DDL at the weakest schema, and treats only permission
-      errors as proof — unit-tested; [ ] live pass for `gaia_ro` pending (owner)
+      errors as proof — unit-tested; [x] live pass for `gaia_ro` (owner, 2026-11-15:
+      `check-target` 9/9, `write denied as expected in schema dbo (error 262)`)
 - [x] The single-column re-reasoning test exists and passes
-- [ ] Re-measurement table added below, including `dw.sales_wide` and cold cache —
-      PostgreSQL done (scale 10), SQL Server pending (owner)
-- [ ] Auto-statistics and columnstore-sampling behaviour verified and recorded —
-      PostgreSQL done (no footprint; sampling support recorded), SQL Server pending
+- [x] Re-measurement table added below, including `dw.sales_wide` and cold cache —
+      PostgreSQL (scale 10) and SQL Server (owner, 2026-11-15; "Owner verification")
+- [x] Auto-statistics and columnstore-sampling behaviour verified and recorded —
+      PostgreSQL (no footprint) and SQL Server (43 statistics in the measurement;
+      `TABLESAMPLE` supported on clustered and nonclustered columnstore)
 
 **3A** — ✔ = verified in the sandbox on PostgreSQL (`test_profiling_pg.py` and the runs
 in "3A results"); SQL Server needs the owner's run (OWNER_VERIFICATION §7–§9)
@@ -850,15 +860,17 @@ in "3A results"); SQL Server needs the owner's run (OWNER_VERIFICATION §7–§9
 - [x] Every view column is classified pass-through / computed / unresolved;
       the three `rpt` views (and the materialized view) checked by hand — 28 of 28 right
 - [x] Every inferred join hint has an inclusion-test result (single-column hints;
-      composite hints are reported as untested)
+      composite hints are reported as untested) — failed on the owner's host at first (D1);
+      after the fix every hint has a result on both targets (owner, §11c: `f2`, `f9`,
+      `condition` FAIL 0 % and `refuted`, no errors)
 - [x] A second run inside the freshness window issues **zero** data queries
       (asserted on the recorded statements)
-- [ ] The footprint report lists auto-created statistics attributable to the run —
-      implemented for both dialects; PostgreSQL correctly reports none; the SQL
-      Server run is the owner's
+- [x] The footprint report lists auto-created statistics attributable to the run —
+      PostgreSQL none; SQL Server 10 for the Phase 2 scope, 129 for the full run (owner)
 - [x] With `SELECT` denied (simulated), the run completes in catalog-only mode
-- [ ] The same on SQL Server: the live tests in `test_mssql_target_live.py` and
-      `make profile` on `demo_mssql` (owner)
+- [x] The same on SQL Server: the live tests in `test_mssql_target_live.py` and
+      `make profile` on `demo_mssql` (owner, §11a/§11b: 378 passed; 71 objects, 65
+      profiled, 1 `partial` with its reasons printed, none `failed`)
 
 **3B** — verified in the sandbox (unit + PostgreSQL integration tests, replay run)
 - [x] Scoring unit tests prove: a contradiction lowers the score below the
@@ -874,8 +886,9 @@ in "3A results"); SQL Server needs the owner's run (OWNER_VERIFICATION §7–§9
       the raw override does show them
 - [x] Every column below `accept_at` with exhausted coverage has a review item;
       `unused` columns are flagged and excluded; one open item per column
-- [ ] With the configured model on the owner's host (not the replay) —
-      `OWNER_VERIFICATION.md`, section 6
+- [x] With the configured model on the owner's host (not the replay) — owner,
+      2026-11-15: §6b (evidence file) and §7–§8 (collected evidence), 52 calls; every
+      call listed with `--cost-report` (42) validated on the first attempt
 
 **3C** (see "Evaluation design")
 - [ ] Name-blind, profiled accuracy beats name-blind, catalog-only by at least the
@@ -1357,6 +1370,165 @@ and an integration test now fails whenever they stop reproducing.
   error recorded (the batched scan still runs).
 * Page counts are estimates from catalog sizes, not measured I/O.
 
+### Owner verification (2026-11-15) and fixes
+
+The owner ran OWNER_VERIFICATION §1–§9 on the host (PostgreSQL 18.7 target,
+SQL Server 2025 `nge_small`, DeepSeek gateway, Ollama). Outputs:
+`verification/`. §4 and §9 were repeated (the first §4 output was the PostgreSQL
+target; the first §9 run had the placeholder passwords in both URLs).
+
+**What held.** Replay (§6a) reproduced exactly on PostgreSQL 18 — so 18 renders
+the bundles byte-identically to 16. Stage 1 on `demo_pg` matched the sandbox
+(169 data queries, candidates 17/8/6, lineage 16/12/0, 13 s); both dialects
+reuse with zero data queries. With the configured model, `tb_trx02` (meaningless
+names) got 8 of 10 columns accepted on view aliases, the `f5 × f6` identity and
+detectors. Names alone never exceeded 0.623 (cap 0.65). Suite on the host: every
+PostgreSQL live test passes; SQL Server live tests 5 of 6 (D4).
+
+**SQL Server measurement** (cold after `docker restart`; 24.7 M rows each;
+[report](verification/gaia-measure-demo_mssql-2026-11-14T215622.md)):
+
+| | `dbo.transaction_lines` (rowstore) | `dw.fact_sales` (NCCI) | `dw.sales_wide` (CCI) |
+|---|---|---|---|
+| exact tier 1+2 | 58.7 s | 45.4 s | 96.0 s |
+| batched min/max/count scan | 16.1 s | 26.9 s | **60.8 s** (= the 60 s profiling timeout) |
+| non-key exact `COUNT(DISTINCT)`, median / worst | 3.2 / 7.0 s | 0.8 / 2.6 s | 0.4 / 11.6 s |
+| exact ÷ approx time (median) | 1.48 | 0.88 | 0.30 — exact is cheaper on columnstore |
+| `APPROX_COUNT_DISTINCT` error, median / max | 0.5 / 2.3 % | 0.2 / 2.3 % | 0.0 / 3.2 % |
+| median: exact / approx / 10 k-row sample | 165 s / 9.6 s / 0.1 s | 23 s / 6.2 s / 0.06 s | 21 s / 4.2 s / 0.2 s |
+| `TABLESAMPLE` 10 k rows: rows, pages | 6,624, 18 | 9,766, 18,458 | 9,451, 375 |
+| STDEV native vs float cast | 1.1× | 1.1–1.3× | 1.4–1.5× |
+
+Compatibility level 130; footprint 43 statistics (measurement), 10 (Phase 2
+scope), 129 (all 71 objects). A full Stage 1 of the database: 387 data queries,
+270 s; three tables `partial`, all by the per-table page budget (below).
+
+**Defects found in the owner's outputs** (D-numbers as discussed with the owner):
+
+| # | Defect | Status |
+|---|---|---|
+| D1 | A claimed join from a code column to an integer key (`f2 → customers.customer_id`, `condition → dim_condition.condition_key`) raised a conversion error; nothing was recorded, so the claim stayed *pending* forever and the column could never reach the queue | **fixed**: values are converted to the key's family, non-convertible values count as not found, the test fails; a test that cannot run (budget, timeout, vanished target) is recorded as *inconclusive* (`method = not_run`), not shown to the model, and tags the review item `test_not_run`; driver errors are stored without the values they quote |
+| D2 | Model join hints never expired: an earlier answer's `f2 → customer_id` stayed `inferred` (and was tested) after the model moved to `customer_code`; a failed test did not demote its hint | **fixed**: re-reasoning a table stales the hints its new answer drops (and revives re-proposed stale ones); a claim test finding < 50 % of rows marks the hint `refuted` (migration `0006`), a later pass restores it |
+| D3 | Dense-key specificity (D34) was computed for a 100 % outcome while tests pass at 95 % and are kept at 50 %: a count "passed" into `hr.payroll_lines.payroll_line_id` (99 %) | **fixed**: the pre-test filter stays; after the test, an integer result is specific only if chance would reach that many hits < 1 % (binomial tail) |
+| D6 | Stored `semantic_type` depended on detector order: a phone column was stored as `numeric_text` | **fixed**: a specific type wins over a generic carrier |
+| D8 | Stage 3 inclusion used the 200 most frequent values (the bias 3A correction 3 removed from Stage 1) | **fixed**: Stage 3 draws its values from the sample in seeded random order, like Stage 1 |
+| D10 | A declared FK contradicted a `code` claim (0.50) while a passed inclusion test supported it: `payments.currency_code` 0.61 as a code vs 0.78 as a reference (query 4: exactly four columns) | **fixed, default pending owner confirmation**: FK and inclusion support `reference`, `identifier`, `code`; say nothing about `dimension`, `flag`; contradict the rest. heuristic-v2 only |
+| D11 | The object list showed primary keys only, so the model aimed code columns at surrogate ids (5 of 14 model hints were type-mismatched) | **fixed**: generation-2 prompts list unique keys too (`crm.customers (pk: customer_id; unique: customer_code)`); not in the skip key, so nothing re-reasons; replay fixtures re-keyed |
+| D4 | Large columnstore table: the batched scan (60 s) hits the statement timeout, and the rule "start only what would end within the ceiling at its timeout" then refuses the 0.2 s sample → `failed` under a 120 s ceiling | **fixed**: the sample runs first; on columnstore, one aggregate statement per column (and exact per-column distinct counts, cheaper there than the approximation) replaces the wide scan, with per-column page estimates |
+| D5 | Degradations per metric (all 23: per-table page budget, query 3) are stored but not printed; page estimates use the whole table although an index or columnstore segment is read | **fixed**: every `partial` table prints one note per metric and reason; the low-cardinality top-k of a large rowstore table run in **one** `GROUPING SETS` scan instead of one scan each (the cause of all 23); columnstore estimates per column. Index-aware estimates for rowstore: not built (the catalog has no index sizes) |
+| D12 | Join candidates are discovered only among tables profiled in the same run (sample values are not stored), so references from an earlier run's tables to later-profiled parents were never tested | **fixed**: tables profiled earlier are paired with the parents profiled now; a pre-filter on their stored profiles decides which to sample again (one statement per table), and pairs already tested are not repeated |
+| D7 | Empty strings counted as non-numeric, so a correct "credit limit" abstained | **fixed** (owner decision): blank text is NULL in every metric, detector and exact count; the profile says how much of the null share was blank (`nulls_blank_text`). `tb_mst01.c07`: numeric 88 % → 100 %, 0.327 abstain → 0.642 on the replayed answer |
+| D9 | Adopting a Stage 1 test as the test of a claim re-reasoned with identical facts | **fixed** (owner decision): the origin leaves the evidence hash; `make rescore` and automatic re-scoring (below) |
+
+**Owner run of §11 (2026-11-15, no LLM; 11e deferred: gateway slow).** 378
+passed. SQL Server Stage 1 over all 71 objects: 65 profiled, 5 skipped, **1
+partial** (was 3) in 508 s; `dbo.transactions`, `dbo.transaction_lines`,
+`dbo.inventory_movements` now complete with 4 statements each (one `GROUPING
+SETS` scan works on SQL Server); `dw.fact_sales` profiled column by column (38
+statements, 57 s); footprint 13 statistics. Stage 3: the three errored claims
+FAIL at 0 % and are `refuted`. Re-scoring: 9 + 10 tables, 0 calls; the
+pass-through columns of `v_legacy_transactions` left the queue (37 → 32 items on
+`demo_pg`), `c07` is no longer `abstain`, the four FK code columns lost their
+contradiction. Three things it showed, fixed the same day:
+
+| # | Finding | Fix |
+|---|---|---|
+| D49 | `tb_trx02.f2` and `f9` were queued with a **contradiction** (0.62, 0.56): the refuted claim `f2 → customer_id` contradicted "reference" although `f2 → customer_code` had passed | a failed test of one parent no longer contradicts a reference whose values were found in another key; the refuted parent is a fact about the hint (D2). `SCORER_REVISION` v2.2, so the next re-score applies it (sandbox: `f2` 0.621 → 0.901) |
+| D3b | `line_count → hr.payroll_lines.payroll_line_id` (99 %) and `units → …customer_key` were still kept: the binomial check used the key's density over its whole range, but ids can be dense where the counts lie and sparse elsewhere | the density is measured where the tested values lie: one index range count on the parent key (`range_count_sql`) |
+| D4b | `dw.sales_wide` still `partial`: 28 column statements (~4 s each, cold) and then the time rule refused the 25 exact distinct counts | the exact distinct count of a high-cardinality columnstore column is read in the same statement as its aggregates (one read of its segments, not two). The time rule itself became adaptive (D50, owner decision): statements are planned at twice the slowest so far, not at the full timeout |
+
+**Owner decisions of 2026-11-15, as built.**
+
+* *Re-scoring without the model* (decision 1). A table is re-reasoned only when
+  the model would see something new. When only what the scorer reads has
+  changed — the scorer (`SCORER_REVISION`), scoring config, a test's origin,
+  an inherited column's base — `make reason` re-scores the stored answer
+  instead (action `rescored`, a new version, no LLM call). `make rescore`
+  never calls the model: it also re-scores tables the model would re-read, as
+  an interim view, and keeps their answer's evidence hash so `make reason`
+  still re-reads them. The upgrade itself re-reasons nothing: versions hashed
+  before the origin left the hash still match (`legacy_hash`).
+* *Blank text is NULL* (decision 2): D7 above.
+* *Pass-through view columns are not reasoned* (decision 3). They take their
+  base column's current meaning and score (following view-on-view lineage to
+  the table), cite `lin:`, are never queued, and are refreshed by re-scoring
+  when the base changes. Only computed columns go to the model, with the rest as
+  context (like a chunk); a view made only of pass-through columns costs no
+  call. On `demo_pg` that leaves one of the eight `v_legacy_transactions`
+  columns for the model; in the owner's run 26 of 37 queue items were view
+  columns.
+* *FKs and roles* (decision 4, delegated): D40 below, now final.
+* *Join discovery across runs* (decision 5): D12 above.
+* *Phase 4 uses tested model hints* (decision 6): D48; the UI shows declared
+  and discovered joins separately.
+* *Identities on nge_small* (owner's answer): the computed values are USD
+  conversions (local ÷ rate) with the rate in another table, so no within-row
+  identity exists to find; division within one row is already covered
+  (`c = a ÷ b` is found as `a = b × c`). Those measures rest on the model, the
+  critique and the SME.
+
+**Tests.** 372 passed, 8 skipped in the sandbox with both PostgreSQL databases
+(skips: 6 SQL Server live, 2 Ollama). New: `test_joins.py` (+2), `test_evidence.py`
+(+3), `test_scoring_v2.py` (+1), `test_semantics_bundle.py` (+1), `test_statistics.py`
+(+4: blanks, `GROUPING SETS`, columnstore, sample first), `test_profiling_pg.py` (+3:
+hint lifecycle and not-run tests; view inheritance and re-scoring; join
+candidates across runs). Migrations `0001`–`0006` give DDL identical to the models (pg_dump diff);
+`0006` downgrades and upgrades cleanly. Running the owner's model hints through
+Stage 3 on `demo_pg` now gives `f2 → customer_id` and `f9 → store_id` FAIL 0 %
+(`refuted`), the other five as before, and no error.
+
+### 3C harness (2026-11-15, sandbox)
+
+Built against "Evaluation design" above; what the design left open, decided
+here (D51):
+
+* **Every condition runs today's pipeline.** N-C is run again with the v2 prompts
+  and no evidence instead of reusing the stored Phase 2 answers, so N-C vs N-P
+  measures the evidence, not a prompt generation.
+* **Nothing is stored in the metadata store.** A condition reads the snapshot and
+  the Stage 1 evidence, and writes answers, scores and tests to a run directory.
+  Every completion is kept (`<run>/llm`, keyed by the request): an interrupted run
+  resumes for free, and judging or reporting again costs nothing already asked.
+* **Profiled conditions do their own Stage 3.** Stored claim tests came from the
+  named production reasoning and would leak names into blind conditions; each
+  profiled condition therefore starts from Stage 1 evidence only, tests *its own*
+  claims read-only on the target (in memory), and re-reasons the tables whose
+  evidence changed — the production sequence, per condition.
+* **Name-blind worlds** (`blind.py`): schemas, tables, columns, constraints,
+  indexes and FKs become seeded opaque tokens (`s03.t007.c04`, no alphabetical
+  hint); check, computed, default and filter definitions, view expressions,
+  identities, test ids and details are rewritten; comments and the database name
+  go; enum type names become `enum`; **data values are untouched**. A unit test
+  renders every prompt of a blinded world and finds no original identifier; the
+  integration test checks the same on `demo_pg` with real evidence.
+* **Reference and subsets.** A column's reference is the owner's label (or
+  `demo_pg` ground truth) when there is one, else its original names. Name-blind
+  conditions count every column; named conditions only labelled ones (the names
+  they read are no fair reference — reported for information only).
+* **Judge**: one call per (condition, table), thinking off, blind to the condition,
+  the score and the evidence; `yes` / `partial` / `no` and, where the reference
+  lists roles, `role_ok`. Accuracy = (yes + ½ partial) / judged; AUROC = score vs
+  `yes`; also the precision of what the machine would accept (`accept_at`).
+* **Owner audit**: a seeded 20 % of the judged columns, **without** the judge's
+  verdict (the owner judges independently), agreement computed by the report.
+* **Native worst case** (`demo_pg`): `N-P` vs `N-P-h` with `--hide
+  rpt.v_legacy_transactions` — the legacy tables with and without the view that
+  names them — against the ground truth in `infra/pg-target/labels.csv`.
+* **Criterion 5** (`make evaluate-cost`): per object, the latest model run (calls,
+  tokens, model time from `audit.llm_call`) and the current profile (pages,
+  queries, time), for a production `make reason` over all objects.
+
+Estimate for the Phase 2 scope of `nge_small` (10 tables, 99 columns): about 20
+reasoning calls per condition, ~10 more for the second round of a profiled
+condition, 10 judge calls per condition — **~170–200 calls** for the five default
+conditions, i.e. an overnight run at the gateway's current pace (~17 calls/h). The
+run is resumable, so it can be split (B-C and B-P first: criteria 1 and 3).
+
+Tests: 380 passed, 8 skipped in the sandbox (`test_evaluation.py`,
+`integration/test_evaluation_pg.py`: five conditions end to end on `demo_pg` with a
+fake model and judge, no identifier in blind prompts, no semantics written,
+resumed run makes no call, judge → audit → report).
+
 ### Roadmap impact — accepted 2026-11-14 and applied
 
 R1 → Phase 5 rewritten; R2 → Phase 4 retrieval rule; R3 → Phase 6; R4 → migration
@@ -1375,10 +1547,10 @@ references; R5 → decisions log; R6 → Phase 7 backlog.
 
 - [x] **Approved to start Phase 3** · [x] decisions P3-1 … P3-13 answered · [x] roadmap proposals R1–R6 accepted (2026-11-14)
 - [x] 3.P → approved to start 3.0 (owner, 2026-11-14, on code review; the host run is carried into the 3.0 owner steps)
-- [ ] 3.0 complete → approved to start 3A *(owner runs pending; 3B was started first at the owner's request)*
-- [ ] 3B verified with the configured model on the host (`OWNER_VERIFICATION.md` §6)
-- [ ] 3A complete → the sandbox part is done (see "3A results"); owner runs pending
-      (`OWNER_VERIFICATION.md` §5, §7–§9), then approval to start 3C
+- [ ] 3.0 complete → approved to start 3A *(ready: every 3.0 criterion is ticked on the host, 2026-11-15)*
+- [ ] 3B verified with the configured model on the host (`OWNER_VERIFICATION.md` §6) *(ready: §6–§8, 2026-11-15)*
+- [ ] 3A complete → *(ready once OWNER_VERIFICATION §12 — no LLM — confirms D3b/D49; §11e
+      re-reasoning deferred by the owner, gateway slow)*, then approval to start 3C
 - [ ] 3B complete (with the configured model, above) → together with 3A, approval to start 3C
 - [ ] 3C complete → **Phase 3 done**
 
@@ -1396,7 +1568,9 @@ adopted) — and return an answer.
   **Uses every non-abstain meaning, ranked by score, and discloses uncertainty
   (R2)**; `accepted` is not a filter, because in the worst case almost nothing is
   accepted before an SME has looked. `semantic_type` (Phase 3) informs generation
-  (e.g. `date_int_yyyymmdd` needs a conversion)
+  (e.g. `date_int_yyyymmdd` needs a conversion). Join paths: declared FKs first,
+  then model hints that are `inferred` with a passed, specific test of the claim
+  (D48); `stale` and `refuted` hints never
 - `query/planner.py` — entities, measures, filters, grain, joins; clarification
   decision when ambiguous
 - `query/generator.py` — SQL generation in the target's dialect with compact schema context
@@ -1641,6 +1815,20 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D35 | new (3A) | Stage 3 tests are derived per column from the stored claim and the model's join hints (`pending_claim_tests`); a column with a test still to run is escalated, not queued. A Stage 1 candidate test of a claimed join is adopted without a new query |
 | D36 | new (3A) | Profiling is on in the shipped config (`profiling.enabled: true`; a config without the key stays off) and can be switched off or windowed per target (`targets.<name>.profiling_enabled`, `profiling_window`). The CLI refuses when disabled or outside the window; a window that closes mid-run skips the remaining tables (`window`) |
 | D37 | new (3A) | Stage 1 join candidates are evidence (`profiling.verification_test`), not join paths: `semantics.join_hint` rows still come only from FKs, the model and SMEs |
+| D38 | new (2026-11-15) | Model join hints have a lifecycle: `inferred` while the latest answer for the table proposes them, `stale` when it no longer does, `refuted` when a Stage 3 test of the claim finds < 50 % of rows in the target (a later pass restores `inferred`). Only `inferred` hints are tested and (Phase 4) used. Migration `0006` |
+| D39 | amends D34 | Integer inclusion specificity is decided by the outcome: a pass or keepable share is specific only if chance alone (binomial, key density) would reach that many hits < 1 % of the time. The `density ** d` rule remains the pre-test candidate filter |
+| D40 | new (2026-11-15), **final** (decided by the assistant at the owner's request) | A declared FK and a passed inclusion test state one fact — the values are keys of another table — and are read the same way whatever kind of table holds the column (fact, transaction, simplified transaction): a role says how the column is used; the dimension an FK points to is the *entity* of a `reference`, not a role. They **support** `reference`, `identifier`, `code`; are **neutral** to `dimension` (a denormalised lookup name), `flag` and `timestamp` (an integer date key with an FK to a date dimension); **contradict** `measure` and `free-text`. A single-column key fits a `code`. FKs are never required: where none are declared (the common case, A1) inclusion tests carry the same rules, and strengths stay as calibrated placeholders (trusted 0.60, untrusted 0.30). Telling fact tables from transaction tables is a table-level question, left to the table's meaning (`grain`) and Phase 4 retrieval. heuristic-v2 only |
+| D41 | new (2026-11-15) | A claim test that cannot run (table budget, timeout, driver error, vanished target) is recorded as inconclusive (`method = not_run`): not evidence, not shown to the model, tagged `test_not_run` in the queue; `profile-tests --force` retries. Only an exhausted *run* budget leaves a test pending |
+| D42 | new (2026-11-15) | Generation-2 prompts list alternate (unique) keys in the object list; generation 1 keeps Phase 2's list |
+| D43 | new (2026-11-15, owner decision 1) | Re-reason only when the model would see something new; re-score (no LLM) when only the scorer's inputs changed. The scorer's inputs are hashed per version (`score_breakdown.score_inputs`: `SCORER_REVISION`, scoring config, bands, the rounded evidence plus test origins, importance inputs, inherited bases). `make rescore` = re-score only, never the model |
+| D44 | new (2026-11-15, owner decision 3) | Pass-through view columns inherit their (ultimate) base column's current meaning and score; never reasoned, never queued; re-inherited by re-scoring when the base changes. Computed view columns are reasoned with the others as context |
+| D45 | new (2026-11-15, owner decision 2) | Blank text ('' or spaces) is NULL in every profile metric, detector and exact count; its share is reported (`nulls_blank_text`) |
+| D46 | new (2026-11-15) | Profiling order and statements: the sample first; columnstore one aggregate statement per column and exact distinct counts; large rowstore low-cardinality top-k in one `GROUPING SETS` scan (per-column fallback); degradations printed per metric and reason |
+| D47 | new (2026-11-15, owner decision 5) | Stage 1 pairs tables profiled in earlier runs with parents profiled now (values re-drawn, one sample per table, tested pairs not repeated) |
+| D48 | new (2026-11-15, owner decision 6) | Phase 4 may use a model join hint (`inferred`) whose test of the claim passed and is specific, ranked below declared FKs; the UI shows declared FKs and discovered joins separately |
+| D49 | new (2026-11-15) | A failed inclusion test of a claimed parent contradicts a `reference` only when the column's values were found in no key at all; otherwise it refutes that parent's hint (D38) |
+| D50 | amends the 3A time rule (owner, 2026-11-15) | `profiling.budget.time_rule: adaptive` (default): a statement starts when the elapsed time plus twice the slowest statement so far on the table (at least 5 s, at most the timeout) fits `max_runtime_per_table_s`; a cancelled statement counts at its full timeout. A pathological statement can overrun the ceiling by at most one statement timeout. `strict` keeps the hard rule |
+| D51 | new (2026-11-15) | 3C harness: every condition runs today's pipeline (N-C re-run with v2 prompts); nothing is written to the metadata store; profiled conditions test their own claims in memory from Stage 1 evidence; reference = owner label / ground truth where present, else original names; named conditions are scored on labelled columns only; the owner audits 20 % blind to the judge's verdict |
 
 ## Definition of done (per phase)
 
@@ -1654,6 +1842,8 @@ A phase is done only when all of the following hold:
 5. Your gate is ticked
 
 ## Open items
+
+*Decided 2026-11-15 (D50): the adaptive time rule.*
 
 Everything the owner has to run is in **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**,
 in order, with expected results: the 3.P host run, the 3.0 SQL Server checks and

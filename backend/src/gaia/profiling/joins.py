@@ -24,14 +24,35 @@ distinct values were found.
 
 **Specificity.** Inclusion proves little when a random value would be found
 anyway: a dense integer key (ids 1..N with few gaps) contains *every* integer in
-its range, so a quantity or a weight "references" it. For integers, the chance
-that ``d`` random in-range values are all found is ``density ** d``, where
-density = distinct keys / range width; the test is *specific* only when that
-chance is below 1 %. Text and uuid values are specific. A non-specific pair is
-not even a Stage 1 candidate (a pass would only invite the model to see a
-reference in a quantity or a time); a non-specific Stage 3 test of a claimed join
-is weak support for the reference and never contradicts another role
-(``semantics.evidence``).
+its range, so a quantity or a weight "references" it. Under that null
+hypothesis each of ``d`` tested values is found with probability ``density``
+(distinct keys / range width), so the number found is binomial. Two checks:
+
+* *before* a Stage 1 test: the pair is a candidate only if even the best
+  outcome could be specific, i.e. ``density ** d`` (all ``d`` found) < 1 %;
+* *after* any integer test: the result is specific only if finding at least
+  that many values by chance is < 1 % (the binomial upper tail), with the
+  density measured where the tested values lie (one index range count on the
+  parent key), not over the key's whole range.
+
+The second check was added after the owner's SQL Server run (2026-11-15). The
+first alone is not enough, because a test passes at 95 % and is kept at 50 %,
+not at 100 %: random integers against a 97 %-dense key are all found with 0.2 %
+probability, yet ~97 % of them are found every time, so a count "passed" into a
+payroll line id (``agg_product_performance.line_count``, 99 %).
+
+Text and uuid values are specific. A non-specific pair is not a Stage 1
+candidate, and a non-specific result is not kept (it would only invite the
+model to see a reference in a quantity or a time); a non-specific Stage 3 test
+of a claimed join is weak support for the reference and never contradicts
+another role (``semantics.evidence``).
+
+**Types.** A claimed join may pair a text column with an integer key (the
+model aimed ``f2`` with values like ``C00006638`` at ``customers.customer_id``).
+Values are converted to the parent's family before they are sent: text that
+is an integer is tested as an integer, anything else cannot be in the key and
+counts as not found. Such a test *fails* — the claim is wrong — instead of
+raising a conversion error, which had left the claim untested forever.
 
 **Stage 3 — tests of claims** (``profiling.service.run_stage3``): an inclusion
 test per join hint the model proposed, exact uniqueness for identifiers, exact
@@ -40,8 +61,11 @@ top-k for codes and flags whose counts were sampled.
 
 from __future__ import annotations
 
+import math
 import re
+import uuid
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 
 from gaia.dialects.types import type_info
@@ -55,7 +79,10 @@ __all__ = [
     "family",
     "find_candidates",
     "inclusion_test",
+    "chance_of_hits",
+    "coerce_values",
     "integer_chance",
+    "integer_density",
     "single_keys",
     "topk_test",
     "uniqueness_test",
@@ -125,15 +152,43 @@ def _tokens(*names: str) -> set[str]:
     return out
 
 
-def integer_chance(parent: ColumnProfileSummary | None, tested_values: int) -> float:
-    """Chance that ``tested_values`` random integers in the parent's range all exist."""
+def integer_density(parent: ColumnProfileSummary | None) -> float | None:
+    """Share of the integers in the parent key's range that exist (None: unknown)."""
     if parent is None or parent.distinct is None:
-        return 1.0
+        return None
     low, high = _number(parent.minimum), _number(parent.maximum)
     if low is None or high is None or high < low:
+        return None
+    return min(1.0, parent.distinct / (high - low + 1))
+
+
+def integer_chance(parent: ColumnProfileSummary | None, tested_values: int) -> float:
+    """Chance that ``tested_values`` random integers in the parent's range all exist
+    (the best outcome a test could have; unknown density counts as 1)."""
+    density = integer_density(parent)
+    if density is None:
         return 1.0
-    density = min(1.0, parent.distinct / (high - low + 1))
     return density ** max(1, tested_values)
+
+
+def chance_of_hits(hits: int, tested: int, density: float) -> float:
+    """P(X >= hits) for X ~ Binomial(tested, density): the chance that at least
+    ``hits`` of ``tested`` random in-range integers exist in the key."""
+    if hits <= 0:
+        return 1.0
+    if density >= 1.0:
+        return 1.0
+    if density <= 0.0:
+        return 0.0
+    log_p, log_q = math.log(density), math.log1p(-density)
+    total = 0.0
+    for k in range(hits, tested + 1):
+        log_term = (
+            math.lgamma(tested + 1) - math.lgamma(k + 1) - math.lgamma(tested - k + 1)
+            + k * log_p + (tested - k) * log_q
+        )
+        total += math.exp(log_term)
+    return min(1.0, total)
 
 
 def find_candidates(
@@ -143,7 +198,10 @@ def find_candidates(
     parent_values: dict[tuple[str, str], Weighted],
     *,
     per_child: int = 2,
+    parents_in: set[str] | None = None,
 ) -> list[JoinCandidate]:
+    """``parents_in``: only these parent tables (a reused child against the
+    tables profiled in this run)."""
     dialect = snapshot.dialect
     tables = {t.qualified_name: t for t in snapshot.tables if t.kind == "table"}
     fk_columns = {
@@ -152,6 +210,8 @@ def find_candidates(
     parents: list[tuple[str, str, str]] = []  # table, column, family
     for t in tables.values():
         types = {c.name: c.data_type for c in t.columns}
+        if parents_in is not None and t.qualified_name not in parents_in:
+            continue
         for key in sorted(single_keys(t)):
             fam = family(dialect, types.get(key, ""))
             if fam:
@@ -247,6 +307,39 @@ class Inclusion:
         )
 
 
+_INT_TEXT = re.compile(r"^\s*[+-]?\d+\s*$")
+
+
+def coerce_values(values: list[Any], parent_family: str | None) -> dict[Any, Any]:
+    """Each child value as the parent key's family would hold it; values that
+    cannot be in such a key (text that is not an integer, not a uuid) are left
+    out — they count as *not found*."""
+    out: dict[Any, Any] = {}
+    for v in values:
+        if v is None:
+            continue
+        if parent_family == "integer":
+            if isinstance(v, bool):
+                continue
+            if isinstance(v, int):
+                out[v] = v
+            elif isinstance(v, float | Decimal):
+                if v == int(v):
+                    out[v] = int(v)
+            elif _INT_TEXT.match(str(v)):
+                out[v] = int(str(v).strip())
+        elif parent_family == "uuid":
+            try:
+                out[v] = str(uuid.UUID(str(v).strip()))
+            except ValueError:
+                continue
+        elif parent_family == "text":
+            out[v] = v if isinstance(v, str) else str(v)
+        else:
+            out[v] = v
+    return out
+
+
 def inclusion_test(
     profiler,
     cur,
@@ -258,8 +351,15 @@ def inclusion_test(
     origin: str,
     specific: bool = True,
     parent_type: str | None = None,
+    child_type: str | None = None,
+    density: float | None = None,
 ) -> Inclusion:
-    """Row-weighted share of the child's sampled values that exist in the parent key."""
+    """Row-weighted share of the child's sampled values that exist in the parent key.
+
+    ``density`` (integer keys) makes the result's specificity an outcome of the
+    test: a pass or keepable share that chance alone would reach at least 1 %
+    of the time is marked non-specific (module docstring).
+    """
     test_id = f"inc:{parent_table}.{parent_column}"
     counts: dict[Any, int] = {}
     for value, n in weighted:
@@ -272,12 +372,22 @@ def inclusion_test(
             ),
             0.0,
         )
-    schema, name = parent_table.split(".", 1)
-    sql, params = profiler.inclusion_sql(
-        profiler.table(schema, name), parent_column, list(counts), parent_type
-    )
-    found = {_key(r[0]) for r in profiler.query(cur, sql, params)}
-    hit = {v for v in counts if _key(v) in found}
+    dialect = getattr(profiler, "dialect", "mssql")
+    parent_family = family(dialect, parent_type) if parent_type else None
+    child_family = family(dialect, child_type) if child_type else None
+    mismatch = parent_family is not None and child_family != parent_family
+    sendable = coerce_values(list(counts), parent_family) if parent_family else {
+        v: v for v in counts
+    }
+    found: set[str] = set()
+    if sendable:
+        schema, name = parent_table.split(".", 1)
+        sql, params = profiler.inclusion_sql(
+            profiler.table(schema, name), parent_column, list(dict.fromkeys(sendable.values())),
+            parent_type,
+        )
+        found = {_key(r[0]) for r in profiler.query(cur, sql, params)}
+    hit = {v for v, sent in sendable.items() if _key(sent) in found}
     rows = sum(counts.values())
     hit_rows = sum(counts[v] for v in hit)
     rate = hit_rows / rows
@@ -286,14 +396,53 @@ def inclusion_test(
         f"{rate:.1%} of sampled rows ({len(hit)} of {len(counts)} distinct values) found in "
         f"{parent_table}.{parent_column} (stage {stage})"
     )
+    if mismatch:
+        unusable = len(counts) - len(sendable)
+        detail += (
+            f"; the key is {parent_family or 'another type'}, the column "
+            f"{child_family or 'another type'}"
+            + (f": {unusable} value(s) cannot be {parent_family} keys" if unusable else "")
+        )
     if missing and rate >= KEEP_RATE:
         detail += f"; {missing} value(s) not found: orphans or another parent"
+    if parent_family == "integer" and rate >= KEEP_RATE and (
+        density is not None or hasattr(profiler, "range_count_sql")
+    ):
+        local = _local_density(profiler, cur, parent_table, parent_column, sendable)
+        effective = local if local is not None else density
+        if effective is not None and chance_of_hits(len(hit), len(counts), effective) >= (
+            CHANCE_MAX
+        ):
+            specific = False
     if not specific:
         detail += "; the parent key is dense, so any in-range integer matches: weak evidence"
     result = VerificationResult(
         test_id, "inclusion", rate >= PASS_RATE, round(rate, 4), detail, origin, specific
     )
     return Inclusion(result, len(hit) / len(counts))
+
+
+def _local_density(profiler, cur, parent_table: str, parent_column: str,
+                   sendable: dict[Any, Any]) -> float | None:
+    """Density of the parent key *where the tested values lie*: keys between the
+    smallest and largest tested value / width of that range (one index range
+    count). The key's overall density misleads when ids are dense in one range
+    and sparse elsewhere (owner run 2026-11-15: a count still "passed" into
+    hr.payroll_lines.payroll_line_id at 99 % after the binomial check, because
+    the ids are dense where the counts lie)."""
+    if not hasattr(profiler, "range_count_sql"):
+        return None
+    ints = [v for v in sendable.values() if isinstance(v, int) and not isinstance(v, bool)]
+    if not ints:
+        return None
+    low, high = min(ints), max(ints)
+    schema, name = parent_table.split(".", 1)
+    sql, params = profiler.range_count_sql(profiler.table(schema, name), parent_column, low, high)
+    try:
+        keys = int(profiler.query(cur, sql, params)[0][0])
+    except Exception:  # the global density still applies
+        return None
+    return min(1.0, keys / (high - low + 1))
 
 
 def _key(value: Any) -> str:
@@ -303,8 +452,9 @@ def _key(value: Any) -> str:
 
 def uniqueness_test(profiler, cur, table: TableSnapshot, column: str) -> VerificationResult:
     t = profiler.table(table.schema, table.name)
-    distinct = int(profiler.query(cur, profiler.uniqueness_sql(t, column))[0][0])
-    non_null = int(profiler.query(cur, profiler.non_null_sql(t, column))[0][0])
+    data_type = next((c.data_type for c in table.columns if c.name == column), None)
+    distinct = int(profiler.query(cur, profiler.uniqueness_sql(t, column, data_type))[0][0])
+    non_null = int(profiler.query(cur, profiler.non_null_sql(t, column, data_type))[0][0])
     return VerificationResult(
         test_id=f"uniq:{column}",
         kind="uniqueness",
@@ -321,7 +471,8 @@ def topk_test(
     """Exact distinct count of a claimed code or flag (one ``GROUP BY``)."""
     t = profiler.table(table.schema, table.name)
     limit = low_cardinality_max + 1
-    rows = profiler.query(cur, profiler.topk_sql(t, column, limit))
+    data_type = next((c.data_type for c in table.columns if c.name == column), None)
+    rows = profiler.query(cur, profiler.topk_sql(t, column, limit, data_type))
     distinct = len(rows)
     allowed = 3 if role == "flag" else low_cardinality_max
     more = "+" if distinct >= limit else ""

@@ -81,21 +81,37 @@ class FakeProfiler:
 
     # -- statements ---------------------------------------------------------------------------
 
-    def scan_sql(self, t, columns):
+    @staticmethod
+    def blank_is_null(data_type: str) -> bool:
+        return data_type.startswith(("varchar", "text", "char"))
+
+    def scan_sql(self, t, columns, distinct=None):
         layout = [("*", "rows")]
         for name, data_type in columns:
             layout.append((name, "non_null"))
+            if self.blank_is_null(data_type):
+                layout.append((name, "empty"))
+            if distinct and name in distinct:
+                layout.append((name, "distinct"))
             if self.kind(data_type) not in ("count_only", "equality_only"):
                 layout += [(name, "min"), (name, "max")]
             if data_type.startswith(("varchar", "text", "char")):
                 layout += [(name, "min_len"), (name, "max_len"), (name, "avg_len")]
-        return ("scan", t, tuple(columns)), layout
+        return ("scan", t, tuple(columns), frozenset(distinct or ())), layout
+
+
 
     def sample_sql(self, t, exprs, rows, estimated, seed, whole):
         return ("sample", t, tuple(exprs), rows, whole, seed)
 
-    def topk_sql(self, t, name, limit):
-        return ("topk", t, name, limit)
+    def topk_sql(self, t, name, limit, data_type=None):
+        return ("topk", t, name, limit, bool(data_type and self.blank_is_null(data_type)))
+
+    def range_count_sql(self, parent, column, low, high):
+        return ("range", parent, column), (low, high)
+
+    def topk_batch_sql(self, t, columns, limit):
+        return ("topk_batch", t, tuple(n for n, _dt in columns), limit)
 
     def approx_distinct_batch_sql(self, t, names):
         return ("approx", t, tuple(names)) if self.approx else None
@@ -103,24 +119,24 @@ class FakeProfiler:
     def distinct_estimate(self, cur, schema, table, column):
         return self.estimate
 
-    def uniqueness_sql(self, t, name):
-        return ("uniq", t, name)
+    def uniqueness_sql(self, t, name, data_type=None):
+        return ("uniq", t, name, bool(data_type and self.blank_is_null(data_type)))
 
-    def non_null_sql(self, t, name):
-        return ("nonnull", t, name)
+    def non_null_sql(self, t, name, data_type=None):
+        return ("nonnull", t, name, bool(data_type and self.blank_is_null(data_type)))
 
     def inclusion_sql(self, parent, column, values, data_type=None):
         return ("inc", parent, column), list(values)
 
-    def values_sql(self, t, name, limit, rows, estimated, seed, whole):
-        return ("values", t, name, limit)
-
     # -- execution ---------------------------------------------------------------------------
 
-    def _col(self, t: str, name: str) -> list[Any]:
+    def _col(self, t: str, name: str, blank_is_null: bool = False) -> list[Any]:
         cols, rows = self.tables[t]
         i = cols.index(name)
-        return [r[i] for r in rows]
+        values = [r[i] for r in rows]
+        if blank_is_null:
+            values = [None if isinstance(v, str) and not v.strip() else v for v in values]
+        return values
 
     def query(self, cur, sql, params=None, limit=None):
         self.queries += 1
@@ -134,10 +150,17 @@ class FakeProfiler:
         if kind == "scan":
             cols, rows = self.tables[t]
             out: list[Any] = [len(rows)]
-            _, layout = self.scan_sql(t, list(sql[2]))
+            _, layout = self.scan_sql(t, list(sql[2]), set(sql[3]))
+            types = dict(sql[2])
             for name, metric in layout[1:]:
-                values = [v for v in self._col(t, name) if v is not None]
-                if metric == "non_null":
+                blank = self.blank_is_null(types[name])
+                values = [v for v in self._col(t, name, blank) if v is not None]
+                if metric == "distinct":
+                    out.append(len(set(values)))
+                elif metric == "empty":
+                    out.append(sum(1 for v in self._col(t, name)
+                                   if isinstance(v, str) and not v.strip()))
+                elif metric == "non_null":
                     out.append(len(values))
                 elif metric in ("min", "max"):
                     out.append((min if metric == "min" else max)(values) if values else None)
@@ -163,25 +186,37 @@ class FakeProfiler:
             return out[:limit] if limit is not None else out
         if kind == "topk":
             counts: dict[Any, int] = {}
-            for v in self._col(t, sql[2]):
+            for v in self._col(t, sql[2], sql[4]):
                 if v is not None:
                     counts[v] = counts.get(v, 0) + 1
             ordered = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))
             return [(str(v), n) for v, n in ordered[: sql[3]]]
+        if kind == "range":
+            low, high = params
+            return [(sum(1 for v in self._col(t, sql[2])
+                         if v is not None and low <= v <= high),)]
+        if kind == "topk_batch":
+            names, limit = sql[2], sql[3]
+            full = (1 << len(names)) - 1
+            out = []
+            for i, name in enumerate(names):
+                counts = {}
+                for v in self._col(t, name):
+                    counts[v] = counts.get(v, 0) + 1
+                ranked = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))[:limit]
+                gid = full - (1 << (len(names) - 1 - i))
+                for v, n in ranked:
+                    row = [None] * len(names)
+                    row[i] = v
+                    out.append((gid, *row, n))
+            return out
         if kind == "approx":
             return [tuple(len({v for v in self._col(t, n) if v is not None}) for n in sql[2])]
         if kind == "uniq":
-            return [(len({v for v in self._col(t, sql[2]) if v is not None}),)]
+            return [(len({v for v in self._col(t, sql[2], sql[3]) if v is not None}),)]
         if kind == "nonnull":
-            return [(sum(1 for v in self._col(t, sql[2]) if v is not None),)]
+            return [(sum(1 for v in self._col(t, sql[2], sql[3]) if v is not None),)]
         if kind == "inc":
             present = set(self._col(t, sql[2]))
             return [(v,) for v in dict.fromkeys(params) if v in present]
-        if kind == "values":
-            counts = {}
-            for v in self._col(t, sql[2]):
-                if v is not None:
-                    counts[v] = counts.get(v, 0) + 1
-            ordered = sorted(counts.items(), key=lambda kv: (-kv[1], str(kv[0])))
-            return ordered[: sql[3]]
         raise AssertionError(f"unexpected statement {sql!r}")

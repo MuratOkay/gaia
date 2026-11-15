@@ -269,6 +269,11 @@ class ColumnSemantic(Base):
 class JoinHint(Base):
     """A join path: declared FK (confirmed), model suggestion (inferred) or SME.
 
+    Status of a model suggestion: ``inferred`` (current), ``stale`` (the latest
+    answer for its table no longer proposes it), ``refuted`` (a Stage 3 test of
+    the claim found < 50 % of the rows in the target; migration 0006),
+    ``rejected`` (by an SME).
+
     Names rather than catalog ids, because ``catalog.relations`` rows are
     replaced whenever a table's structure changes.
     """
@@ -289,7 +294,7 @@ class JoinHint(Base):
         sa.Index("ix_join_hint_to", "data_source_id", "to_schema", "to_table"),
         sa.CheckConstraint("source IN ('fk', 'llm', 'sme')", name="source"),
         sa.CheckConstraint(
-            "status IN ('confirmed', 'inferred', 'rejected', 'stale')", name="status"
+            "status IN ('confirmed', 'inferred', 'rejected', 'refuted', 'stale')", name="status"
         ),
         {"schema": "semantics"},
     )

@@ -68,17 +68,24 @@ def _statements(dialect: str) -> list[str]:
     exprs = [e for e in (p.sample_expr(n, dt) for n, dt in cols) if e]
     for whole in (True, False):
         out.append(p.sample_sql(t, exprs, 10_000, 2_000_000, 42, whole))
-        out.append(p.values_sql(t, "code", 200, 10_000, 2_000_000, 42, whole))
-    for name, _dt in cols[:2]:
-        out.append(p.topk_sql(t, name, 1001))
-        out.append(p.uniqueness_sql(t, name))
-        out.append(p.non_null_sql(t, name))
+        out.append(p.sample_sql(t, [p.sample_expr("code", cols[1][1])], 10_000, 2_000_000, 42,
+                                whole))  # Stage 3 inclusion values
+    for name, dt in cols[:2]:
+        for data_type in (None, dt):  # with a type, blank text is excluded
+            out.append(p.topk_sql(t, name, 1001, data_type))
+            out.append(p.uniqueness_sql(t, name, data_type))
+            out.append(p.non_null_sql(t, name, data_type))
+    out.append(p.topk_batch_sql(t, cols[:2], 1003))
+    out.append(p.topk_batch_sql(t, cols[1:2], 1003))
+    for name, dt in cols:
+        out.append(p.scan_sql(t, [(name, dt)], {name})[0])  # columnstore: one column each
     approx = p.approx_distinct_batch_sql(t, ["id", "code", "amount"])
     if approx:
         out.append(approx)
     for data_type in ("integer", "uuid"):
         sql, _params = p.inclusion_sql(t, "code", ["a", "b", "c"], data_type)
         out.append(sql)
+    out.append(p.range_count_sql(t, "id", 1, 1000)[0])
     log: list[str] = []
     cur = _Cursor(log)
     p.modules(cur)

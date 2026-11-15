@@ -284,8 +284,16 @@ def test_inclusion_evidence_depends_on_origin_and_specificity(sample_snapshot):
         return {k for k in _kinds(items) if k[0] == "test_inclusion"}
 
     assert ("test_inclusion", "supports") in ledger("reference", _inc())
-    # specific values found in another table's key contradict a non-key role
-    assert ("test_inclusion", "contradicts") in ledger("dimension", _inc())
+    # specific values found in another table's key contradict a measure or a note...
+    assert ("test_inclusion", "contradicts") in ledger("measure", _inc())
+    assert ("test_inclusion", "contradicts") in ledger("free-text", _inc())
+    # ... support a code (the key of a lookup), and say nothing about a name, a
+    # flag or a date key (a denormalised lookup name, sales_wide.platform_name ->
+    # platforms.name; fact_sales.date_key -> dim_date)  (D40)
+    assert ("test_inclusion", "supports") in ledger("code", _inc())
+    assert not ledger("dimension", _inc())
+    assert not ledger("flag", _inc())
+    assert not ledger("timestamp", _inc())
     # a Stage 1 candidate that failed may be the wrong parent: no statement
     assert not ledger("reference", _inc(passed=False, metric=0.6))
     # a failed test of the claimed join contradicts the claim
@@ -334,7 +342,15 @@ def test_test_details_and_origins_render_but_details_are_not_hashed(sample_snaps
     assert entry["tests"][0]["origin"] == "join candidate"
     adopted = VerificationResult(other.test_id, "inclusion", True, 0.99, "", "claim")
     three = render_evidence(bundle, _evidence(tests={"email": [adopted]}), Exposure("raw"))
-    assert three.hash != one.hash  # a candidate adopted as a test of the claim is news
+    # a candidate adopted as the test of a claim states the same fact: the model
+    # need not see it again (D9); the ledger still reads the origin (re-score)
+    assert three.hash == one.hash
+    # versions stored before the origin left the hash still match (no re-reasoning
+    # caused by the upgrade itself)
+    assert one.legacy_hash != one.hash and one.legacy_hash != three.legacy_hash
+    failed = VerificationResult(other.test_id, "inclusion", False, 0.4, "", "claim")
+    four = render_evidence(bundle, _evidence(tests={"email": [failed]}), Exposure("raw"))
+    assert four.hash != one.hash  # a different outcome is news
 
 
 def test_view_lineage_renders_for_views():
@@ -355,3 +371,68 @@ def test_view_lineage_renders_for_views():
     assert cols["total"]["lineage"]["inputs"] == ["legacy.tb_trx02.f7"]
     assert "lin:total" in rendered.refs["total"]
     assert column_coverage("total", ev) == "modules"
+
+
+def test_detected_type_prefers_a_specific_type_to_a_generic_carrier():
+    """Owner run 2026-11-15: tb_mst01.c06 validated 100 % as phone and as
+    numeric_text and was stored as numeric_text (detector order decided)."""
+    from gaia.profiling.detectors import detect
+    from gaia.semantics.evidence import detected_type
+
+    phones = ["905321234567", "905001002030", "905591239988"] * 20
+    hits = detect(phones, "text")
+    assert {d.semantic_type for d in hits} >= {"phone", "numeric_text"}
+    for order in (hits, list(reversed(hits))):
+        assert detected_type(ColumnProfileSummary(column="c", detectors=order)) == "phone"
+    numbers = detect(["123", "456"] * 30, "text")
+    assert detected_type(ColumnProfileSummary(column="c", detectors=numbers)) == "numeric_text"
+    weak = [DetectorHit("phone", 0.85, 60), DetectorHit("numeric_text", 1.0, 60)]
+    assert detected_type(ColumnProfileSummary(column="c", detectors=weak)) == "numeric_text"
+    assert detected_type(None) is None
+
+
+def test_a_claim_test_that_could_not_run_is_not_evidence(sample_snapshot):
+    """Recorded so the column stops waiting for it (it goes to the SME, tagged),
+    but neither shown to the model, nor hashed, nor in the ledger."""
+    from gaia.core.config import ProfilingConfig as Bands
+    from gaia.semantics.review import review_reasons
+    from gaia.semantics.scoring import score_column_v2
+
+    bundle = _customers(sample_snapshot)
+    facts = bundle.facts["full_name"]
+    not_run = VerificationResult("inc:crm.people.name", "inclusion", False, None,
+                                 "not run: page budget", "claim", conclusive=False)
+    plain, tried = _evidence(), _evidence(tests={"full_name": [not_run]})
+    exposure = Exposure("raw")
+    assert render_evidence(bundle, plain, exposure).hash == render_evidence(
+        bundle, tried, exposure).hash
+    meaning = _meaning("full_name", role="reference")
+    ledger = build_ledger(meaning, facts, bundle, tried, EvidenceStrengths())
+    assert not [i for i in ledger.items if i.kind == "test_inclusion"]
+    assert ledger.inconclusive == ["inc:crm.people.name"]
+    assert pending_claim_tests("reference", facts, tried, ["crm.people.name"]) == []
+    from gaia.core.config import ScoringConfig
+
+    score = score_column_v2(meaning, facts, bundle, None, ScoringConfig(), Bands(),
+                            ledger=ledger)
+    reasons = review_reasons(score, ledger=ledger, critique=None, exhausted=True, unused=False,
+                             bands=Bands())
+    assert "test_not_run" in reasons
+
+
+def test_a_refuted_parent_does_not_contradict_a_reference_found_elsewhere(sample_snapshot):
+    """Owner run 2026-11-15: after Stage 3 refuted f2 -> customers.customer_id (0 %),
+    f2 was queued with a contradiction although f2 -> customer_code had passed."""
+    bundle = _customers(sample_snapshot)
+    facts = bundle.facts["full_name"]
+    wrong = VerificationResult("inc:crm.customers.customer_id", "inclusion", False, 0.0, "",
+                               "claim")
+    right = VerificationResult("inc:crm.customers.customer_code", "inclusion", True, 0.99, "",
+                               "claim")
+    meaning = _meaning("full_name", role="reference")
+    s = EvidenceStrengths()
+    both = build_ledger(meaning, facts, bundle, _evidence(tests={"full_name": [wrong, right]}), s)
+    assert ("test_inclusion", "contradicts") not in _kinds(both)
+    assert ("test_inclusion", "supports") in _kinds(both)
+    alone = build_ledger(meaning, facts, bundle, _evidence(tests={"full_name": [wrong]}), s)
+    assert ("test_inclusion", "contradicts") in _kinds(alone)  # found nowhere: contradicted

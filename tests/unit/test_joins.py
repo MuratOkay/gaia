@@ -121,3 +121,79 @@ def test_inclusion_is_row_weighted_and_keeps_only_informative_results():
     empty = inclusion_test(depts, None, "hr.departments", "dept_code", [], stage=3,
                            origin="claim")
     assert not empty.result.passed and empty.result.metric is None
+
+
+def test_a_chance_pass_on_a_nearly_dense_key_is_not_specific():
+    """Owner run 2026-11-15 (SQL Server): agg_product_performance.line_count
+    "passed" at 99 % into hr.payroll_lines.payroll_line_id. density ** d was
+    below 1 %, but ~density of random values are found every time, and a test
+    passes at 95 %. Specificity is now decided by the outcome (binomial tail)."""
+    import random
+
+    from gaia.profiling.joins import chance_of_hits, integer_density
+
+    rng = random.Random(7)  # noqa: S311 (test data)
+    keys = set(rng.sample(range(1, 100_001), 97_000))  # 97 % dense
+    parent = S("id", distinct=len(keys), minimum="1", maximum="100000")
+    assert 0.96 < integer_density(parent) < 0.98
+    assert integer_chance(parent, 200) < 0.01  # the pre-test filter lets it through ...
+    profiler = FakeProfiler({"p.t": (["id"], [(k,) for k in keys])})
+    noise = [(v, 1) for v in rng.sample(range(1, 100_001), 200)]
+    chance = inclusion_test(profiler, None, "p.t", "id", noise, stage=1, origin="candidate",
+                            parent_type="integer", child_type="integer",
+                            density=integer_density(parent))
+    assert chance.result.passed and not chance.result.specific  # ... the outcome does not
+    assert not chance.worth_keeping and "weak evidence" in chance.result.detail
+    real = [(v, 1) for v in rng.sample(sorted(keys), 200)]  # a true reference: all found
+    ref = inclusion_test(profiler, None, "p.t", "id", real, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer",
+                         density=integer_density(parent))
+    assert ref.result.passed and ref.result.specific and ref.worth_keeping
+    assert chance_of_hits(200, 200, 0.97) < 0.01 < chance_of_hits(194, 200, 0.97)
+    assert chance_of_hits(0, 200, 0.5) == 1.0 and chance_of_hits(5, 5, 1.0) == 1.0
+
+
+def test_type_mismatched_claims_fail_instead_of_raising():
+    """Owner run 2026-11-15: the model aimed f2 (C00006638 …) at
+    crm.customers.customer_id (bigint); the database refused the conversion and
+    the claim stayed untested forever. Values are converted to the key's family;
+    those that cannot be keys count as not found."""
+    ids = FakeProfiler({"crm.customers": (["customer_id"], [(i,) for i in range(1, 101)])})
+    codes = [("C00006638", 5), ("C00000012", 3)]
+    out = inclusion_test(ids, None, "crm.customers", "customer_id", codes, stage=3,
+                         origin="claim", parent_type="bigint", child_type="varchar(12)")
+    assert not out.result.passed and out.result.metric == 0.0
+    assert "cannot be integer keys" in out.result.detail
+    assert ids.queries == 0  # nothing sendable: no statement at all
+    digits = [("12", 4), ("0099", 1), ("x7", 1)]  # numbers stored as text reference an id
+    out = inclusion_test(ids, None, "crm.customers", "customer_id", digits, stage=3,
+                         origin="claim", parent_type="bigint", child_type="varchar(12)")
+    assert out.result.metric == round(5 / 6, 4) and any(q[0] == "inc" for q in ids.log)
+    codes_parent = FakeProfiler({"store.stores": (["store_code"], [("12",), ("S001",)])})
+    ints = [(12, 3), (13, 1)]
+    out = inclusion_test(codes_parent, None, "store.stores", "store_code", ints, stage=3,
+                         origin="claim", parent_type="char(4)", child_type="integer")
+    assert out.result.metric == 0.75
+
+
+def test_specificity_uses_the_key_density_where_the_values_lie():
+    """Owner run 2026-11-15, after the binomial check: counts still "passed" into
+    hr.payroll_lines.payroll_line_id at 99 %. Ids dense in one range and sparse
+    elsewhere have a low overall density, but every small integer is a key."""
+    from gaia.profiling.joins import integer_density
+
+    keys = list(range(1, 20_001)) + list(range(100_000, 10_000_000, 10_000))  # dense, then sparse
+    parent = S("id", distinct=len(keys), minimum="1", maximum=str(max(keys)))
+    assert integer_density(parent) < 0.01 and integer_chance(parent, 200) < 1e-10
+    counts = [(v, 1) for v in range(3, 20_000, 97)]  # a count column: small integers
+    profiler = FakeProfiler({"p.t": (["id"], [(k,) for k in keys])})
+    out = inclusion_test(profiler, None, "p.t", "id", counts, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer",
+                         density=integer_density(parent))
+    assert out.result.passed and not out.result.specific and not out.worth_keeping
+    assert any(sql[0] == "range" for sql in profiler.log)
+    spread = [(v, 1) for v in keys[20_000:20_150]]  # values that hit the sparse ids exactly
+    out = inclusion_test(profiler, None, "p.t", "id", spread, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer",
+                         density=integer_density(parent))
+    assert out.result.passed and out.result.specific

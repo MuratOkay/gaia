@@ -6,6 +6,7 @@ Usage:
     python -m gaia.tools.reason --schema dbo --limit 5
     python -m gaia.tools.reason                                 # everything in scope
     python -m gaia.tools.reason --cost-report                   # per-call tokens/latency
+    python -m gaia.tools.reason --rescore                       # no LLM: score stored answers
 
 Works from the latest stored snapshot (run ``make introspect`` first). Tables
 whose structure hash, prompt versions and model are unchanged are skipped, so
@@ -21,6 +22,20 @@ e.g. for replayed fixtures.
 requests appear in ``DIR/requests``; answers written to ``DIR/responses`` are
 used on the next run. Such runs are recorded with model ``replay``, never under
 a provider's name, so they cannot be mistaken for measurements of a real model.
+
+Re-scoring (no LLM call). A table is *re-reasoned* only when the model would
+see something new (structure, prompt, model, evidence it is shown). When only
+what the scorer reads has changed — the scorer itself (``SCORER_REVISION``),
+scoring config, a test's origin, a pass-through view column's base — the stored
+answer is *re-scored* instead, automatically, as part of ``make reason``.
+``--rescore`` (``make rescore``) never calls the model: it also re-scores tables
+the model would re-read, against today's evidence, as an interim view; tables
+without a usable stored answer are reported as ``needs_reasoning``. Add
+``--force`` to re-score every table in scope.
+
+Pass-through view columns are never sent to the model: they take their base
+column's current meaning (owner decision 2026-11-15). A view made only of such
+columns costs no LLM call at all.
 
 Exit codes: 0 = all reasoned or skipped; 1 = aborted; 2 = some tables or
 critiques failed (their raw payloads are in ``audit.llm_call``).
@@ -59,7 +74,7 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
 
     width = max((len(r.qualified_name) for r in report.results), default=10)
     for r in sorted(report.results, key=lambda x: x.qualified_name):
-        line = f"  {r.qualified_name:<{width}}  {r.action:<12}"
+        line = f"  {r.qualified_name:<{width}}  {r.action:<15}"
         if r.columns:
             line += f" {r.columns:>3} cols"
         if r.mean_score is not None:
@@ -74,9 +89,13 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
 
     print()
     print(
-        f"tables         : reasoned={report.count('reasoned')} skipped={report.count('skipped')} "
+        f"tables         : reasoned={report.count('reasoned')} "
+        f"rescored={report.count('rescored')} skipped={report.count('skipped')} "
         f"failed={report.count('failed')}"
-        + (f" would_reason={report.count('would_reason')}" if report.dry_run else "")
+        + (f" needs_reasoning={report.count('needs_reasoning')}"
+           if report.count("needs_reasoning") else "")
+        + (f" would_reason={report.count('would_reason')} "
+           f"would_rescore={report.count('would_rescore')}" if report.dry_run else "")
     )
     if report.dry_run:
         print("dry run        : no LLM calls, nothing written")
@@ -96,7 +115,10 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
         f"embeddings     : written={report.embeddings_written} "
         f"cache_hits={report.embedding_cache_hits}"
     )
-    print(f"join hints     : fk={report.fk_hints} inferred={report.inferred_hints}")
+    print(
+        f"join hints     : fk={report.fk_hints} inferred={report.inferred_hints}"
+        + (f" staled={report.staled_hints}" if report.staled_hints else "")
+    )
     if report.coverage:
         print(f"coverage       : {dict(sorted(report.coverage.items()))}")
     if report.prompt_major >= 2:
@@ -179,6 +201,7 @@ async def _run(args: argparse.Namespace) -> int:
         force=args.force,
         embed=False if args.no_embed else None,
         show_bundles=args.show_bundles,
+        rescore_only=args.rescore,
     )
 
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
@@ -234,6 +257,12 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="re-reason even if unchanged (cached responses are reused; add --no-cache "
         "for fresh model answers)",
+    )
+    parser.add_argument(
+        "--rescore",
+        action="store_true",
+        help="no LLM calls: score the stored answers against today's evidence "
+        "(with --force: every table in scope)",
     )
     parser.add_argument("--no-embed", action="store_true", help="skip the embedding step")
     parser.add_argument("--no-cache", action="store_true", help="bypass the Redis response cache")

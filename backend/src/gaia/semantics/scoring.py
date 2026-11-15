@@ -46,6 +46,7 @@ from typing import Any
 from gaia.core.config import ProfilingConfig, ScoringConfig
 from gaia.dialects.types import type_info
 from gaia.semantics.bundle import ColumnFacts, TableBundle
+from gaia.semantics.evidence import JOIN_NEUTRAL_ROLES
 from gaia.semantics.schemas import ColumnCritique, ColumnMeaning
 
 __all__ = [
@@ -445,6 +446,25 @@ def coherence_v2(
 ) -> tuple[float, dict[str, Any]]:
     _value, signals = schema_coherence(meaning, facts, bundle)
     checks = dict(signals["checks"])
+    # Key and FK role rules, heuristic-v2 only (v1 keeps Phase 2 behaviour): a
+    # code may be a lookup's key or carry an FK to it; a dimension or flag with
+    # an FK is neither confirmed nor refuted by it (evidence.JOINABLE_ROLES).
+    role = meaning.role
+    if "fk_role_fit" in checks:
+        if role in JOIN_NEUTRAL_ROLES:
+            checks.pop("fk_role_fit")
+            checks.pop("fk_domain_fit", None)
+        elif role == "code":
+            checks["fk_role_fit"] = {"value": 1.0, "detail": None}
+            domain = meaning.value_domain
+            ok = domain.kind in ("reference", "enumeration") or domain.source == "foreign_key"
+            checks["fk_domain_fit"] = {
+                "value": 1.0 if ok else 0.0,
+                "detail": None if ok else "FK code column's value domain names neither the "
+                "lookup nor its values",
+            }
+    if "pk_role_fit" in checks and role == "code":
+        checks["pk_role_fit"] = {"value": 1.0, "detail": None}  # the key of a lookup table
     # Name-based rules (key-like, date-like) also accept the column's view
     # aliases: when names are meaningless (f2), the alias (customer_code) is
     # the only business name there is (A8).

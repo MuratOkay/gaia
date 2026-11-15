@@ -114,3 +114,14 @@ def test_catalog_index_lists_objects_with_pk(sample_snapshot):
     assert "- rpt.v_daily_sales [view]" in text
     assert index.has_table("dbo.products")
     assert index.columns["dbo.products"] == {"product_code", "product_name"}
+
+
+def test_catalog_index_lists_alternate_keys_for_generation_2(sample_snapshot):
+    """Owner run 2026-11-15: with primary keys only, the model aimed code columns
+    at surrogate ids. Generation 2 lists unique keys too; generation 1 (Phase 2
+    prompts) is unchanged."""
+    v1 = build_catalog_index(sample_snapshot).render()
+    v2 = build_catalog_index(sample_snapshot, unique_keys=True).render()
+    assert "- dbo.customers (pk: customer_id)" in v1 and "unique" not in v1
+    assert "- dbo.customers (pk: customer_id; unique: email)" in v2
+    assert "- dbo.order_lines (pk: order_id, line_no)" in v2  # the PK's own index is not repeated

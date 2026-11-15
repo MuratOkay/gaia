@@ -1,0 +1,332 @@
+{
+ "table": {
+  "business_name": "Legacy Customer Master",
+  "purpose": "Master list of customers from an earlier system: code, name, status, city, registration date, phone and a credit amount.",
+  "grain": "One row per legacy customer.",
+  "entity": "Customer",
+  "synonyms": [
+   "old customer list",
+   "customer master (legacy)"
+  ],
+  "assumptions": [
+   "'mst' in the table name suggests master data; the columns describe a person or account."
+  ],
+  "unknowns": [
+   "Which current table these customers were migrated to.",
+   "Why 1% of rows share the date 2019-01-01 (possibly a default for unknown dates)."
+  ],
+  "confidence": 0.6
+ },
+ "columns": [
+  {
+   "name": "c01",
+   "business_name": "Customer Code",
+   "purpose": "Unique code identifying the customer in the legacy system.",
+   "role": "identifier",
+   "semantic_type": "none",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "pattern",
+    "description": "A letter followed by eight digits; unique.",
+    "values": [],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "customer number"
+   ],
+   "example_questions": [
+    "Find the legacy customer with code C00012345."
+   ],
+   "assumptions": [
+    "The table is a customer master, so its unique code identifies the customer."
+   ],
+   "unknowns": [
+    "Whether the code is reused in other tables."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Account Number",
+     "purpose": "Identifier of a billing account rather than a person.",
+     "confidence": 0.25
+    }
+   ],
+   "evidence": [
+    "prof:distinct",
+    "prof:length",
+    "nullability"
+   ],
+   "confidence": 0.65
+  },
+  {
+   "name": "c02",
+   "business_name": "Customer Name",
+   "purpose": "Full name of the customer in upper case.",
+   "role": "dimension",
+   "semantic_type": "person_name",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "free",
+    "description": "Two upper-case words (first and last name).",
+    "values": [],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "name",
+    "full name"
+   ],
+   "example_questions": [
+    "How many legacy customers are called the same?"
+   ],
+   "assumptions": [
+    "The two-word upper-case shape is a first and last name."
+   ],
+   "unknowns": [
+    "1.5k distinct names for 18k rows (8%) is low for people; names may repeat or be shortened."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Company Name",
+     "purpose": "Name of a business customer.",
+     "confidence": 0.2
+    }
+   ],
+   "evidence": [
+    "prof:top_values",
+    "prof:length",
+    "sibling_columns"
+   ],
+   "confidence": 0.6
+  },
+  {
+   "name": "c03",
+   "business_name": "Active Flag",
+   "purpose": "Whether the customer is active (Y) or not (N).",
+   "role": "flag",
+   "semantic_type": "boolean_text",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "Y (89%) or N (11%).",
+    "values": [
+     "Y",
+     "N"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "status",
+    "is active"
+   ],
+   "example_questions": [
+    "What share of legacy customers is active?"
+   ],
+   "assumptions": [],
+   "unknowns": [
+    "What Y means exactly: active, approved or consented."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Marketing Consent",
+     "purpose": "Whether the customer agreed to be contacted.",
+     "confidence": 0.25
+    }
+   ],
+   "evidence": [
+    "det:boolean_text",
+    "prof:top_values"
+   ],
+   "confidence": 0.6
+  },
+  {
+   "name": "c04",
+   "business_name": "City",
+   "purpose": "City of the customer, in upper case.",
+   "role": "dimension",
+   "semantic_type": "city",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "Ten Turkish cities.",
+    "values": [
+     "ANKARA",
+     "KONYA",
+     "ADANA",
+     "ISTANBUL",
+     "IZMIR",
+     "KAYSERI",
+     "BURSA",
+     "GAZIANTEP",
+     "ANTALYA",
+     "ESKISEHIR"
+    ],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "town"
+   ],
+   "example_questions": [
+    "How many legacy customers live in each city?"
+   ],
+   "assumptions": [],
+   "unknowns": [
+    "Whether it is the home or billing city."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Store City",
+     "purpose": "City of the customer's store.",
+     "confidence": 0.15
+    }
+   ],
+   "evidence": [
+    "prof:top_values",
+    "prof:distinct"
+   ],
+   "confidence": 0.8
+  },
+  {
+   "name": "c05",
+   "business_name": "Registration Date",
+   "purpose": "Date the customer was registered, as a yyyymmdd number.",
+   "role": "timestamp",
+   "semantic_type": "date_int",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "range",
+    "description": "Dates from 2015-01-22 to 2025-12-13.",
+    "values": [],
+    "minimum": "20150122",
+    "maximum": "20251213",
+    "source": "profile"
+   },
+   "synonyms": [
+    "customer since",
+    "sign-up date"
+   ],
+   "example_questions": [
+    "How many customers registered per year?"
+   ],
+   "assumptions": [],
+   "unknowns": [
+    "The 1% at 2019-01-01 may be a placeholder."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Last Update Date",
+     "purpose": "When the record last changed.",
+     "confidence": 0.2
+    }
+   ],
+   "evidence": [
+    "det:date_int",
+    "prof:range",
+    "type"
+   ],
+   "confidence": 0.6
+  },
+  {
+   "name": "c06",
+   "business_name": "Phone Number",
+   "purpose": "Customer phone number with country code, digits only.",
+   "role": "dimension",
+   "semantic_type": "phone",
+   "entity": "Customer",
+   "unit": null,
+   "value_domain": {
+    "kind": "pattern",
+    "description": "Twelve digits; 11% missing.",
+    "values": [],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "mobile",
+    "telephone"
+   ],
+   "example_questions": [
+    "How many legacy customers have a phone number?"
+   ],
+   "assumptions": [],
+   "unknowns": [
+    "Whether it is a mobile or landline number."
+   ],
+   "alternatives": [
+    {
+     "business_name": "National ID",
+     "purpose": "A numeric identity number.",
+     "confidence": 0.1
+    }
+   ],
+   "evidence": [
+    "det:phone",
+    "prof:length",
+    "prof:nulls"
+   ],
+   "confidence": 0.8
+  },
+  {
+   "name": "c07",
+   "business_name": "Credit Limit",
+   "purpose": "Credit limit granted to the customer, stored as text; 10% are empty strings.",
+   "role": "measure",
+   "semantic_type": "numeric_text",
+   "entity": "Customer",
+   "unit": "currency (unspecified)",
+   "value_domain": {
+    "kind": "enumeration",
+    "description": "5000, 10000, 15000, 25000 or 50000, or empty.",
+    "values": [
+     "5000.00",
+     "10000.00",
+     "15000.00",
+     "25000.00",
+     "50000.00",
+     ""
+    ],
+    "minimum": null,
+    "maximum": null,
+    "source": "profile"
+   },
+   "synonyms": [
+    "limit"
+   ],
+   "example_questions": [
+    "What is the total credit extended to legacy customers?"
+   ],
+   "assumptions": [
+    "Empty means no limit was set."
+   ],
+   "unknowns": [
+    "Currency of the amount.",
+    "Whether it is a limit, a balance or a tier."
+   ],
+   "alternatives": [
+    {
+     "business_name": "Credit Tier",
+     "purpose": "A tier label that happens to be an amount.",
+     "confidence": 0.35
+    }
+   ],
+   "evidence": [
+    "det:numeric_text",
+    "prof:top_values"
+   ],
+   "confidence": 0.5
+  }
+ ],
+ "join_hints": []
+}

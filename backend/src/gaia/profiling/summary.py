@@ -97,6 +97,11 @@ class VerificationResult:
     # False when passing is likely by chance (small dense integers fit any
     # dense integer key): such a pass is weak support and never a contradiction.
     specific: bool = True
+    # False when the test could not run (budget, timeout, a vanished parent):
+    # it is recorded so the claim is not escalated forever, but it is not
+    # evidence — not shown to the model, not in the ledger (stored as method
+    # ``not_run``).
+    conclusive: bool = True
 
 
 @dataclass
@@ -119,6 +124,9 @@ class ColumnProfileSummary:
     detectors: list[DetectorHit] = field(default_factory=list)
     # temporal columns: year | month | day | minute | second | sub-second
     granularity: str | None = None
+    # text columns: blank values ('' or spaces) counted as NULL, i.e. included
+    # in the null fraction (owner decision 2026-11-15); None = not counted
+    empty: int | None = None
 
     @property
     def null_fraction(self) -> float | None:

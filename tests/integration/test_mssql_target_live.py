@@ -87,7 +87,8 @@ def _profile_live(target, table):
         result = profile_table(profiler, cur, table, dialect="mssql", cfg=cfg,
                                budget=TableBudget(cfg.max_pages_per_table, 120,
                                                   RunBudget(cfg.max_pages_per_run),
-                                                  statement_timeout_s=cfg.statement_timeout_s),
+                                                  statement_timeout_s=cfg.statement_timeout_s,
+                                                  time_rule=cfg.time_rule),
                                seed=42)
     return result, statements
 

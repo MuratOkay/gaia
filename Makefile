@@ -170,6 +170,40 @@ reason: ## Reasoning over the stored snapshot and evidence (ARGS="--table dbo.x 
 reason-dry: ## Show what reasoning would do; no LLM calls, no writes (ARGS=...; TARGET=...)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --dry-run $(TARGET_ARG) $(ARGS)
 
+.PHONY: rescore
+rescore: ## Score stored answers against today's evidence; no LLM calls (ARGS=...; TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.reason --rescore $(TARGET_ARG) $(ARGS)
+
+# --- Phase 3C evaluation -------------------------------------------------------
+
+.PHONY: evaluate-plan
+evaluate-plan: ## 3C: scope, conditions, call estimate; no model calls (ARGS="--table dbo.x --with-neighbours")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics plan $(TARGET_ARG) $(ARGS)
+
+.PHONY: evaluate-labels
+evaluate-labels: ## 3C: the owner's 40-column labelling template (ARGS="--file F --table ...")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics labels $(TARGET_ARG) $(ARGS)
+
+.PHONY: evaluate
+evaluate: ## 3C: run conditions, resumable (ARGS="--out DIR --table ... [--condition B-P]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics run $(TARGET_ARG) $(ARGS)
+
+.PHONY: evaluate-judge
+evaluate-judge: ## 3C: judge the answers (ARGS="--out DIR --labels F")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics judge $(ARGS)
+
+.PHONY: evaluate-audit
+evaluate-audit: ## 3C: the owner's 20 % audit sample (ARGS="--out DIR")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics audit $(ARGS)
+
+.PHONY: evaluate-report
+evaluate-report: ## 3C: metrics and criteria (ARGS="--out DIR --labels F")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics report $(ARGS)
+
+.PHONY: evaluate-cost
+evaluate-cost: ## 3C criterion 5: production run cost per table (TARGET=...; ARGS="--file F")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics cost $(TARGET_ARG) $(ARGS)
+
 .PHONY: review
 review: ## Show the SME review queue, highest priority first (TARGET=...; ARGS="--limit 100")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.review $(TARGET_ARG) $(ARGS)

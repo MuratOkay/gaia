@@ -5,9 +5,9 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status (2026-11-14): Phases 0–2 done; Phase 3 approved and in progress
-> (3.P done; 3.0 code complete; 3B and 3A done in the sandbox, owner runs
-> pending; 3C next). Delivery state, gates and
+> Status (2026-11-15): Phases 0–2 done; Phase 3 approved and in progress
+> (3.P done; 3.0 verified on the host; 3B and 3A verified on the host with
+> defects, fixes in progress — PHASES "Owner verification (2026-11-15)"; 3C next). Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
 > Metadata store: PostgreSQL 18 + pgvector. Targets: SQL Server 2025 (first),
@@ -1447,3 +1447,44 @@ every integer in range is found. Such joins rest on aliases, names and the model
 and stay in review until an SME or a stronger source (Query Store, backlog)
 confirms them.
 
+**Owner verification (2026-11-15).** The first runs on the real host (PostgreSQL 18,
+SQL Server 2025, the configured model) confirmed the pipeline and found what the
+sandbox could not: model join hints that pointed code columns at integer
+surrogate keys (the object list showed only primary keys) and then errored in
+Stage 3 instead of failing; hints that never expired; a specificity rule that
+let a count "pass" into a 97 %-dense id; an FK that contradicted a correct
+`code`; and a columnstore scan that meets the statement timeout. The join-hint
+and evidence fixes, and the lifecycle of model hints (`inferred` → `stale` /
+`refuted`), are recorded in PHASES (D38–D42).
+
+The owner's decisions of the same day changed three working rules (D43–D48):
+a table is **re-reasoned** only when the model would see something new and
+otherwise **re-scored** from its stored answer (`make rescore` never calls the
+model); **pass-through view columns inherit** their base column's meaning and
+never reach the queue; **blank text is NULL**. The profiler now samples first,
+reads columnstore column by column, batches the low-cardinality top-k of large
+tables in one `GROUPING SETS` scan, says why a table is `partial`, and pairs
+tables profiled in earlier runs with parents profiled later. On FKs (D40): a
+declared FK and a passed inclusion test are one fact — the values are another
+table's keys — read the same way in fact and transaction tables; they support
+`reference`, `identifier` and `code`, are neutral to `dimension`, `flag` and
+`timestamp`, and contradict `measure` and `free-text`. Nothing depends on FKs
+being declared.
+
+---
+
+## 29. Phase 3C — evaluation (harness built; runs pending)
+
+The question 3C answers is whether the evidence makes the meanings *right* — not
+whether it makes scores higher. `nge_small` has honest names, so it simulates
+the worst case: a name-blind world replaces every identifier with an opaque
+token and rewrites every definition that mentions one, leaving the data as it
+is; the hidden names become the reference, and the owner's labels replace them
+where a name would be no fair reference. Five conditions — names visible or
+hidden × catalog only or full Phase 3, plus thinking off — run the production
+pipeline (including each condition's own Stage 3) without writing to the
+metadata store; a judge compares each answer with its reference; AUROC asks
+whether the score ranks right answers above wrong ones; the owner audits a fifth
+of the judgements without seeing them. On `demo_pg` the native worst case has an
+exact ground truth, with and without the view that names the legacy columns.
+Details and the decisions taken while building it: PHASES, "3C harness", D51.

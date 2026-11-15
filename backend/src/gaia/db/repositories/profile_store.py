@@ -414,6 +414,7 @@ class ProfileStore:
                         detail=test.detail or "",
                         origin=test.origin,
                         specific=test.specific,
+                        conclusive=test.method != "not_run",
                     )
                 )
 

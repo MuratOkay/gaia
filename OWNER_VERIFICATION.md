@@ -21,6 +21,9 @@ Tick the boxes as you go. Times are rough.
 | 8 | Phase 3A on SQL Server: profile, footprint, reason | `sql1`, LLM gateway | 1–3 h (mostly LLM) |
 | 9 | The full test suite with every live test | all of the above | 5 min |
 | 10 | What to send back | — | — |
+| 11 | After the 2026-11-15 fixes and decisions: migrate, test, profile, test claims, re-score, reason | `sql1`, `demo_pg`, LLM gateway (11e only) | 30 min + LLM |
+| 12 | After the §11 review: test, re-profile SQL Server, re-score, queue (no LLM) | `sql1`, `demo_pg` | 15 min |
+| 13 | Phase 3C: labels, evaluation runs, judge, audit, report, production cost | LLM gateway | 1 h + overnight |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -458,6 +461,216 @@ To run one file: `make test ARGS="tests/integration/test_mssql_target_live.py -v
 With these I record the SQL Server numbers, tune the 3A budget defaults from
 both databases' data (first `full_scan_max_pages`), and ask for the 3.0, 3A and
 3B gates.
+
+---
+
+## 11 · After the 2026-11-15 fixes and decisions
+
+What changed — PHASES, "Owner verification (2026-11-15) and fixes" and D38–D48:
+
+* join hints: a claim to a key of another type fails instead of erroring (D1);
+  model hints expire (`stale`) or are `refuted` by their test (D2, migration
+  `0006`); the object list names unique keys (D11);
+* evidence: chance passes on nearly dense keys are weak (D3); `phone` before
+  `numeric_text` (D6); blank text is NULL (D7); Stage 3 samples values without
+  bias (D8); an FK no longer contradicts a `code`, and is neutral to a
+  `dimension`, `flag` or `timestamp` (D40);
+* profiler: the sample first, columnstore column by column, low-cardinality
+  top-k of large tables in one `GROUPING SETS` scan, every `partial` table says
+  why (D4, D5); tables profiled earlier meet parents profiled later (D12);
+* reasoning: pass-through view columns inherit and are never queued; stored
+  answers are re-scored without the model when only the scorer's inputs
+  changed; `make rescore` never calls the model (D43, D44).
+
+Steps 11a–11d call no LLM.
+
+### 11a · Migrate and test
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..   # 0005 -> 0006
+make test                                   # with the §9 exports incl. GAIA_TEST_MSSQL=1
+make test ARGS="tests/integration/test_mssql_target_live.py -k large_table -s"
+```
+
+- [ ] `alembic` ends with `Running upgrade 0005 -> 0006, Join hints: status ``refuted`` …`
+- [ ] `make test`: **378 passed, 0 skipped** (Ollama up; without: 376 passed, 2 skipped).
+      `test_profiler_on_a_large_table_records_every_degradation` passes now — send its
+      `-s` output (`dw.sales_wide`: status, time, queries, notes)
+
+### 11b · Profile both databases again, one run each
+
+`--force` re-profiles every table: blank text, the new statements and the join
+candidates (new specificity rule, and every table paired with every parent).
+
+```bash
+make profile TARGET=demo_pg ARGS="--force --report" > verification/11_profile_pg.out
+make profile ARGS="--force --report"             > verification/11_profile_mssql.out   # ~5-8 min
+```
+
+- [ ] `demo_pg`: `{'profiled': 24, 'skipped': 4}`, candidates `tested=17 kept=8 passed=6` as before
+- [ ] `demo_mssql`: `dbo.transactions` and `dbo.transaction_lines` should now be `profiled`
+      (their low-cardinality columns share one `GROUPING SETS` scan; if that statement
+      times out, a note says so and they fall back to one statement each — untested on SQL
+      Server, send it either way); `dw.fact_sales` and `dw.sales_wide` (columnstore) run one
+      statement per column, no `batched scan not run`; any `partial` table lists its
+      reasons under it
+- [ ] the candidates no longer keep `agg_product_performance.line_count -> hr.payroll_lines…`
+      or `agg_sales_by_month.units -> …customer_key` (`(not kept)  (weak: dense integer key)`)
+- [ ] `footprint`: send the list (the new statements may create a few statistics)
+
+### 11c · Test the claims again
+
+The claims that errored on your host are still *pending* (nothing was recorded
+for them):
+
+```bash
+make profile-tests TARGET=demo_pg ARGS="--schema legacy --schema rpt" > verification/11_tests_pg.out
+make profile-tests ARGS="--table dbo.transactions --with-neighbours" > verification/11_tests_mssql.out
+```
+
+- [ ] `demo_pg`: `f2 inc:crm.customers.customer_id FAIL metric=0.0`, `f9 inc:store.stores.store_id
+      FAIL metric=0.0`; `join hints : {'refuted': 2}` (or fewer if they were staled by a newer
+      answer); no `notes:` line with `failed`
+- [ ] `demo_mssql`: `dbo.transaction_lines.condition inc:dw.dim_condition.condition_key FAIL
+      metric=0.0`, `join hints : {'refuted': 1}`
+
+### 11d · Re-score without the model
+
+```bash
+make rescore TARGET=demo_pg ARGS="--schema legacy --schema rpt --schema hr" > verification/11_rescore_pg.out
+make rescore ARGS="--table dbo.transactions --with-neighbours"           > verification/11_rescore_mssql.out
+make review TARGET=demo_pg > verification/11_review_pg.out
+make review                > verification/11_review_mssql.out
+```
+
+- [ ] `llm : calls=0`; tables `rescored` (a table without a usable stored answer says
+      `needs_reasoning`)
+- [ ] the queue no longer holds pass-through view columns (`rpt.v_legacy_transactions.
+      customer_code`, `…transaction_id`, …) and `legacy.tb_mst01.c07` is no longer `abstain`
+- [ ] `payments.currency_code`, `trade_ins.currency_code`, `payments.method`,
+      `trade_ins.source_system` carry no `contradiction` tag
+
+### 11e · Reason where the model would see something new
+
+```bash
+make reason-dry TARGET=demo_pg ARGS="--schema legacy --schema rpt"
+make reason     TARGET=demo_pg ARGS="--schema legacy --schema rpt --cost-report" > verification/11_reason_pg.out
+make reason-dry ARGS="--table dbo.transactions --with-neighbours"
+make reason     ARGS="--table dbo.transactions --with-neighbours --cost-report"  > verification/11_reason_mssql.out
+make review TARGET=demo_pg > verification/11_review2_pg.out
+make review                > verification/11_review2_mssql.out
+```
+
+- [ ] the dry runs list `would_reason (evidence changed)` only for tables whose shown
+      evidence changed (blank text, new or failed tests, new candidates); everything else
+      `would_rescore` or `skipped`; views `… N pass-through column(s) inherit`
+- [ ] `reasoned=… failed=0`; a view with computed columns sends only those to the model
+
+Then send the files above and:
+
+```sql
+-- hint lifecycle
+SELECT from_table, from_columns, to_table, to_columns, status
+FROM semantics.join_hint WHERE source = 'llm' ORDER BY 1, 2;
+-- tests recorded as not run (should be none, or each with a reason)
+SELECT column_name, test_id, detail FROM profiling.verification_test
+WHERE is_current AND method = 'not_run';
+-- inherited view columns
+SELECT t.object_name, k.column_name, c.score_breakdown->>'inherited_from' AS base,
+       round(c.calibrated_score::numeric, 3) AS score
+FROM semantics.column_semantic c JOIN catalog.columns k ON k.id = c.column_id
+JOIN catalog.tables t ON t.id = c.table_id
+WHERE c.is_current AND c.score_breakdown ? 'inherited_from' ORDER BY 1, 2;
+```
+
+---
+
+## 12 · After the §11 review (no LLM)
+
+Owner run of §11: done except §11e (re-reasoning; deferred — gateway slow) and its
+SQL. Three fixes followed (PHASES, "Owner run of §11"): a refuted parent no longer
+contradicts a reference found in another key (D49: `tb_trx02.f2`, `f9`); integer
+join specificity uses the key density where the values lie (D3b:
+`line_count -> payroll_line_id`); columnstore reads distinct counts with the
+column's aggregates (D4b: `dw.sales_wide`).
+
+```bash
+make test                                    # §9 exports incl. GAIA_TEST_MSSQL=1
+make profile ARGS="--force --report" > verification/12_profile_mssql.out
+make rescore TARGET=demo_pg ARGS="--schema legacy --schema rpt --schema hr" > verification/12_rescore_pg.out
+make rescore ARGS="--table dbo.transactions --with-neighbours"           > verification/12_rescore_mssql.out
+make review TARGET=demo_pg > verification/12_review_pg.out
+make review                > verification/12_review_mssql.out
+```
+
+- [ ] `make test`: **388 passed, 0 skipped**
+- [ ] `12_profile_mssql.out`: `agg_product_performance.line_count -> hr.payroll_lines.payroll_line_id`,
+      `…units_sold -> …` and `agg_sales_by_month.line_count / units -> …customer_key` are
+      `(not kept)  (weak: dense integer key)`; if `dw.sales_wide` is still `partial`, its
+      `distinct of N column(s) not exact` note names fewer than the 25 columns of §11
+      (with the adaptive time rule, D50, it should now be `profiled`)
+- [ ] `12_rescore_pg.out`: every table `rescored` (scorer v2.2), `calls=0`
+- [ ] `12_review_pg.out`: `legacy.tb_trx02.f2` and `f9` are no longer in the queue
+
+§11e (`make reason` on both targets) can follow whenever the gateway allows; it
+is not needed for the 3A gate.
+
+---
+
+## 13 · Phase 3C: the evaluation
+
+The harness is built (PHASES, "3C harness"). Nothing here writes to the metadata
+store; answers go to `evaluations/<name>/` (git-ignored; every model answer is
+kept there, so an interrupted run simply resumes). Relative paths are from the
+repository root.
+
+### 13a · Your labels (~1 h, before the named conditions)
+
+```bash
+make evaluate-plan   ARGS="--table dbo.transactions --with-neighbours"
+make evaluate-labels ARGS="--table dbo.transactions --with-neighbours --file verification/labels_nge_small.csv"
+```
+
+Fill `meaning` (what the column holds, in business terms — your words, not the
+column name) and `role` (`identifier`, `reference`, `measure`, `dimension`,
+`timestamp`, `flag`, `code`, `free-text`; several with `|`, any with `*`) for the
+40 rows. Leave a row's `meaning` empty to skip it.
+
+### 13b · The runs (overnight: ~170–200 calls for nge_small)
+
+Criteria 1 and 3 need only the name-blind conditions, so they come first:
+
+```bash
+make evaluate ARGS="--out evaluations/nge_small --table dbo.transactions --with-neighbours --condition B-C --condition B-P"
+make evaluate ARGS="--out evaluations/nge_small --table dbo.transactions --with-neighbours --condition N-C --condition N-P --condition B-P-nt"
+make evaluate TARGET=demo_pg ARGS="--out evaluations/demo_pg --schema legacy --condition N-P --condition N-P-h --condition B-P --hide rpt.v_legacy_transactions"
+```
+
+- [ ] each condition prints `… column(s), N call(s)` and no `FAILED`; a repeated command
+      prints `0 new` calls (resumed)
+
+### 13c · Judge, audit, report
+
+```bash
+make evaluate-judge  ARGS="--out evaluations/nge_small --labels verification/labels_nge_small.csv"
+make evaluate-audit  ARGS="--out evaluations/nge_small"        # fill owner_meaning: yes/partial/no
+make evaluate-report ARGS="--out evaluations/nge_small --labels verification/labels_nge_small.csv"
+make evaluate-judge  ARGS="--out evaluations/demo_pg --labels infra/pg-target/labels.csv"
+make evaluate-report ARGS="--out evaluations/demo_pg --labels infra/pg-target/labels.csv"
+```
+
+The audit file does not show the judge's verdict — judge each row yourself: does
+the answer mean what the reference means? Run `evaluate-report` again after
+filling it. Send both `report.md` files (and the audit file).
+
+### 13d · Criterion 5: a production run, costed
+
+When the gateway allows (the longest step: all 71 objects, ~140 calls):
+
+```bash
+make reason ARGS="--cost-report" > verification/13_reason_all.out
+make evaluate-cost ARGS="--file verification/13_cost_mssql.md"
+```
 
 ---
 
