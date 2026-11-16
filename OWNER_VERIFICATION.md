@@ -747,7 +747,7 @@ make evaluate ARGS="--out evaluations/nge_small --table dbo.transactions --with-
 make evaluate TARGET=demo_pg ARGS="--out evaluations/demo_pg --schema legacy --condition N-P --condition N-P-h --condition B-P --hide rpt.v_legacy_transactions"
 ```
 
-- [ ] each condition prints `… column(s), N call(s)` and no `FAILED`; a repeated command
+- [x] each condition prints `… column(s), N call(s)` and no `FAILED`; a repeated command
       prints `0 new` calls (resumed)
 
 *Owner run, 2026-11-15/16: the first command stopped — B-P `FAILED 1`
@@ -803,7 +803,7 @@ make stamp                                   # gaia build 2026-11-16 · D55
 make test > verification/14_tests.out        # with §9's exports, incl. GAIA_TEST_MSSQL=1
 ```
 
-- [ ] *Superseded by §15a* (the latest build has more tests); kept for the record:
+- [x] *Superseded by §15a* (the latest build has more tests); kept for the record:
       `gaia build 2026-11-16 · D55`, 401 passed, 0 skipped.
 
 ### 14b · Resume the 3C runs (S5) — before any new `make profile` on SQL Server
@@ -914,9 +914,9 @@ cd backend && ../gaia-env/bin/alembic upgrade head && cd ..
 (make stamp; make test) > verification/15_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
 ```
 
-- [ ] `Running upgrade 0006 -> 0007, Query runs (Phase 4A): …`
-- [ ] `gaia build 2026-11-16 · D57 (4A) · sqlglot <version>`
-- [ ] **575 passed, 0 skipped** (Ollama up; 573 passed, 2 skipped without). Sandbox: 565
+- [x] `Running upgrade 0006 -> 0007, Query runs (Phase 4A): …`
+- [x] `gaia build 2026-11-16 · D57 (4A) · sqlglot <version>`
+- [x] **575 passed, 0 skipped** (Ollama up; 573 passed, 2 skipped without). Sandbox: 565
       passed, 10 skipped (8 SQL Server live, 2 Ollama). The PostgreSQL and offline tests
       must pass (blocking); a failing SQL Server live test is S1 (non-blocking) — send it.
       Look for `test_guarded_statements_run_on_sql_server` and
@@ -990,8 +990,8 @@ you ran §15 on the D57 build, `03_view_lineage_join` said `shared_key`; it now 
 (make stamp; make test) > verification/16_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
 ```
 
-- [ ] `gaia build 2026-11-16 · D59 (4B) · sqlglot <version>`
-- [ ] **598 passed, 0 skipped** (596 / 2 without Ollama). Sandbox: 588 passed, 10 skipped.
+- [x] `gaia build 2026-11-16 · D59 (4B) · sqlglot <version>`
+- [x] **598 passed, 0 skipped** (596 / 2 without Ollama). Sandbox: 588 passed, 10 skipped.
 
 ### 16b · Retrieval on `demo_pg` (L5)
 
@@ -1048,8 +1048,8 @@ should take seconds to tens of seconds, not minutes.
 (make stamp; make test) > verification/17_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
 ```
 
-- [ ] `gaia build 2026-11-16 · D60 (4C) · sqlglot <version>`
-- [ ] **614 passed, 0 skipped** (612 / 2 without Ollama). Sandbox: 604 passed, 10 skipped.
+- [x] `gaia build 2026-11-16 · D60 (4C) · sqlglot <version>`
+- [x] **614 passed, 0 skipped** (612 / 2 without Ollama). Sandbox: 604 passed, 10 skipped.
 
 ### 17b · Five golden questions on `demo_pg` (L6)
 
@@ -1131,9 +1131,9 @@ cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0007 -> 0008
 (make stamp; make test) > verification/18_tests.out 2>&1         # §9's exports, incl. GAIA_TEST_MSSQL=1
 ```
 
-- [ ] `Running upgrade 0007 -> 0008, Clarifications (D61): …`
-- [ ] `gaia build 2026-11-16 · D63 (4D) · sqlglot <version>`
-- [ ] **626 passed, 0 skipped** (624 / 2 without Ollama). Sandbox: 616 passed, 10 skipped.
+- [x] `Running upgrade 0007 -> 0008, Clarifications (D61): …`
+- [x] `gaia build 2026-11-16 · D63 (4D) · sqlglot <version>`
+- [x] **626 passed, 0 skipped** (624 / 2 without Ollama). Sandbox: 616 passed, 10 skipped.
 
 ### 18b · The golden run of `demo_pg` (L7)
 
@@ -1195,8 +1195,8 @@ cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0008 -> 0009
 (make stamp; make test) > verification/19_tests.out 2>&1
 ```
 
-- [ ] `Running upgrade 0008 -> 0009, Conversations (Phase 4E): …`
-- [ ] `gaia build 2026-11-16 · D64 (4E) · …`; **629 passed, 0 skipped** (sandbox: 619 + 10 skipped)
+- [x] `Running upgrade 0008 -> 0009, Conversations (Phase 4E): …`
+- [x] `gaia build 2026-11-16 · D64 (4E) · …`; **629 passed, 0 skipped** (sandbox: 619 + 10 skipped)
 
 ### 19b · A conversation (L9)
 
