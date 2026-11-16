@@ -21,6 +21,14 @@ help: ## Show this help
 	@grep -hE '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
+# --- Taiga: Cleanup --------------------------------------------------------
+.PHONY: cleanup
+cleanup:
+	find . -type d -name "__pycache__" -exec rm -rf {} +
+	find . -type d -name ".pytest_cache" -exec rm -rf {} +
+	find . -type f -name "*.pyc" -delete
+	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
+
 # --- stack -----------------------------------------------------------------
 
 .PHONY: up
