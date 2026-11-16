@@ -785,6 +785,7 @@ async def _discover_joins(
             "specific": result.specific,  # decided by the outcome (joins.chance_of_hits)
             "reason": cand.reason,
             "distinct_rate": round(outcome.distinct_rate, 4),
+            "neighbours": outcome.neighbour_rate,  # D54 control (integer tests)
             "kept": outcome.worth_keeping,
         }
         report.joins.append(entry)

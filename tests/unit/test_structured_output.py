@@ -86,9 +86,27 @@ def test_gives_up_after_retries_and_keeps_raw_payloads():
 
 def test_truncated_output_fails_without_retry():
     llm = ScriptedLLM(('{"name": "a", "si', "length"))
-    with pytest.raises(StructuredOutputError, match="max_output_tokens"):
+    with pytest.raises(StructuredOutputError, match="truncated at max_tokens=100") as excinfo:
         _run(llm, max_tokens=100)
     assert len(llm.received) == 1
+    assert excinfo.value.truncated
+
+
+def test_truncation_says_where_the_tokens_went():
+    """3C, 2026-11-16: thinking took 12,437 of 16,000 tokens on a 14-column table."""
+    from gaia.llm.structured import truncation_message
+
+    usage = Usage(prompt_tokens=8004, completion_tokens=16000, reasoning_tokens=12437)
+    assert truncation_message(16000, usage) == (
+        "output truncated at max_tokens=16000: thinking 12437, answer 3563 token(s)"
+    )
+
+
+def test_other_failures_are_not_truncations():
+    llm = ScriptedLLM("not json", '{"name": 1}')
+    with pytest.raises(StructuredOutputError) as excinfo:
+        _run(llm)
+    assert not excinfo.value.truncated
 
 
 def test_transport_failure_is_recorded():

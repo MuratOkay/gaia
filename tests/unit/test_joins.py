@@ -197,3 +197,60 @@ def test_specificity_uses_the_key_density_where_the_values_lie():
                          parent_type="integer", child_type="integer",
                          density=integer_density(parent))
     assert out.result.passed and out.result.specific
+
+
+def test_neighbour_control_catches_counts_with_outliers():
+    """Owner's §12 run (SQL Server, 2026-11-15): line_count still "passed" into
+    hr.payroll_lines.payroll_line_id at 99 % rows / 99 % values after D3b. Counts
+    are heavy-tailed: a few outliers stretch the tested range into sparse ids, the
+    density over that range is low, and the pass looked specific. The neighbours
+    (nearby integers) are keys as often as the values: chance, whatever the range."""
+    from gaia.profiling.joins import integer_density
+
+    keys = list(range(1, 20_001)) + list(range(100_000, 10_000_000, 10_000))
+    parent = S("id", distinct=len(keys), minimum="1", maximum=str(max(keys)))
+    counts = [(v, 1) for v in range(1, 1_971, 10)] + [(250_007, 1), (1_200_003, 1),
+                                                      (4_000_001, 1)]
+    profiler = FakeProfiler({"p.t": (["id"], [(k,) for k in keys])})
+    out = inclusion_test(profiler, None, "p.t", "id", counts, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer",
+                         density=integer_density(parent))
+    assert out.result.passed and out.result.metric == 0.985
+    assert not out.result.specific and not out.worth_keeping
+    assert "nearby integers (value + 1…97) are keys too: 98%" in out.result.detail
+    assert out.neighbour_rate == 0.985
+    # a true reference into the sparse ids: the neighbours are not keys
+    real = [(v, 1) for v in keys[20_000:20_200]] + [(3, 1), (7, 1)]
+    out = inclusion_test(profiler, None, "p.t", "id", real, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer",
+                         density=integer_density(parent))
+    assert out.result.passed and out.result.specific and out.worth_keeping
+    assert "nearby integers (value + 1…97) are keys too: 1%" in out.result.detail
+
+
+def test_a_failed_density_or_control_query_is_said_not_swallowed():
+    keys = list(range(1, 1_000, 7))
+    profiler = FakeProfiler({"p.t": (["id"], [(k,) for k in keys])})
+    profiler.fail = {"range"}
+    values = [(k, 1) for k in keys[:100]]
+    out = inclusion_test(profiler, None, "p.t", "id", values, stage=1, origin="candidate",
+                         parent_type="integer", child_type="integer")
+    assert "key density where the values lie not measured (StatementTimeout" in out.result.detail
+    assert out.result.specific  # nearby integers of multiples of 7 are keys 1 time in 7
+
+
+def test_a_date_key_join_stays_specific():
+    """yyyymmdd keys: the next integer is usually the next day (a key too). The
+    neighbour offset spans weeks, so a real date-dimension join is not mistaken
+    for chance, while a dense surrogate id still is."""
+    import datetime as dt
+    import random
+
+    start = dt.date(2020, 1, 1)
+    keys = [int((start + dt.timedelta(days=i)).strftime("%Y%m%d")) for i in range(5 * 366)]
+    values = [(v, 1) for v in random.Random(3).sample(keys, 100)]  # noqa: S311 (test data)
+    profiler = FakeProfiler({"dw.dim_date": (["date_key"], [(k,) for k in keys])})
+    out = inclusion_test(profiler, None, "dw.dim_date", "date_key", values, stage=1,
+                         origin="candidate", parent_type="int", child_type="int")
+    assert out.result.passed and out.result.specific and out.worth_keeping
+    assert out.neighbour_rate is not None and out.neighbour_rate < 0.5

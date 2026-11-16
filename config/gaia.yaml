@@ -78,7 +78,8 @@ llm:
   temperature: 0.1
   # The gateway hard-limits this account to 4 concurrent requests per model.
   # Stay one below it so a retry never has to fight for the last slot.
-  concurrency: 3
+  # Per command: GAIA_LLM_CONCURRENCY=2 make … — two jobs at 2 each share the cap of 4.
+  concurrency: ${GAIA_LLM_CONCURRENCY:-3}
   # Read timeout per completion. Thinking-mode calls return nothing until the
   # full answer is ready, so this is sized for the widest bundle, not a typical
   # one. The current provider is slow by nature; re-assess on provider change.
@@ -97,6 +98,7 @@ llm:
     sql_generation: false
     repair: false
     classification: false
+    answer: false
   retry:
     max_attempts: 3
     max_attempts_rate_limit: 8    # 429 = concurrency ceiling; clears on its own
@@ -227,9 +229,45 @@ semantics:
   # Changing it changes the prompt versions, so every table is re-reasoned once.
   prompt_major: 2
 
+retrieval:
+  # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).
+  max_objects: 6              # objects found by relevance; bridges on join paths come on top
+  max_bridges: 3
+  max_expansions: 2           # implied objects: the facts behind a ranking, the dates of facts
+  max_join_hops: 3
+  relative_cutoff: 0.25       # objects scoring below this share of the best one are dropped
+  all_columns_up_to: 20       # objects with at most this many columns are shown whole
+  max_columns_per_object: 25
+  context_budget_tokens: 6000
+  vector_k: 40                # nearest meanings from the embeddings
+
+datasources:
+  # Phase 4F (OUTLINE §24). Data sources added at runtime (make datasource) are usable
+  # only if their read-only probe passed within this many days.
+  reprobe_days: 30
+  # /api/admin/data-sources writes credentials; off until the API has authentication.
+  admin_api: false
+
+chat:
+  # Phase 4E. Result rows stored with an answer (chat.message), personal-data columns
+  # masked in the stored copy; the live response carries every row (up to query.row_limit).
+  keep_rows: 200
+  # Earlier turns a follow-up question ("and in 2024?") is read with.
+  history_turns: 3
+
 query:
   max_repair_attempts: 2
+  # Rows returned at most; the smaller of this and targets.<name>.limits.max_rows_returned.
   row_limit: 1000
+  # Phase 4A: a join with no declared FK, tested model hint (D48), SME hint or view
+  # lineage behind it is rejected. "warn" only reports it (not recommended).
+  unverified_joins: reject
+  # Phase 4C: result rows the narrative model sees (personal data hidden for a remote model)
+  rows_to_model: 30
+  # "today" for relative periods ("last month"); null = the real date
+  as_of: null
+  # Informational: the SQL guard's rules are fixed in code (gaia.query.validator and
+  # dialects/<d>/guard.py: SELECT/WITH only, function allowlists) and not read from here.
   allowed_statements: [select, with]
   forbid:
     - xp_cmdshell

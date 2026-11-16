@@ -1,0 +1,392 @@
+# Phase 4 golden questions for demo_pg (P4-1, the assistant's part; the owner adds 5-10).
+#
+# Written by the designer of demo_pg, so they flatter the system: the owner's questions,
+# phrased from a business description without looking at the schema, are the honest ones.
+#
+# expect: answer   -> `sql` is the reference; a generated answer is right when its result
+#                     holds the reference's values (4D compares results, not SQL text).
+#         clarify  -> the question is ambiguous or asks for data that does not exist: a
+#                     clarification (or "cannot answer") is right, any number is wrong.
+# clarified: for a clarify question, the user's answer to the clarification; with `sql`, the
+#            reference for the clarified question (and for Gaia's best guess, D61).
+# order_matters: the reference's row order is part of the answer (top-N lists).
+# rank_by: the reference column a top-N list is ranked by; rows tied with the last one at the
+#          cut are interchangeable (the reference is fetched beyond its LIMIT to find them).
+# identify_by: reference columns that each identify the same thing (sku, name, id): a result
+#              needs one of them, and every other reference column.
+# requires: join paths that exist only as tested model hints (D48); without them the
+#           question cannot be answered — the owner's store has them (OWNER_VERIFICATION §11e).
+#
+# as_of fixes "today": relative periods ("last month") are relative to it, and the data
+# ends on 2025-12-31.
+data_source: demo_pg
+as_of: 2026-01-15
+questions:
+  - id: g01
+    question: What was the total order amount in December 2025, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT sum(total_amount) AS total
+      FROM sales.orders
+      WHERE order_date >= DATE '2025-12-01' AND order_date < DATE '2026-01-01'
+        AND status <> 'cancelled'
+
+  - id: g02
+    question: Which store city had the highest order amount last month, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders, store.stores]
+    sql: |
+      SELECT s.city, sum(o.total_amount) AS amount
+      FROM sales.orders o JOIN store.stores s ON s.store_id = o.store_id
+      WHERE o.order_date >= DATE '2025-12-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY s.city ORDER BY amount DESC LIMIT 1
+
+  - id: g03
+    question: List the ten products with the highest quantity ordered in 2025.
+    expect: answer
+    order_matters: true
+    objects: [sales.order_lines, sales.orders, product.products]
+    identify_by: [sku, name, product_id]
+    rank_by: quantity
+    sql: |
+      SELECT p.sku, p.name, p.product_id, sum(l.quantity) AS quantity
+      FROM sales.order_lines l
+      JOIN sales.orders o ON o.order_id = l.order_id
+      JOIN product.products p ON p.product_id = l.product_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+      GROUP BY p.sku, p.name, p.product_id ORDER BY quantity DESC, p.sku LIMIT 10
+
+  - id: g04
+    question: How many active customers are there in each customer segment?
+    expect: answer
+    objects: [crm.customers]
+    sql: |
+      SELECT segment, count(*) AS customers
+      FROM crm.customers WHERE is_active GROUP BY segment
+
+  - id: g05
+    question: What was the average order amount per sales channel in 2025?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT channel, round(avg(total_amount), 2) AS average_amount
+      FROM sales.orders
+      WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+      GROUP BY channel
+
+  - id: g06
+    question: Which product category has the highest average margin, where margin is list price minus unit cost?
+    expect: answer
+    objects: [product.products, product.categories]
+    identify_by: [name, category_id]
+    sql: |
+      SELECT c.name, c.category_id, round(avg(p.list_price - p.unit_cost), 2) AS average_margin
+      FROM product.products p JOIN product.categories c ON c.category_id = p.category_id
+      GROUP BY c.name, c.category_id ORDER BY average_margin DESC LIMIT 1
+
+  - id: g07
+    question: What is the total amount of overdue invoices per currency?
+    expect: answer
+    objects: [finance.invoices]
+    notes: hard — "overdue" is status code 2, known to no catalog; only the data and the model's reading of it
+    sql: |
+      SELECT currency_code, sum(amount) AS overdue_amount
+      FROM finance.invoices WHERE status = 2 GROUP BY currency_code
+
+  - id: g08
+    question: How many current employees, those without a termination date, work in each department?
+    expect: answer
+    objects: [hr.employees, hr.departments]
+    identify_by: [name, dept_code, dept_id]
+    sql: |
+      SELECT d.name, d.dept_code, d.dept_id, count(*) AS employees
+      FROM hr.employees e JOIN hr.departments d ON d.dept_id = e.dept_id
+      WHERE e.termination_date IS NULL GROUP BY d.name, d.dept_code, d.dept_id
+
+  - id: g09
+    question: For each store, how many products are below their reorder level?
+    expect: answer
+    objects: [store.inventory, store.stores]
+    identify_by: [store_code, name, store_id]
+    sql: |
+      SELECT s.store_code, s.name, s.store_id, count(*) AS products_below
+      FROM store.inventory i JOIN store.stores s ON s.store_id = i.store_id
+      WHERE i.qty_on_hand < i.reorder_level GROUP BY s.store_code, s.name, s.store_id
+
+  - id: g10
+    question: What is the total refund amount per return reason code?
+    expect: answer
+    objects: [sales.returns]
+    sql: |
+      SELECT reason_code, sum(refund_amount) AS refunded
+      FROM sales.returns GROUP BY reason_code
+
+  - id: g11
+    question: How many customers were referred by another customer?
+    expect: answer
+    objects: [crm.customers]
+    sql: |
+      SELECT count(*) AS referred_customers FROM crm.customers WHERE referred_by IS NOT NULL
+
+  - id: g12
+    question: What are the total debits and credits per ledger account for fiscal period December 2025?
+    expect: answer
+    objects: [finance.gl_entries]
+    sql: |
+      SELECT account_no, sum(debit) AS debits, sum(credit) AS credits
+      FROM finance.gl_entries WHERE fiscal_period = 202512 GROUP BY account_no
+
+  - id: g13
+    question: What was the average EUR to TRY exchange rate in each month of 2025?
+    expect: answer
+    order_matters: true
+    objects: [finance.fx_rates]
+    sql: |
+      SELECT date_trunc('month', rate_date)::date AS month, round(avg(rate), 4) AS average_rate
+      FROM finance.fx_rates
+      WHERE from_ccy = 'EUR' AND to_ccy = 'TRY'
+        AND rate_date >= DATE '2025-01-01' AND rate_date < DATE '2026-01-01'
+      GROUP BY 1 ORDER BY 1
+
+  - id: g14
+    question: Which supplier supplies the largest number of products?
+    expect: answer
+    objects: [product.suppliers, product.products]
+    identify_by: [name, supplier_id]
+    sql: |
+      SELECT s.name, s.supplier_id, count(*) AS products
+      FROM product.products p JOIN product.suppliers s ON s.supplier_id = p.supplier_id
+      GROUP BY s.name, s.supplier_id ORDER BY products DESC LIMIT 1
+
+  - id: g15
+    question: How many price records does the product with SKU TY-002443 have?
+    expect: answer
+    objects: [product.price_history, product.products]
+    sql: |
+      SELECT count(*) AS price_records
+      FROM product.price_history h JOIN product.products p ON p.product_id = h.product_id
+      WHERE p.sku = 'TY-002443'
+
+  - id: g16
+    question: What is the total amount of the legacy transactions per customer segment?
+    expect: answer
+    objects: [legacy.tb_trx02, crm.customers]
+    requires: ["legacy.tb_trx02.f2 -> crm.customers.customer_code"]
+    notes: the worst case — the legacy table's names say nothing
+    sql: |
+      SELECT c.segment, sum(t.f7) AS amount
+      FROM legacy.tb_trx02 t JOIN crm.customers c ON c.customer_code = t.f2
+      GROUP BY c.segment
+
+  - id: g17
+    question: What is the total amount of completed legacy transactions, those with status OK, per store city?
+    expect: answer
+    objects: [legacy.tb_trx02, store.stores]
+    requires: ["legacy.tb_trx02.f9 -> store.stores.store_code"]
+    sql: |
+      SELECT s.city, sum(t.f7) AS amount
+      FROM legacy.tb_trx02 t JOIN store.stores s ON s.store_code = t.f9
+      WHERE t.f8 = 'OK' GROUP BY s.city
+
+  - id: g18
+    question: On average, how many days passed between ordering and delivery for orders delivered in 2025?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT round(avg(extract(epoch FROM delivered_at - ordered_at) / 86400)::numeric, 1) AS average_days
+      FROM sales.orders
+      WHERE delivered_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
+        AND delivered_at < TIMESTAMPTZ '2026-01-01 00:00:00+00'
+
+  - id: g19
+    question: How many order events were recorded on each day of the first week of December 2025?
+    expect: answer
+    order_matters: true
+    objects: [sales.order_events]
+    sql: |
+      SELECT event_at::date AS day, count(*) AS events
+      FROM sales.order_events
+      WHERE event_at >= TIMESTAMPTZ '2025-12-01 00:00:00+00'
+        AND event_at < TIMESTAMPTZ '2025-12-08 00:00:00+00'
+      GROUP BY 1 ORDER BY 1
+
+  - id: g20
+    question: How many customers have a billing address in each city?
+    expect: answer
+    objects: [crm.addresses]
+    notes: billing is address type B
+    sql: |
+      SELECT city, count(DISTINCT customer_id) AS customers
+      FROM crm.addresses WHERE address_type = 'B' GROUP BY city
+
+  - id: g21
+    question: What is the total order amount of VIP customers, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders, crm.customers]
+    sql: |
+      SELECT sum(o.total_amount) AS amount
+      FROM sales.orders o JOIN crm.customers c ON c.customer_id = o.customer_id
+      WHERE c.segment = 'vip' AND o.status <> 'cancelled'
+
+  - id: c01
+    question: Who are our best customers?
+    expect: clarify
+    notes: best by what — amount, number of orders, recency?
+    clarified: the ten customers with the highest total order amount in 2025, cancelled orders excluded
+    objects: [sales.orders, crm.customers]
+    identify_by: [customer_code, customer_id]
+    rank_by: total_amount
+    sql: |
+      SELECT c.customer_code, c.customer_id, sum(o.total_amount) AS total_amount
+      FROM sales.orders o JOIN crm.customers c ON c.customer_id = o.customer_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY c.customer_code, c.customer_id ORDER BY total_amount DESC LIMIT 10
+
+  - id: c02
+    question: How are sales doing?
+    expect: clarify
+    notes: no measure, no period, no comparison
+
+  - id: c03
+    question: Show me the sales for Ankara.
+    expect: clarify
+    notes: store city or customer city; which measure; which period
+    clarified: the total order amount of the stores in Ankara in 2025, cancelled orders excluded
+    objects: [sales.orders, store.stores]
+    sql: |
+      SELECT sum(o.total_amount) AS total_amount
+      FROM sales.orders o JOIN store.stores s ON s.store_id = o.store_id
+      WHERE s.city = 'Ankara' AND o.status <> 'cancelled'
+        AND o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+
+  - id: c04
+    question: What is our market share in Turkey?
+    expect: clarify
+    notes: the market's size is not in the database — a clarification or "cannot answer"
+
+  # -- the owner's questions (P4-1, 2026-11-16), phrased from the business side -----------
+  # Each is ambiguous in a way that changes the numbers, so each expects a clarification
+  # (P4-4); `clarified` is the answer the owner would give, `sql` its reference. Whether
+  # Gaia's own best guess already matches it is what D61 measures.
+
+  - id: o01
+    question: Give me a list of top twenty most valuable customers.
+    expect: clarify
+    notes: valuable by amount, by number of orders, by margin? over which period?
+    clarified: by their total order amount of all time, cancelled orders excluded
+    objects: [sales.orders, crm.customers]
+    identify_by: [customer_code, customer_id]
+    rank_by: total_amount
+    order_matters: true
+    sql: |
+      SELECT c.customer_code, c.customer_id, sum(o.total_amount) AS total_amount
+      FROM sales.orders o JOIN crm.customers c ON c.customer_id = o.customer_id
+      WHERE o.status <> 'cancelled'
+      GROUP BY c.customer_code, c.customer_id ORDER BY total_amount DESC LIMIT 20
+
+  - id: o02
+    question: Show me ten dates in a year where the orders' average is greater than the other days but with the higher order counts
+    expect: clarify
+    notes: which year; "average" of what; above which average; how the order count ranks
+    clarified: in 2025, of the days whose average order amount is above the average order amount of all 2025 orders, the ten with the most orders
+    objects: [sales.orders]
+    rank_by: orders
+    sql: |
+      WITH d AS (
+        SELECT order_date, count(*) AS orders, avg(total_amount) AS average_amount
+        FROM sales.orders
+        WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+        GROUP BY order_date)
+      SELECT d.order_date, d.orders, round(d.average_amount, 2) AS average_amount
+      FROM d
+      WHERE d.average_amount > (
+        SELECT avg(total_amount) FROM sales.orders
+        WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01')
+      ORDER BY d.orders DESC, d.order_date LIMIT 10
+
+  - id: o03
+    question: Top 5 shops performing best last year.
+    expect: clarify
+    notes: performing by amount, orders, margin?; "last year" is 2025 (as_of 2026-01-15)
+    clarified: the five stores with the highest total order amount in 2025, cancelled orders excluded
+    objects: [sales.orders, store.stores]
+    identify_by: [store_code, name, store_id]
+    order_matters: true
+    sql: |
+      SELECT s.store_code, s.name, s.store_id, sum(o.total_amount) AS total_amount
+      FROM sales.orders o JOIN store.stores s ON s.store_id = o.store_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY s.store_code, s.name, s.store_id ORDER BY total_amount DESC LIMIT 5
+
+  - id: o04
+    question: Top 10 products in 2024 comparing with 2025
+    expect: clarify
+    notes: top by quantity or amount; ranked in 2024 or in 2025; what "comparing" shows
+    clarified: the ten products with the highest quantity ordered in 2024, each with its 2024 and its 2025 quantity
+    objects: [sales.order_lines, sales.orders, product.products]
+    identify_by: [sku, name, product_id]
+    rank_by: quantity_2024
+    sql: |
+      WITH q AS (
+        SELECT l.product_id,
+               sum(l.quantity) FILTER (WHERE o.order_date < DATE '2025-01-01') AS quantity_2024,
+               sum(l.quantity) FILTER (WHERE o.order_date >= DATE '2025-01-01') AS quantity_2025
+        FROM sales.order_lines l JOIN sales.orders o ON o.order_id = l.order_id
+        WHERE o.order_date >= DATE '2024-01-01' AND o.order_date < DATE '2026-01-01'
+        GROUP BY l.product_id)
+      SELECT p.sku, p.name, p.product_id, q.quantity_2024, q.quantity_2025
+      FROM q JOIN product.products p ON p.product_id = q.product_id
+      ORDER BY q.quantity_2024 DESC, p.sku LIMIT 10
+
+  - id: o05
+    question: Show me most returned products of all times
+    expect: clarify
+    notes: by number of returns or by units returned; how many products
+    clarified: the ten products with the most units returned
+    objects: [sales.returns, sales.order_lines, product.products]
+    identify_by: [sku, name, product_id]
+    rank_by: returned_quantity
+    sql: |
+      SELECT p.sku, p.name, p.product_id, sum(r.qty) AS returned_quantity
+      FROM sales.returns r
+      JOIN sales.order_lines l ON l.order_line_id = r.order_line_id
+      JOIN product.products p ON p.product_id = l.product_id
+      GROUP BY p.sku, p.name, p.product_id ORDER BY returned_quantity DESC, p.sku LIMIT 10
+
+  - id: o06
+    question: Top 5 most profitable products
+    expect: clarify
+    notes: profit realised on sales, or unit margin of the catalogue price; over which period
+    clarified: profit realised on sales, line subtotal minus quantity times unit cost, over all orders that were not cancelled
+    objects: [sales.order_lines, sales.orders, product.products]
+    identify_by: [sku, name, product_id]
+    order_matters: true
+    sql: |
+      SELECT p.sku, p.name, p.product_id, sum(l.line_subtotal - l.quantity * p.unit_cost) AS profit
+      FROM sales.order_lines l
+      JOIN sales.orders o ON o.order_id = l.order_id
+      JOIN product.products p ON p.product_id = l.product_id
+      WHERE o.status <> 'cancelled'
+      GROUP BY p.sku, p.name, p.product_id ORDER BY profit DESC LIMIT 5
+
+  - id: o07
+    question: Who was the best supplier in 2025?
+    expect: clarify
+    notes: best by sales of its products, number of products, margin?
+    clarified: the supplier whose products sold for the highest line subtotal in 2025, cancelled orders excluded
+    objects: [sales.order_lines, sales.orders, product.products, product.suppliers]
+    identify_by: [name, supplier_id]
+    sql: |
+      SELECT s.name, s.supplier_id, sum(l.line_subtotal) AS sales_amount
+      FROM sales.order_lines l
+      JOIN sales.orders o ON o.order_id = l.order_id
+      JOIN product.products p ON p.product_id = l.product_id
+      JOIN product.suppliers s ON s.supplier_id = p.supplier_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY s.name, s.supplier_id ORDER BY sales_amount DESC LIMIT 1
+

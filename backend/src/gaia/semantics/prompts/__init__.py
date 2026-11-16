@@ -31,8 +31,11 @@ class Prompt:
 
 
 @cache
-def load_prompt(name: str, major: int) -> Prompt:
+def load_prompt(name: str, major: int, package: str | None = None) -> Prompt:
+    """``<name>.v<major>.md`` from this package, or from ``package`` (e.g. the
+    query prompts of Phase 4, ``gaia.query.prompts``)."""
     filename = f"{name}.v{major}.md"
-    text = resources.files(__package__).joinpath(filename).read_text(encoding="utf-8")
+    text = resources.files(package or __package__).joinpath(filename).read_text(
+        encoding="utf-8")
     digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:10]
     return Prompt(name=name, text=text, version=f"{name}.v{major}+{digest}")

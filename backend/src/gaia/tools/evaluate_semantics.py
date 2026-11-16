@@ -5,6 +5,8 @@
            --file verification/labels_nge_small.csv           # the owner's 40-column template
     python -m gaia.tools.evaluate_semantics run    --out evaluations/nge_small \\
            --table dbo.transactions --with-neighbours         # conditions N-C N-P B-C B-P B-P-nt
+    python -m gaia.tools.evaluate_semantics freeze --out evaluations/nge_small \
+           --table dbo.transactions --with-neighbours         # inputs.json, no model
     python -m gaia.tools.evaluate_semantics judge  --out evaluations/nge_small --labels FILE
     python -m gaia.tools.evaluate_semantics audit  --out evaluations/nge_small   # owner's 20 %
     python -m gaia.tools.evaluate_semantics report --out evaluations/nge_small --labels FILE
@@ -12,7 +14,12 @@
 
 ``run`` reads the stored snapshot and Stage 1 evidence, runs each condition
 (``gaia.evaluation.runner``) and writes everything to ``--out``; it writes
-nothing to the metadata store. Profiled conditions run Stage 3 tests of their
+nothing to the metadata store. **The inputs are frozen** (2026-11-16): the first
+run in a directory — or ``freeze`` — writes the snapshot and the evidence to
+``<out>/inputs.json``, and every later run reads them from there, never from the
+store. So profiling or introspecting the target again between two conditions no
+longer changes what a condition sees (and no longer invalidates the recorded
+answers). Profiled conditions run Stage 3 tests of their
 own claims on the target (read-only; ``--no-stage3`` skips them). Every model
 answer is kept in ``<out>/llm``: re-running resumes, and judging or reporting
 again costs nothing for what was already asked.
@@ -53,7 +60,38 @@ def _path(text: str) -> Path:
 # -- loading ------------------------------------------------------------------------------
 
 
-async def _load(settings: Settings, args: argparse.Namespace):
+INPUTS = "inputs.json"
+
+
+def _frozen(out: Path, args: argparse.Namespace):
+    """(label, snapshot, scope, evidence) from ``<out>/inputs.json``, or None."""
+    from gaia.introspect.service import snapshot_from_document
+    from gaia.profiling.summary import StaticEvidence, TableEvidenceInput
+    from gaia.semantics.service import select_tables
+
+    path = out / INPUTS
+    if not path.exists():
+        return None
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    snapshot = snapshot_from_document(doc["snapshot"])
+    scope = select_tables(snapshot, schemas=args.schema or [], tables=args.table or [],
+                          with_neighbours=args.with_neighbours, limit=args.limit)
+    evidence = StaticEvidence(
+        {t["table"]: TableEvidenceInput.from_dict(t) for t in doc["evidence"]},
+        profiling_available=doc["profiling_available"])
+    return doc["data_source"], snapshot, scope, evidence
+
+
+def _freeze(out: Path, label: str, document: dict, evidence) -> Path:
+    path = out / INPUTS
+    doc = {"data_source": label, "frozen_at": datetime.now(UTC).isoformat(timespec="seconds"),
+           "snapshot": document, "profiling_available": evidence.profiling_available,
+           "evidence": [t.to_dict() for t in evidence.tables.values()]}
+    path.write_text(json.dumps(doc, ensure_ascii=False, default=str), encoding="utf-8")
+    return path
+
+
+async def _load(settings: Settings, args: argparse.Namespace, with_document: bool = False):
     """(label, snapshot, scope tables, stored evidence) — read only."""
     from gaia.db.repositories.profile_store import ProfileStore
     from gaia.db.repositories.semantics_store import SemanticsStore
@@ -75,8 +113,11 @@ async def _load(settings: Settings, args: argparse.Namespace):
                                   with_neighbours=args.with_neighbours, limit=args.limit)
             evidence = await ProfileStore(session).load_evidence(
                 ds.id, snapshot, enabled=profiling_enabled(settings, label))
+            document = record.document
     finally:
         await dispose_engine()
+    if with_document:
+        return label, snapshot, scope, evidence, document
     return label, snapshot, scope, evidence
 
 
@@ -138,10 +179,36 @@ def cmd_labels(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_freeze(settings: Settings, args: argparse.Namespace) -> int:
+    out = _path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
+    if (out / INPUTS).exists() and not args.overwrite:
+        doc = json.loads((out / INPUTS).read_text(encoding="utf-8"))
+        print(f"{out / INPUTS} exists (frozen {doc.get('frozen_at')}); --overwrite to freeze "
+              "again — recorded answers may then no longer match")
+        return 0
+    label, _snapshot, scope, evidence, document = asyncio.run(
+        _load(settings, args, with_document=True))
+    path = _freeze(out, label, document, evidence)
+    print(f"froze the snapshot and the evidence of {label} ({len(scope)} object(s) in scope) "
+          f"in {path}")
+    return 0
+
+
 def cmd_run(settings: Settings, args: argparse.Namespace) -> int:
     out = _path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    label, snapshot, scope, evidence = asyncio.run(_load(settings, args))
+    frozen = _frozen(out, args)
+    if frozen is not None:
+        label, snapshot, scope, evidence = frozen
+        if args.target and args.target != label:
+            raise SystemExit(f"{out} was frozen for {label!r}, not {args.target!r}")
+        print(f"inputs: frozen in {out / INPUTS} (the store is not read)")
+    else:
+        label, snapshot, scope, evidence, document = asyncio.run(
+            _load(settings, args, with_document=True))
+        _freeze(out, label, document, evidence)
+        print(f"inputs: read from the store and frozen in {out / INPUTS}")
     codes = args.condition or DEFAULT_CONDITIONS
     unknown = [c for c in codes if c not in CONDITIONS]
     if unknown:
@@ -173,15 +240,23 @@ def cmd_run(settings: Settings, args: argparse.Namespace) -> int:
                       seed=args.seed)
     status = 0
     for code in codes:
+        new_before, replayed_before = llm.live_calls, llm.replayed
         summary = run_condition(ctx, code)
-        live = sum(1 for c in summary["calls"] if not c["cache"])
-        print(f"{code:<8} {summary['columns']} column(s), {live} call(s), "
+        new, replayed = llm.live_calls - new_before, llm.replayed - replayed_before
+        incomplete = summary["failed"] + [f"critique: {c}" for c in summary["critique_failed"]]
+        print(f"{code:<8} {summary['columns']} column(s), {new} new call(s), {replayed} replayed, "
               f"{summary['wall_s']} s; second round: {len(summary['second_round'])}"
-              + (f"; FAILED {len(summary['failed'])}" if summary["failed"] else ""))
-        for note in summary["notes"] + summary["failed"]:
+              + (f"; FAILED {len(summary['failed'])}" if summary["failed"] else "")
+              + (f"; CRITIQUE FAILED {len(summary['critique_failed'])}"
+                 if summary["critique_failed"] else ""))
+        for note in summary["notes"] + incomplete:
             print(f"           - {note}")
-        status = status or (2 if summary["failed"] else 0)
+        status = status or (2 if incomplete else 0)
     print(f"model calls: {llm.live_calls} new, {llm.replayed} replayed from {out / 'llm'}")
+    if status:
+        print("incomplete: run the same command again — calls that got no answer (gateway "
+              "errors) are asked again; recorded answers, even invalid ones, are replayed as "
+              "they are (send the output if the same item fails twice)")
     return status
 
 
@@ -271,6 +346,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-stage3", action="store_true")
     p.add_argument("--replay", metavar="DIR")
     p.add_argument("--seed", type=int, default=42)
+    p = sub.add_parser("freeze", help="freeze the snapshot and evidence of a run (no model)")
+    scope(p)
+    p.add_argument("--out", required=True)
+    p.add_argument("--overwrite", action="store_true")
     p = sub.add_parser("judge", help="judge the answers against labels or names")
     p.add_argument("--out", required=True)
     p.add_argument("--labels", action="append", help="labels CSV (repeatable)")
@@ -292,7 +371,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     settings = get_settings()
-    commands = {"plan": cmd_plan, "labels": cmd_labels, "run": cmd_run, "judge": cmd_judge,
+    commands = {"plan": cmd_plan, "labels": cmd_labels, "run": cmd_run, "freeze": cmd_freeze,
+                "judge": cmd_judge,
                 "audit": cmd_audit, "report": cmd_report, "cost": cmd_cost}
     try:
         return commands[args.command](settings, args)

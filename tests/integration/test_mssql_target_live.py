@@ -146,3 +146,60 @@ def test_module_definitions_and_view_lineage(target, mssql_snapshot):
         # NULL definitions mean the login lacks VIEW DEFINITION (see OWNER_VERIFICATION)
         assert any(modules.get((v.schema, v.name), (None, None))[1] for v in views)
         assert counts["pass_through"] + counts["computed"] > 0
+
+
+# -- Phase 4A: the T-SQL guard and the executor, live (asynchronous, D52) -----------------------
+
+
+def _guard(snapshot, row_limit=50):
+    from gaia.dialects.mssql.guard import MssqlGuard
+    from gaia.query.catalog import GuardCatalog
+
+    return MssqlGuard(GuardCatalog.from_snapshot(snapshot), row_limit=row_limit)
+
+
+def test_guarded_statements_run_on_sql_server(target, mssql_snapshot):
+    """What the guard renders is valid T-SQL: TOP on a plain query, a wrapped set
+    operation, a declared-FK join; the row cap holds."""
+    from gaia.query.executor import execute
+
+    tables = sorted((t for t in mssql_snapshot.tables if t.kind == "table" and t.columns),
+                    key=lambda t: t.estimated_rows or 0)
+    small = tables[0]
+    guard = _guard(mssql_snapshot)
+    # statements built from catalog names are exactly what the guard is for
+    plain = guard.check(f"SELECT * FROM [{small.schema}].[{small.name}]")  # noqa: S608
+    assert plain.ok and "TOP 50" in plain.sql, plain.errors
+    r = execute(target, plain, row_limit=50)
+    assert r.ok and len(r.rows) <= 50, r.error
+
+    col = small.columns[0].name
+    union = guard.check(f"SELECT [{col}] FROM [{small.schema}].[{small.name}] UNION "  # noqa: S608
+                        f"SELECT [{col}] FROM [{small.schema}].[{small.name}]")
+    assert union.ok, union.errors
+    assert execute(target, union, row_limit=50).ok
+
+    rel = next(r for t in tables for r in t.relations if len(r.from_columns) == 1)
+    join = guard.check(
+        f"SELECT COUNT_BIG(*) AS n FROM [{rel.from_schema}].[{rel.from_table}] a "  # noqa: S608
+        f"JOIN [{rel.to_schema}].[{rel.to_table}] b "
+        f"ON a.[{rel.from_columns[0]}] = b.[{rel.to_columns[0]}]")
+    assert join.ok and [j.kind for j in join.joins] == ["fk"], join.errors
+    r = execute(target, join, row_limit=50, statement_timeout_s=60)
+    assert r.ok and r.rows[0][0] >= 0, r.error
+    print(f"\n{small.schema}.{small.name}: {len(execute(target, plain, row_limit=50).rows)} rows; "
+          f"join {rel.from_table} -> {rel.to_table}: {r.rows[0][0]}")
+
+
+def test_executor_timeout_and_forced_write_on_sql_server(target):
+    """The executor's own guarantees, with statements forced past the guard: the ODBC
+    query timeout cancels, and the read-only login refuses DDL (permission error)."""
+    from gaia.query.executor import execute
+    from gaia.query.validator import GuardResult
+
+    waiting = GuardResult("mssql", "x", sql="WAITFOR DELAY '00:00:06'")
+    r = execute(target, waiting, row_limit=10, statement_timeout_s=2)
+    assert r.status == "timeout" and r.elapsed_ms < 5000, r
+    forced = GuardResult("mssql", "x", sql="CREATE TABLE dbo.gaia_forced (a int)")
+    r = execute(target, forced, row_limit=10)
+    assert r.status == "error" and ("262" in r.error or "permission" in r.error.lower()), r.error

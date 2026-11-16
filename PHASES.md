@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-15 · Status: Phases 0–2 complete and verified · Phase 3 in progress: 3.P done and host-verified; 3.0 owner-verified; 3B and 3A owner-verified with defects — all fixes and the owner's decisions of 2026-11-15 built (OWNER_VERIFICATION §12 pending); **3C harness built**, runs pending (OWNER_VERIFICATION §13). Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
+> Last updated: 2026-11-16 (4F) · Status: Phases 0–2 complete · Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B done; **3C**: B-C and B-P complete on the host (§14b), the rest pending — inputs now frozen (D66) · **D52**, **D56** · **Phase 4 built in the sandbox**: 4A (guard; D57, D58), 4B (retrieval; D59, D63), 4C (answering; D60), 4D (golden runs; D62), 4E (chat API; D64), **4F (data sources; D65)**; the gate waits for the configured model's golden run (OWNER_VERIFICATION §18b) · **D61** clarifications remembered, threshold accepted by the owner · **D66** the owner's runs in parallel tracks (`scripts/owner_runs.sh`). Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -38,8 +38,8 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 0 | Infrastructure, config, health, target verification | **DONE** | ✅ approved |
 | 1 | Catalog introspection, hashing, incremental diff | **DONE** | ✅ approved |
 | 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
-| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P done; 3.0 verified; 3A/3B owner-verified, fixes in progress ("Owner verification (2026-11-15)"); 3C next | ✅ approved 2026-11-14 · sub-gates 3.0 / 3A / 3B / 3C open |
-| 4 | Retrieval, SQL generation (T-SQL + PostgreSQL), guarded execution, data-source management | **planned** | ⬜ |
+| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P, 3.0, 3A (PostgreSQL), 3B done; 3C harness built, host runs resuming after fixes ("Owner runs of §12 and §13b"); SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · 3.0 ✅ 3A ✅ (PostgreSQL) 3B ✅ · 3C open |
+| 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **BUILT in the sandbox** — 4A (guard, executor), 4B (retrieval), 4C (answering; `make ask`), 4D (golden runs; `make golden`), 4E (chat API), 4F (data sources; `make datasource`); the golden run with the configured model pending (host, §18b) — the gate's last number | ✅ approved 2026-11-16 (4A first) |
 | 5 | Web UI: SME review first, then chat (R1) | **planned** | ⬜ |
 | 6 | Evaluation harness, score calibration from SME labels (per model) | **planned** | ⬜ |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence | **backlog** | ⬜ |
@@ -60,8 +60,9 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | 10 tables, 99 columns, 109 embeddings, 94 join hints |
-| Tests | 380 passed, 8 skipped in the sandbox with both PostgreSQL databases (skips: SQL Server live, Ollama live); 388 on a host with everything |
-| Migrations | `0001`–`0006` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`) |
+| Tests | 626 passed, 10 skipped in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live); **636** on a host with everything |
+| Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
+| Migrations | `0001`–`0010` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`) |
 
 ---
 
@@ -1529,6 +1530,56 @@ Tests: 380 passed, 8 skipped in the sandbox (`test_evaluation.py`,
 fake model and judge, no identifier in blind prompts, no semantics written,
 resumed run makes no call, judge → audit → report).
 
+### Owner runs of §12 and §13b (2026-11-15/16) and fixes
+
+**§12 (no LLM)** — outputs in `verification/12_*`, reviewed 2026-11-16.
+
+| # | Expected | Observed | Verdict |
+|---|---|---|---|
+| 1 | `make test`: 388 passed, 0 skipped | **380 passed**, 0 skipped | the host ran the code before the 3C harness (then 372 + 8 live = 380): not a failure, but not the code §12 was written for. Outputs now start with `make stamp` (build + git hash) |
+| 2 | `line_count → payroll_line_id`, `…units_sold → …`, `line_count / units → …customer_key`: `(not kept) (weak: dense integer key)` | kept: 99 % / 99 %, 96 %, 94 % | **D3b did not hold on SQL Server** → D54 below |
+| 3 | `dw.sales_wide` `profiled`, or fewer than 25 columns not exact | `partial`: 20 distinct counts not exact, 5 column scans not run, 123 s | partly. SQL Server only; non-blocking under D52. Its metrics come from the sample and are labelled so |
+| 4 | `12_rescore_pg`: every table `rescored`, `calls=0` | 9 rescored, 1 `needs_reasoning` (`hr.employees`, new), `calls=0` | yes |
+| 5 | `12_review_pg`: `tb_trx02.f2`, `f9` not in the queue | not in the queue | yes (D49 confirmed) |
+
+*D54 — why D3b did not hold, and the neighbour control.* D3b measured the
+key's density over the range between the smallest and largest tested value.
+Counts break that model: most are small (where payroll ids are dense), a few
+are huge (where ids are sparse), so the density over their whole range is low
+and a 99 % pass looks specific. Reproduced in the sandbox with 197 small counts
+and 3 outliers against a key dense to 20,000 and sparse beyond: 98.5 % found,
+`specific`, kept — the owner's pattern (a few values, the outliers, not found).
+The fix asks no model of the distribution: the same inclusion statement runs on
+a **neighbour** of each value (value + a seeded offset of 1–97), which is
+distributed like the values but has no reason to be a key. Neighbours found
+about as often as the values mean chance. The result is specific only if that
+many hits are < 1 % likely at the larger of the neighbour rate and the density.
+The reproduction becomes `nearby integers … 98 % … weak evidence`, not kept; a
+true reference into sparse ids stays specific (1 %). The offset is not simply
++1 because a `yyyymmdd` key's next integer is usually the next day: with +1 a
+real date-dimension join (100 dates) looked like chance (98 %); with offsets up
+to 97 it stays specific (31 %). It reuses `inclusion_sql`, which already runs on SQL
+Server, so no new T-SQL. One extra index seek per integer test that reached
+the keep threshold. A failed density or control query is now written into the
+test's detail instead of being swallowed. `demo_pg`'s Stage 1 results are
+byte-identical (its candidates are text codes).
+
+**§13b (LLM, 2026-11-15 21:46 → 16th)** — `B-C` 99 columns, 20 calls, 1,834 s;
+`B-P` 85 columns, 19 calls, 3,220 s, `FAILED 1`. Everything answered is kept
+in `evaluations/nge_small/llm` (37 answers + 3 judge calls) and is replayed
+when the command is run again.
+
+| # | Finding | Fix |
+|---|---|---|
+| E1 | `dbo.customer_addresses` (14 columns, not wide) failed in B-P: `output truncated at max_tokens=16000`. The call's usage: **12,437 thinking + 3,563 answer tokens**, 924 s. With thinking on, `max_tokens` covers the chain of thought *and* the answer; the same table took 5,739 thinking tokens in B-C, the evidence made the model think twice as long. Thinking per call ranged 340–12,437 over this run: not predictable from the bundle. The error's advice ("raise `llm.max_output_tokens` for wide tables") was wrong twice: the table was not wide, and at this gateway's speed (median 15 tokens/s, slowest 8.3) a 32k answer outlasts `llm.timeout_s` (1,800 s) — and a changed `max_tokens` changes every request key, so all 37 recorded answers would be asked again | **D53**: a truncated answer is asked again with at most half the columns of the chunk that truncated (14 → 7 → 4 → 2, `MAX_TRUNCATION_SPLITS = 3`); a truncated critique is asked again in halves. Answers that fit are asked exactly as before (byte-identical prompts, so recordings and caches still apply). The evaluation recorder now keeps truncated answers, so a resumed run goes straight to the split instead of paying for the same 15-minute call. The message says where the tokens went. Same code path for `make reason` |
+| E2 | In B-C the **critique of `dbo.payments` failed** (no response; transport error) and nothing said so: `failed` and `notes` were empty, its 7 columns were scored with the critique "not assessed" | the summary lists `critique_failed`, the command prints `CRITIQUE FAILED n` and exits 2; each call keeps its error in `results.json`; the report lists such tables. The failed call was not recorded, so running the command again asks it again |
+| E3 | Criterion 1 compared B-P over 85 columns with B-C over 99 | **D55**: criteria 1 and 2 compare two conditions on the columns both answered and both had judged, and say how many were left out |
+
+Tests: 393 passed, 8 skipped in the sandbox (new: truncation and critique
+splits, the neighbour control (counts with outliers; a date-key join stays specific), a failed query in the detail, the paired
+comparison, and on `demo_pg` a B-P run whose every table truncates until split
+plus a silently failing critique, re-run with no new call).
+
 ### Roadmap impact — accepted 2026-11-14 and applied
 
 R1 → Phase 5 rewritten; R2 → Phase 4 retrieval rule; R3 → Phase 6; R4 → migration
@@ -1547,20 +1598,56 @@ references; R5 → decisions log; R6 → Phase 7 backlog.
 
 - [x] **Approved to start Phase 3** · [x] decisions P3-1 … P3-13 answered · [x] roadmap proposals R1–R6 accepted (2026-11-14)
 - [x] 3.P → approved to start 3.0 (owner, 2026-11-14, on code review; the host run is carried into the 3.0 owner steps)
-- [ ] 3.0 complete → approved to start 3A *(ready: every 3.0 criterion is ticked on the host, 2026-11-15)*
-- [ ] 3B verified with the configured model on the host (`OWNER_VERIFICATION.md` §6) *(ready: §6–§8, 2026-11-15)*
-- [ ] 3A complete → *(ready once OWNER_VERIFICATION §12 — no LLM — confirms D3b/D49; §11e
-      re-reasoning deferred by the owner, gateway slow)*, then approval to start 3C
-- [ ] 3B complete (with the configured model, above) → together with 3A, approval to start 3C
-- [ ] 3C complete → **Phase 3 done**
+- [x] 3.0 complete → approved to start 3A *(owner, 2026-11-16: every 3.0 criterion was ticked on
+      the host on 2026-11-15)*
+- [x] 3B verified with the configured model on the host (`OWNER_VERIFICATION.md` §6) *(owner,
+      2026-11-16)*
+- [x] 3A complete — **PostgreSQL** *(owner, 2026-11-16, under D52: every PostgreSQL criterion met
+      on the host, D49 confirmed by §12)*. SQL Server residue, tracked, not blocking (D56):
+      D54 on the counts and `dw.sales_wide` (OWNER_VERIFICATION, SQL Server track S2, S3)
+- [x] 3B complete (with the configured model, above) → together with 3A, approval to start 3C
+      *(owner, 2026-11-16; 3C was started on 2026-11-15)*
+- [ ] 3C complete → **Phase 3 done** *(runs resuming on `nge_small`, §14b — the LLM-bound
+      part; Phase 4 did not wait, P4-9)*
 
 ---
 
-## Phase 4 — Retrieval, SQL generation, guarded execution
+## Phase 4 — Retrieval, SQL generation, guarded execution · **built in the sandbox (2026-11-16); gate waits for §18b**
 
 **Goal.** Turn a business question into correct, safe SQL over the configured
-targets — SQL Server (`nge_small`) and PostgreSQL (`demo_pg`, if P4-7 is
-adopted) — and return an answer.
+targets — **PostgreSQL first** (`demo_pg`), then SQL Server (`nge_small`), per
+D52 — and return an answer.
+
+### What D52 changes here
+
+* Every dialect-specific piece (the guard, the generator's dialect, the executor,
+  the golden set's expected SQL and results) is built and **accepted on
+  PostgreSQL**, where the assistant can run it end to end. The T-SQL counterpart
+  follows in the same step, with tests.
+* Offline T-SQL tests (every generated statement parsed by `sqlglot`, the guard's
+  adversarial suite in T-SQL) run anywhere and stay in the suite. Live SQL Server
+  results are asynchronous items in OWNER_VERIFICATION and are not acceptance
+  criteria — except where D52's safety refinement applies (below, "Decisions").
+* P4-7 is settled: PostgreSQL is in scope, and first.
+
+### Order of work
+
+| Step | What | Verifiable in the sandbox | Needs the host |
+|---|---|---|---|
+| 4A | **Guard and executor**, PostgreSQL: `sqlglot` AST validation (single statement, `SELECT`/`WITH` only, forbidden functions, identifiers resolved against the catalog, join paths from FKs and D48 hints, `LIMIT` injection), execution in a `READ ONLY` transaction with timeout and row cap; chat/query-run migration (`0007`), every run pinning snapshot and semantic version; the adversarial suite. Then the T-SQL guard with offline tests | fully | — |
+| 4B | **Retrieval**: pgvector similarity + full-text/trigram + join expansion (declared FKs first, then `inferred` hints with a passed, specific test — D48), every non-abstain meaning ranked by score with uncertainty disclosed (R2); `semantic_type` hints for generation | fully (replayed semantics, fake embeddings) | Ollama for real embeddings |
+| 4C | **Planner, generator, repair, answer**: thinking off (`llm.thinking.sql_generation: false`), validate → execute → repair (≤ 2 attempts), clarification when ambiguous, the answer (narrative + table + SQL); `make ask` | functionally (replay provider, D30) | the gateway, for real answers |
+| 4D | **Golden set**: questions, expected SQL and expected results; a runner and report (executable %, correct-result %, latency, tokens) | the `demo_pg` set's expected results | the run with the configured model |
+| 4E | **API**: SSE chat endpoint | fully | — |
+| 4F | **Data-source management** (encrypted credentials, `TargetResolver`, onboarding probe reused from 3.P, audit of connection changes) — **done** (D65) | fully | a master key in `.env` |
+
+Host prerequisite, any time during 4A–4B: current semantics for all of
+`demo_pg` (`make reason TARGET=demo_pg`, 28 objects, roughly 50 calls — an
+overnight run; §11e is part of it).
+
+Estimate for 4D on the host: ~20 questions × 2–4 calls (generate, at most two
+repairs, answer), thinking off, short outputs — tens of seconds per call at the
+gateway's ~15 tokens/s, so about an hour, not a night.
 
 ### Deliverables
 
@@ -1575,16 +1662,16 @@ adopted) — and return an answer.
   decision when ambiguous
 - `query/generator.py` — SQL generation in the target's dialect with compact schema context
 - `query/validator.py` + `dialects/<d>/guard.py` — `SqlGuard` per dialect on a
-  `sqlglot` AST (`read="tsql"` / `read="postgres"`)
+  `sqlglot` AST (`read="postgres"` first, then `read="tsql"`)
 - `query/executor.py` — read-only execution, timeouts, row caps
 - `query/answerer.py` — natural-language answer from results
 - `api/chat.py` — SSE streaming endpoint
-- `db/models/chat.py`, chat migration (number assigned at creation, R4)
-- `tools/ask.py` CLI
+- `db/models/chat.py`, chat migration (`0007`, number assigned at creation, R4)
+- `tools/ask.py` CLI (`make ask`), golden-set runner (`make golden`)
 - **Data source management** (see OUTLINE §24): encrypted credentials on
-  `catalog.data_sources` (next free migration number — `0004` is taken by Phase 3, see R4), a `TargetResolver` that reads targets from the
+  `catalog.data_sources`, a `TargetResolver` that reads targets from the
   database, the onboarding probe reused from `dialects/<d>/probe.py` (3.P), per-target
-  limits, and an audit table for connection changes
+  limits, and an audit table for connection changes (step 4F)
 
 ### Validation rules (non-negotiable)
 
@@ -1604,34 +1691,349 @@ never the only guardrail.
 
 ### Acceptance criteria
 
-- [ ] A golden set of ~20 business questions returns executable SQL for ≥80%
-- [ ] Zero statements outside `SELECT`/`WITH` reach execution, including adversarial
-      prompts (enforced by test, not by inspection)
-- [ ] Every `query_run` pins `snapshot_id` and semantic version
-- [ ] Execution respects timeout and row cap; violations are recorded
-- [ ] Repair loop bounded at 2 attempts; failures surfaced, not hidden
-- [ ] Ambiguous questions produce a clarification request instead of a guess
-- [ ] Latency and tokens recorded per run
+- [ ] The `demo_pg` golden set (~20 questions) returns executable SQL for ≥ 80 % and the
+      expected result for ≥ 70 %, with the configured model on the host *(the second
+      threshold is new, proposed 2026-11-16: executable but wrong SQL is the costlier failure)*
+      *(4D: the set has 32 questions — 21 to answer, 11 to clarify, 7 of them the owner's; 30
+      with a reference; the runner and comparison are built and tested with a scripted model;
+      the measurement is `make golden` on the host, OWNER_VERIFICATION §18b)*
+- [x] Zero statements outside `SELECT`/`WITH` reach execution, including adversarial
+      prompts (enforced by test, not by inspection) — PostgreSQL **and** T-SQL guard
+      (offline tests; both blocking, D52 refinement b) *(4A + D58: 78 + 46 refused statements,
+      `test_sql_guard_pg.py`, `test_sql_guard_tsql.py`; sqlglot 25.30–30.30)*
+- [x] Every `query_run` pins `snapshot_id` and semantic version *(4A, `test_query_pg.py`)*
+- [x] Execution respects timeout and row cap; violations are recorded *(4A on PostgreSQL;
+      SQL Server live: track S4)*
+- [x] Repair loop bounded at 2 attempts; failures surfaced, not hidden *(4C: guard refusals,
+      database errors and timeouts repaired; exhausted repairs end `failed` with every attempt
+      and its problem; `test_ask_pg.py`)*
+- [ ] Ambiguous questions produce a clarification request instead of a guess *(4C: built — the
+      prompt's rule (P4-4), a clarification without the model when nothing matches, the
+      golden set's four clarify questions; to be measured with the configured model in 4D)*
+- [x] Latency and tokens recorded per run *(4C: per attempt on `chat.query_run`, per call in
+      `audit.llm_call`)*
+- [ ] Retrieval *(proposed with 4B, a trial like the correct-result target)*: on the `demo_pg`
+      question set, with real meanings and `bge-m3` on the host, every expected object is in the
+      context for ≥ 90 % of the questions and joined there for ≥ 80 % (sandbox, names-only
+      meanings, no vectors: 100 % and 86 %)
+- *Asynchronous, not blocking (D52):* the `nge_small` golden questions on SQL Server
+
+### 4A results (2026-11-16, sandbox: PostgreSQL 16 target and metadata store)
+
+Built (D57): `query/validator.py` (the dialect-independent guard), `query/catalog.py`
+(objects and join-path key classes from the store), `dialects/postgres/guard.py`,
+`dialects/mssql/guard.py` (registered lazily), `query/executor.py`,
+`query/guard.py`, `db/models/chat.py` + migration `0007` (`chat.query_run`),
+`db/repositories/query_store.py`, `tools/query.py` (`make query`, `make query-check`),
+config `query.unverified_joins`.
+
+Verified:
+
+* **Adversarial suites**, blocking: PostgreSQL 75 statements refused with a specific
+  code (DML/DDL, `COPY … PROGRAM`, `DO`, `CALL`, `SET`/`RESET`, `LISTEN`, writable CTEs,
+  `SELECT INTO`, `FOR UPDATE`, `set_config`, `query_to_xml`, `dblink`, `pg_sleep`,
+  `pg_read_file`, `lo_import`, `nextval`, advisory locks, system catalogs, unknown or
+  ambiguous objects and columns, unbacked joins …) and 19 realistic statements accepted;
+  T-SQL 45 refused (`EXEC`, `OPENROWSET`/`OPENQUERY`/`OPENDATASOURCE`, linked servers,
+  other databases, `#temp`, `SELECT INTO`, locking hints, `OPTION`, `@variables`,
+  `NEXT VALUE FOR`, `WAITFOR`, `SHUTDOWN` …) and 10 accepted; row caps on both. The same
+  suites pass with sqlglot 25.30, 26.17, 27.29, 28.10 and 30.30; where old parsers differ
+  they refuse (safe), never accept.
+* **Parser surprises the design absorbs**: `LISTEN x` parses as an alias, `SHUTDOWN` as a
+  column, `EXPLAIN`/`DO`/`CALL` as commands (hence a root allowlist); `… FROM t SHUTDOWN`
+  executes as an alias because the rendering is what runs; `qualify` expands `NATURAL` and
+  `USING` joins and does not check tables (hence table resolution first and `NATURAL` on
+  the original tree); `TOP … PERCENT` keeps its flag in different places per version.
+* **On `demo_pg`** (`test_query_pg.py`): 11 realistic statements — FK chains, CTEs,
+  windows, a `generate_series` date spine against a view, a materialized view,
+  `percentile_cont`, a self-reference, legacy `yyyymmdd` arithmetic, two FKs to one key —
+  accepted *and executed*; a D48 hint with a passed test joins, view lineage carries it to
+  `rpt.v_legacy_transactions`, a `refuted` hint does not (mutation-checked: accepting
+  refuted hints fails the test); a 1 s statement timeout cancels; the cap returns 5 of
+  250,000 rows and says so; a `CREATE TABLE` forced past the guard meets "read-only
+  transaction"; runs are recorded with snapshot and `sales.orders` semantic version 1.
+* Migration `0007`: DDL identical to the model (`pg_dump` diff), downgrade and upgrade clean.
+
+Not verified here (SQL Server track, D56): the T-SQL guard's output executed on SQL
+Server, its timeout and a forced write (S4). Known limits, by design for now:
+`LATERAL` / `CROSS APPLY` (top-N per group) and semi-joins are not join-checked —
+the former are rejected, the latter (`EXISTS`, `IN`) allowed; mixed-case PostgreSQL
+object names are rejected by the qualifier (none exist in `demo_pg` or `nge_small`).
+
+Tests: 565 passed, 10 skipped in the sandbox (skips: 8 SQL Server live, 2 Ollama).
+
+### 4B results (2026-11-16, sandbox)
+
+Built (D59): `query/retrieval.py` (ranking, join expansion, column choice, budget,
+rendering), `query/retrieval_store.py` (the index from the store; pgvector search),
+`tools/retrieve.py` (`make retrieve`, `make retrieval-eval`), config `retrieval.*`,
+question sets `infra/pg-target/retrieval_questions.csv` (22) and
+`infra/sqlserver/retrieval_questions.csv` (10, a draft for the owner to correct).
+
+**A defect in 4A found while building 4B (D58).** 4A made view lineage a join edge
+and accepted joins between two children of one key (`shared_key`). Both let rows
+multiply: `v_daily_sales.channel = sales.orders.channel` was a "join", and
+`order_lines ⋈ payments ON order_id` pairs every payment with every line of its
+order — a sum over it is silently wrong (the *fan trap*, the commonest silent error of
+generated SQL). Now: lineage is an alias (a view column *is* its base column), and
+every join must, besides following a join path, have **one unique side** — a key of
+the catalog (PK, single-column unique constraint or unfiltered unique index), a
+derived table grouped by the join column (or a single-column `DISTINCT`), or a
+generated series. The refusal says what to do ("aggregate one side by the join
+column first, or join through the parent"), for the repair loop. Sibling joins
+stay possible after aggregation. New refusals in the suites (fan-outs on both
+dialects, a view joined back to its base on a non-key); the guard suites pass on
+sqlglot 25–30 again.
+
+Verified:
+
+* **Unit** (`test_retrieval.py`, synthetic index): tokens (abbreviations, camelCase,
+  stems, "last month" is a time filter, not words); meanings and synonyms rank the
+  right objects; *values find filter columns* ("web orders from Istanbul" → `channel`,
+  `city`); an object with no meaning is found by its names and still gets its
+  `semantic_type` hint; a two-bridge path (`products ← order_lines → orders →
+  customers`); confidence raises rank, never filters (R2); vector hits add what words
+  miss; uncertain meanings and personal-data columns are disclosed; truncated value
+  lists say so; wide objects keep keys, join and matched columns; the budget trims the
+  lowest ranked first; unconnected objects are noted; deterministic output; T-SQL and
+  PostgreSQL conversion hints; **every join a context offers passes the guard**.
+* **On `demo_pg`** (`test_retrieval_pg.py`; fake meanings from names, fake vectors):
+  28 objects indexed; an abstained meaning is not used (the column keeps its name);
+  no values for `email` and `phone` (personal), enum labels for `segment`, the
+  profiled values of `channel`, date ranges, `date_int` on `legacy.tb_trx02.f3`;
+  pgvector returns a stored meaning as its own nearest neighbour, only current
+  versions, never another model's vectors; every join offered for three questions
+  passes the guard *and runs*.
+* **A names-only baseline** on the 22 `demo_pg` questions (no vectors, meanings
+  derived from names, questions written by the designer of the database — a
+  functional number, not accuracy): every expected object in the context 100 %,
+  joined there 86 %, recall@5 91 %, MRR 0.92, 5.6 objects and ~1,800 tokens per
+  context. The three not joined are exactly the joins that exist only as model hints
+  (`legacy.tb_trx02.f2`, `f9`, `sales.orders.sales_rep_id`) — the sandbox has no
+  model; the owner's store has the first two. Tighter cutoffs saved ~160 tokens and
+  lost coverage: defaults kept until real numbers come from the host.
+
+Not verified here: retrieval with real meanings and `bge-m3` (OWNER_VERIFICATION
+§16, L5), and on `nge_small` (S6). Known limits: English only (`app.locale`);
+lexical matching has no fuzzy spelling; a question naming a value that is not among
+the profiled top values (a rare city) finds the column only through its meaning.
+
+Tests: 588 passed, 10 skipped in the sandbox.
+
+### 4C results (2026-11-16, sandbox)
+
+Built (D60): `query/planner.py` (what the model returns, its messages),
+`query/prompts/generate_sql.v1.md` and `answer.v1.md` (versioned like the semantics
+prompts), `query/ask.py` (retrieve → generate → guard → execute → repair → narrate,
+confidence), `query/answerer.py` (the narrative; masking; fallback), `query/golden.py`
+(the golden file format), `QueryStore.record_answer`, `tools/ask.py` (`make ask`), config
+`llm.thinking.answer`, `query.rows_to_model`, `query.as_of`. The golden set of `demo_pg`
+(P4-1, the assistant's part): `infra/pg-target/golden.yaml`, 21 questions with reference
+SQL and 4 that must be clarified, `as_of` 2026-01-15.
+
+Verified:
+
+* **Every path on `demo_pg`** (`test_ask_pg.py`, a scripted model): an answer (result =
+  the SQL run directly, narrative, confidence); a database error (`invalid input syntax`)
+  repaired in the same conversation; a timeout repaired; three refused statements
+  (`pg_sleep`, `DELETE`, a system catalog) ending `failed` after 2 repairs with **nothing
+  executed**; a clarification with options; "cannot answer" with its reason; a result
+  with e-mail addresses that the user sees and the narrative model does not (`[hidden]`,
+  D24); one `chat.query_run` per attempt, chained by `parent_id`, with model and tokens,
+  and every call in `audit.llm_call`.
+* **The golden set through the whole pipeline**: all 21 reference queries are accepted by
+  the guard and return exactly what they return when run directly (so every golden
+  answer is reachable — including the two legacy questions through the model hints), the
+  four clarify questions end as clarifications, and retrieval (names only, no vectors)
+  held every object each answer needs, 21 of 21.
+* **A replay run of `make ask`** with the assistant as the model (D30, functional only): a
+  first answer that joined order lines to payments on the order id was refused as a fan
+  trap (D58), the repair request carried the guard's explanation, the corrected query
+  answered g02 exactly (Adana, 3,934,224.77); with no narrative on file the plain narrative
+  stood in; confidence `low (0.20)` because the sandbox has no meanings — and it said so,
+  column by column.
+* **T-SQL offline** (D52 b): the same pipeline with the T-SQL guard — a locking hint refused
+  and repaired, `TOP 1000` added, SQL Server named in the prompt.
+
+Not verified here: anything the configured model does — whether it clarifies when it
+should and only then, how often its SQL is right, what its narratives say. That is 4D's
+golden run on the host (OWNER_VERIFICATION §17 tries five questions first). Known limits:
+English only; one clarification round is passed back as text (`--clarified`), the
+conversation memory of the API comes with 4E; the confidence is a heuristic until Phase 6.
+
+Tests: 604 passed, 10 skipped in the sandbox.
+
+### 4D results (2026-11-16, sandbox)
+
+Built (D62): `query/compare.py` (is a result the reference's answer), `query/golden_run.py`
+(the runner, the summary, the report), `tools/golden.py` (`make golden`); the golden
+format gains `clarified`, `identify_by`, `rank_by`. D61: `generate_sql.v2.md` (a
+clarification carries Gaia's best guess), `chat.clarification` (migration `0008`),
+`--clarification ID --clarified N` in `make ask`, `tools/clarifications.py` (`make
+clarifications`). D63: retrieval additions found by the owner's questions.
+
+**The owner's seven questions** (P4-1) are all ambiguous in a way that changes the numbers —
+"most valuable" (by amount, orders, margin; when), "ten dates … average … higher order
+counts" (which year, which average, how ranked), "performing best" (by what), "top 10 in
+2024 comparing with 2025" (top by what, ranked in which year), "most returned" (returns or
+units; how many), "most profitable" (realised or catalogue margin; when), "best supplier"
+(by what) — so each expects a clarification (P4-4), with the answer the owner would give
+(`clarified`) and its reference. They also showed three things the sandbox run found:
+
+* **"shops"** matched nothing: the database says "stores". With no object found, Gaia asked
+  back without calling the model. → D63: a short list of everyday business words and the
+  words databases use for them (shop → store, client → customer, revenue → amount, vendor →
+  supplier, representative → employee …), applied to the question only; number words and
+  comparison words became stop words; "status" no longer stems to "statu".
+* **Implied objects**: "who was the best supplier in 2025?" names neither the sales nor their
+  dates. → D63: a question that ranks brings the largest table referencing its best object (the
+  activity behind the ranking); a question naming a period brings the dated table a fact
+  without dates references. On the names-only sandbox index the owner's seven went from 57 %
+  to 86 % fully covered, the whole golden set from 90 % to 97 % (joined: 83 % → 90 %), the 22
+  retrieval questions unchanged (~60 more tokens per context). The remaining miss (o06) needs
+  `sales.orders` only for the clarified population, and the clarified re-ask retrieves it.
+* **Ties at the cut**: in three of them the 10th and 11th rows are equal, so "the ten" has
+  several right answers → `rank_by` in the comparison (D62).
+
+Also checked: a synonym list can hurt — "per day" → "date" pulled every dated object ahead of
+the one asked for, "sold" → "quantity" crowded out the employees; both removed, and the list
+excludes time words on purpose.
+
+Verified:
+
+* **Comparison** (`test_compare.py`): columns by value, extras allowed; one identifier of
+  several; numbers at the precision shown (39.03 = 39.0297, 0.03 ≠ 0.0234, 2.45 = 2.4499, 3.00 ≠
+  2.99); rows as multisets, or sequences where order matters with ties interchangeable; ties at
+  the cut.
+* **The runner on `demo_pg`** (`test_golden_pg.py`, a scripted model erring on purpose): all 32
+  references — the owner's included — pass the guard and run; right answers scored right; a
+  kept "cancelled" scored wrong; an over-clarified clear question re-asked "as stated" and
+  scored; a clarify question answered with a number counted as a policy miss; a wrong best
+  guess scored wrong while the clarified answer is right; summary 29/30 correct, 7/8 best
+  guesses; a re-run makes no model call.
+* **D61 end to end** (replay, the assistant as the model): o01 asked back with three options,
+  stored with the best guess (valid, not run), the default not shown; answering `1` (Gaia's
+  option) answered from the stored guess **without a generation call**, linked the run,
+  recorded `took_default`; `make clarifications` reported agreement 1/1 for `ranking`.
+* Migration `0008`: DDL identical to the model, downgrade and upgrade clean.
+
+Not verified here: the configured model's golden run — the Phase 4 acceptance numbers, how
+often it clarifies when it should and only then, and how often its best guess is the owner's
+answer (OWNER_VERIFICATION §18b).
+
+Tests: 616 passed, 10 skipped in the sandbox.
+
+### 4E results (2026-11-16, sandbox)
+
+Built (D64): `api/chat.py` — `ChatService` and the endpoints (`GET /api/data-sources`,
+`POST/GET /api/conversations`, `GET /api/conversations/{id}`, `POST
+/api/conversations/{id}/messages` as server-sent events or JSON); `chat.conversation`,
+`chat.message` (migration `0009`); `generate_sql.v3.md` (follow-up questions);
+`ask(history=…, progress=…)`; config `chat.keep_rows`, `chat.history_turns`;
+`llm.provider: replay` honoured by every tool.
+
+Verified (`test_chat_api_pg.py`, a scripted model; and a real uvicorn server with the
+assistant as the model through replay, `curl` as the client):
+
+* a question streams `message`, `status` (retrieval, retrieved, generation, checking,
+  running, narrating), `result` — **the table before the narrative** — then `answer`, `done`;
+  the SQL is in neither (P4-2);
+* a follow-up ("And in November 2025?") is sent with "Conversation so far", the earlier
+  question and what was computed for it (prompt v3);
+* a clarification, answered with `1` — Gaia's own option — answers from the stored best guess
+  with **no generation call** and records `took_default`; with `reply_to_clarification: false`
+  a new question is asked instead while a clarification is open;
+* a result with e-mail addresses: in the live answer, `[hidden]` in the stored turn
+  (`masked_columns`); the conversation lists every turn in order, titled by its first question;
+* JSON mode (`?stream=false`); 404 for an unknown conversation or data source, 422 for an empty
+  message; an internal error ends the turn as `failed` and the conversation goes on;
+* the retrieval index loaded once and reused across turns (reloaded when the snapshot, the
+  meanings, the hints or the tests change);
+* a slow model gets keep-alive comments; found on the way: the first version waited for the next
+  event up to 15 s after the work had ended — every turn 15 s slower (test: 145 s → 7.5 s).
+* Migration `0009`: DDL identical to the model, downgrade and upgrade clean.
+
+Not here: authentication (P5-1 — the API is for `127.0.0.1`); token-by-token streaming of the
+narrative (the narrative arrives whole, after the table); the configured model through the API
+(OWNER_VERIFICATION §19).
+
+Tests: 619 passed, 10 skipped in the sandbox.
+
+### 4F results (2026-11-16, sandbox)
+
+Built (D65; OUTLINE §24, §37): `datasources/crypto.py` (AES-256-GCM, the key
+`GAIA_MASTER_KEY` in `.env`, a previous key for rotation, the ciphertext bound to its data
+source's id), `datasources/resolver.py` (`Settings.target(name)` falls back to the store:
+config first, unchanged), `datasources/service.py` (add, probe, update, enable/disable, remove,
+rotate, list), `catalog.data_sources` columns (`origin`, `status`, `connection`, `secret`,
+`secret_key_id`, `probed_at`, `probe`, `tombstoned_at`), `audit.connection_change` (migration
+`0010`), `tools/datasource.py` (`make datasource`, `make master-key`), `api/admin.py`
+(`/api/admin/data-sources`, **off** unless `datasources.admin_api: true` — there is no login
+before P5-1), config `datasources.reprobe_days` (30). `GET /api/data-sources` lists both kinds
+with `usable` (verified and introspected).
+
+The rules, each enforced by a test: the password is encrypted before it is stored and never
+returned, logged, audited or put in an error (the admin API's request model hides it even in
+its own `repr`); a data source is **unusable until the read-only probe passes** — the same nine
+checks as `make check-target`, privileges and a write that must fail — and again after any
+change or when the last pass is older than `reprobe_days`; a name is unique across config and
+store (a stored row never shadows a config target); removal tombstones (the row, its snapshots
+and runs stay; the secret is wiped; the name is freed as `name~<id8>`); every action is an
+`audit.connection_change` listing the fields changed, never values.
+
+Verified (`test_datasources.py`, `test_datasources_pg.py`, and the CLI by hand against the
+sandbox's `demo_pg`):
+
+* the lifecycle: `add` → `unverified`, a command with it refused with the reason and the fix
+  (`make datasource ARGS="probe …"`); `probe` → `verified`, 9 of 9; then **every existing
+  tool works with it with no change**: `make introspect TARGET=shop_ro` read 28 objects, a
+  guarded query counted 250,000 orders;
+* the same database with the superuser: the probe ends `failed` on `security.privileges`, the
+  data source stays unusable;
+* an update (the timeout) and a proof older than `reprobe_days` both make it `unverified`;
+* rotation: a new master key, `rotate` re-encrypts every stored secret, the old key is no
+  longer needed; a wrong key, a secret moved to another row, or a tampered byte fail to decrypt;
+* removal: tombstoned, secret wiped, snapshots kept, the name reusable;
+* the admin API answers 404 until switched on; then add, probe, list, remove over HTTP; a config
+  target cannot be changed through it; no response contains the password;
+* migration `0010`: DDL identical to the models for `catalog` and `audit`, downgrade and
+  upgrade clean.
+
+Also in this step, for the owner's runs (D66): `make evaluate-freeze` and frozen 3C inputs;
+`GAIA_LLM_CONCURRENCY`; `make retrieval-eval` and `make golden` stop trying embeddings after the
+first failure (85 s → 6 s without Ollama); `scripts/owner_runs.sh`.
+
+Not here: SQL Server data sources added at runtime (the same code path; the probe is the 3.P
+probe of each dialect — an S-item when the owner wants one); a web form (Phase 5); secrets in an
+external vault (possible later behind the same `crypto` interface; not asked for).
+
+Tests: 626 passed, 10 skipped in the sandbox.
 
 ### Decisions needed
 
-| # | Decision | My recommendation |
-|---|---|---|
 Renumbered `P4-n` (formerly 11–16, which collided with Phase 3 and Phase 6).
+Revised 2026-11-16 for D52.
 
 | # | Decision | My recommendation |
 |---|---|---|
-| P4-1 | Golden question set: who authors ground truth | **you supply ~20 real business questions**; I write the expected SQL and you correct it. For `demo_pg` the generator's semantics are known, so its golden set can be written up front |
-| P4-2 | Answer style: numbers only, or narrative + table | narrative + table + SQL |
+| P4-1 | Golden questions: who authors ground truth *(2026-11-16: the assistant's `demo_pg` set is written; the owner's seven `demo_pg` questions added as o01–o07 — each ambiguous, so each expects a clarification, with the owner's intended answer as reference; `nge_small` questions pending)* | **`demo_pg`**: I write ~20 with expected SQL and results (checkable in the sandbox), and you add 5–10 phrased from a short business description without looking at the schema — I designed the database, so my questions alone would flatter the system. **`nge_small`**: you supply ~10–20 real questions; I write the expected SQL; runs are asynchronous |
+| P4-2 | Answer style | ~~narrative + table + SQL~~ **Decided (owner, 2026-11-16): table + narrative; the SQL is not shown to users** (kept for audit, `--show-sql`). Charts in a later version |
 | P4-3 | Default row limit | 1000 |
-| P4-4 | Clarify vs best-guess on ambiguity | **clarify** |
-| P4-5 | Admin-supplied connections: in Phase 4 or Phase 5 | **Phase 4** — the query path needs a target resolver anyway, and Phase 5's UI must not invent credentials storage |
-| P4-6 | Credential encryption | **application-level AES-GCM**, master key in `.env`; `pgcrypto` is the fallback if key rotation outside the DB proves awkward |
-| P4-7 | PostgreSQL in Phase 4 scope | **yes** — a second `SqlGuard` and generator dialect are small with `sqlglot`, and `demo_pg`'s `legacy` schema is the hardest retrieval case available |
+| P4-4 | Clarify vs best-guess on ambiguity | **Decided (owner, 2026-11-16): clarify, always** |
+| P4-5 | Admin-supplied connections: in Phase 4 or Phase 5 | **last step of Phase 4 (4F), cuttable to Phase 5** if the schedule needs it — the query path needs only the config targets; Phase 5's UI is the first real consumer of stored credentials. *(2026-11-16: built as 4F on this recommendation, D65; the owner may still move its HTTP side — off by default — to Phase 5)* |
+| P4-6 | Credential encryption | **application-level AES-GCM**, master key in `.env`; `pgcrypto` is the fallback if key rotation outside the DB proves awkward. *(2026-11-16: built this way, D65; rotation works outside the database — `pgcrypto` not needed)* |
+| P4-7 | PostgreSQL in Phase 4 scope | **settled by D52**: yes, first |
+| P4-8 | `app.default_target` → `demo_pg` | **Decided (owner, 2026-11-16): no** — the default stays `demo_mssql`; PostgreSQL commands name `TARGET=demo_pg` |
+| P4-9 | Start Phase 4 before 3C's runs finish | **yes**: 3C decides whether the scores rank meanings well (thresholds, calibration in Phase 6); Phase 4's code ranks by score either way, and its golden set measures the end result directly |
 
 ### Gate
 
-- [ ] **Approved to start Phase 4** · [ ] golden questions available
+- [x] **Approved to start Phase 4** (under D52) — owner, 2026-11-16: "start with 4A"
+- [ ] P4-1 … P4-9 answered *(settled: P4-2, P4-4, P4-8 by the owner on 2026-11-16; P4-7 by D52;
+      P4-9 — 4A started before 3C finished; the correct-result target is kept as a trial.
+      P4-5/6 — built on the recommendations (D65), the owner may override.
+      Open: P4-1 — the owner's golden questions for `nge_small`; P4-3 (1000) in use)*
+- [ ] golden questions: `demo_pg` set written and reviewed; `nge_small` questions (asynchronous)
 
 ---
 
@@ -1829,6 +2231,21 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D49 | new (2026-11-15) | A failed inclusion test of a claimed parent contradicts a `reference` only when the column's values were found in no key at all; otherwise it refutes that parent's hint (D38) |
 | D50 | amends the 3A time rule (owner, 2026-11-15) | `profiling.budget.time_rule: adaptive` (default): a statement starts when the elapsed time plus twice the slowest statement so far on the table (at least 5 s, at most the timeout) fits `max_runtime_per_table_s`; a cancelled statement counts at its full timeout. A pathological statement can overrun the ceiling by at most one statement timeout. `strict` keeps the hard rule |
 | D51 | new (2026-11-15) | 3C harness: every condition runs today's pipeline (N-C re-run with v2 prompts); nothing is written to the metadata store; profiled conditions test their own claims in memory from Stage 1 evidence; reference = owner label / ground truth where present, else original names; named conditions are scored on labelled columns only; the owner audits 20 % blind to the judge's verdict |
+| D52 | new (owner, 2026-11-16) | **PostgreSQL is the main dialect.** Every dialect-related change is built and tested on PostgreSQL first (the assistant reproduces that environment); the SQL Server counterpart follows, with tests, but SQL Server results no longer block a delivery. What only the owner can run is written to OWNER_VERIFICATION.md and answered asynchronously. *Refinements proposed by the assistant, **accepted by the owner on 2026-11-16**:* (a) "non-blocking" applies to **live** SQL Server runs; offline T-SQL tests (fake driver, `sqlglot` parsing, golden hashes, D26) stay in the suite and must pass; (b) **safety is never non-blocking**: a SQL Server result that shows a write path or a guard bypass stops SQL Server use until fixed, and the T-SQL guard's adversarial tests block Phase 4; (c) each asynchronous item has an id, the build it was written for (`make stamp`) and what depends on it, and an answer that arrives late is triaged before new work continues; (d) the PostgreSQL *data* is not realistic — `demo_pg` was designed by the assistant, so it proves machinery, not accuracy; accuracy stays on `nge_small` (3C) unless a realistic PostgreSQL copy exists (OWNER_VERIFICATION §14e) |
+| D53 | new (2026-11-16) | A truncated answer (`finish_reason = length`) is asked again with at most half the columns of the chunk that truncated, up to 3 times (14 → 7 → 4 → 2); a truncated critique is asked again in halves. Answers that fit are asked exactly as before. The plan does not reserve room for thinking (not predictable: 340–12,437 tokens per call in 3C). `llm.max_output_tokens` stays 16,000: at ~15 tokens/s a larger budget outlasts `llm.timeout_s`, and it changes every request key. The evaluation recorder keeps truncated answers |
+| D54 | amends D39/D3b (2026-11-16) | Integer inclusion specificity also uses a **neighbour control**: the same inclusion statement on a nearby integer of each tested value (value + a seeded offset of 1–97; not +1, which makes date keys look dense); the result is specific only if its hits are < 1 % likely at the larger of the neighbour rate and the density where the values lie. Robust to skewed values (counts with outliers), needs no new statement. A density or control query that fails is written into the test's detail |
+| D55 | amends the 3C criteria (2026-11-16) | Criteria 1 and 2 compare two conditions on the columns both answered and both had judged; the report states how many were left out. A condition with a failed table or critique is reported as incomplete (exit 2) |
+| D56 | new (owner, 2026-11-16) | **SQL Server is verified asynchronously, on delivered builds.** Every delivery ends in a commit and a build marker (`make stamp`: build, sqlglot version, git commit). The owner runs the SQL Server items on a delivered build when time allows and sends the outputs; the assistant reads each result against the build it names. A SQL Server finding is fixed in a later build and the item is run again there; nothing delivered is rewritten. OWNER_VERIFICATION keeps a **SQL Server track**: every item with the build it was written for, its status, and what it would change. Results never block a PostgreSQL delivery (D52), except safety (D52 b) |
+| D57 | new (2026-11-16, Phase 4A) | **The SQL guard.** (1) What executes is rendered from the validated AST, never the submitted text; the rendering is parsed and checked again. (2) Allowlists, not denylists: root statement types (`SELECT`, set operations) and functions per dialect, checked by the name the target will see. (3) Objects only from the catalog snapshot, each resolved to one schema and qualified (PostgreSQL sessions use `search_path = pg_catalog`); columns through `sqlglot`'s qualifier. (4) Join paths are key classes of declared FKs, D48 hints, SME hints and view pass-through lineage: parent–child *and* siblings of one key are joinable; a join to a generated series or `VALUES` list is not a relationship between tables; comma, `CROSS`, `NATURAL`, `LATERAL`/`APPLY` and computed-value joins are unverified and rejected (`query.unverified_joins: reject`). (5) Row cap = min(`query.row_limit`, target `max_rows_returned`), added or lowered in the statement and enforced again at fetch. (6) Every run — accepted or rejected — is a `chat.query_run` pinned to its snapshot and the semantic versions of what it read (migration `0007`) |
+| D58 | amends D57 (2026-11-16) | **No fan traps.** A join needs a join path *and one unique side*: a catalog key (PK, single-column unique constraint, unfiltered unique index), a derived table grouped by the join column or a single-column `DISTINCT`, or a generated series; otherwise `fan_out` is refused with what to do instead. View lineage is an alias (the view column is its base column), not a join edge. Retrieval offers only joins the guard accepts |
+| D59 | new (2026-11-16, Phase 4B) | **Retrieval.** Lexical BM25 over names (abbreviations expanded), meanings, synonyms and readable low-cardinality values, plus pgvector cosine over the current meanings' `bge-m3` embeddings (exact scan, same model only), fused by reciprocal rank, rolled up from columns to objects, weighted by confidence 0.6 + 0.4 × mean score (R2: ranked, never filtered; abstained, SME-rejected, stale and unused meanings not used; SME-reviewed = certain). Objects: up to `retrieval.max_objects` above `relative_cutoff` of the best, connected by shortest join paths (FK and SME first, then through a view, then D48 hints), bridges added. Columns: whole objects up to `all_columns_up_to`, else keys, join columns, matches, then time and measures. Values only as the exposure policy allows (D24); uncertain and unreasoned meanings disclosed in the context. Lexical-only when embeddings are unavailable, said so. Deterministic |
+| D60 | new (2026-11-16, Phase 4C; P4-2, P4-4, P4-8 owner) | **Answering.** One model call plans and writes the query (decision `answer` / `clarify` / `cannot_answer`, interpretation, assumptions, SQL, columns relied on); thinking off. Clarify always when two readings give different numbers, a relative period falls outside the data, or a needed join is not listed; without the model when retrieval finds nothing. Relative periods are written as date literals from "today" (`query.as_of`, else the real date), never the database's clock — reproducible, and the answer can name the period. Guard refusals, database errors and timeouts are repaired in the same conversation, at most `query.max_repair_attempts` (2). The user gets a table and a narrative (P4-2; the SQL only on request); the narrative model sees at most `query.rows_to_model` rows and never the values of personal-data columns when it is remote (D24); a failed narrative is replaced by a plain one. Every answer discloses its interpretation, assumptions and the unconfirmed meanings it relies on, and an explained confidence (mean certainty of those meanings, less repairs, hint joins, a capped result, assumptions). One `chat.query_run` per attempt, chained; every call audited. The default target stays `demo_mssql` (P4-8) |
+| D61 | amends P4-4 (owner proposal, 2026-11-16; safeguards by the assistant — (a) accepted by the owner on 2026-11-16, (b), (c) pending) | **Clarify always — and remember.** Every clarification carries Gaia's best guess: the option it would choose, the kind of ambiguity (measure, period, population, entity, ranking, scope, other), and that option's SQL, interpretation and assumptions — checked by the guard, **never run for the user**. It is stored with the user's answer (`chat.clarification`, migration `0008`): the option chosen (or the user's own words), whether it was Gaia's, the run that answered. The user is not shown which option Gaia would choose (it would pull answers towards it and inflate the measurement). Choosing Gaia's option answers from the stored guess without a new generation call. **Learning is deferred and gated:** Gaia answers a kind of question without asking only when (a) on users' clarifications — never golden or test runs — its choice was the user's for that kind of ambiguity on that data source often enough (≥ 90 %, accepted; the assistant recommends reading it as the 95 % lower bound of the agreement rate, not the observed share — 27 of 30 is an observed 90 % but a lower bound of 0.77; 30 of 30 or ~100–200 at 95 % clear 0.9; OUTLINE §36), and the golden best-guess score agrees; (b) the answer then states the choice it made and offers the other readings (a soft clarification, R2); (c) what is learned is a definition ("a valuable customer = total order amount, cancelled excluded"), proposed to the glossary and confirmed by an SME before it applies to everyone; a user's own repeated choices may apply to that user only once identities exist (P5-1). No model is retrained: what changes is Gaia's memory and the prompts it writes |
+| D62 | new (2026-11-16, Phase 4D) | **Golden runs.** Execution accuracy by results, never SQL text: columns matched by value (extras allowed; one of `identify_by` suffices), numbers equal at the precision shown, same row count, rows as a multiset or — `order_matters` — a sequence with ties on `rank_by` interchangeable, rows tied at a top-N cut interchangeable (the reference fetched 50 rows beyond its limit). Per question: `answer` — the first answer scored; a clarification instead is over-clarification, re-asked "as stated" and scored; `clarify` — asking back (or cannot answer) is right, a number a policy miss; with `clarified` and a reference, the best guess is run in the runner only and scored, then the question is re-asked with the user's answer and scored. Headline (Phase 4 acceptance) over every question with a reference, counting the final answer: executable, correct. References run through the same guard and executor. Runs are resumable (every model answer kept); golden runs and clarifications are recorded with `origin = golden`, outside D61's agreement |
+| D63 | amends D59 (2026-11-16) | **Retrieval, from the owner's wording.** Question-side business synonyms (shop → store, client → customer, revenue → amount, vendor → supplier, representative → employee …; never time words); number and comparison words are stop words; "-us", "-is" words are not plurals. **Implied objects** (`retrieval.max_expansions`, 2): a ranking or aggregate brings the largest table referencing one of the two best objects; a period brings the dated table a fact without dates references. Both added as `expansion`, connected like any object |
+| D64 | new (2026-11-16, Phase 4E) | **The chat API.** Conversations of turns (`chat.conversation`, `chat.message`, migration `0009`). A user message is a question or — when Gaia's last turn is an open clarification and the client does not say otherwise — the answer to it (an option's number or the user's words; D61). Follow-ups are read with the last `chat.history_turns` answered turns (question and what was computed; prompt v3). Server-sent events: `message`, `status` per stage, `result` (the table, before the narrative), one of `answer` / `clarification` / `cannot_answer` / `failed`, `done`; keep-alive comments while the model works. The live answer has every row; the stored turn keeps `chat.keep_rows` rows with personal-data columns masked, no SQL. An internal error is a `failed` turn. No authentication until P5-1: bind to 127.0.0.1 |
+| D65 | new (2026-11-16, Phase 4F; P4-5, P4-6 on the recommendations) | **Data sources added at runtime.** `config/gaia.yaml` stays the bootstrap path; any other name is resolved from `catalog.data_sources`. Passwords encrypted in the application (AES-256-GCM, the key `GAIA_MASTER_KEY` in `.env`, bound to the row's id; `GAIA_MASTER_KEY_PREVIOUS` during a rotation), never returned, logged or audited. **Unusable until the read-only probe passes** (the 3.P probe, nine checks) and again after any change or after `datasources.reprobe_days` (30). Names unique across config and store; removal tombstones and wipes the secret; every action in `audit.connection_change` (fields, not values). CLI `make datasource`; the admin HTTP API is off (`datasources.admin_api`) until there is authentication (P5-1) |
+| D66 | new (2026-11-16, the owner's question on dependencies) | **The owner's runs, in parallel.** Three real dependencies only: set up once per delivery; freeze 3C's inputs before SQL Server is profiled again (`inputs.json` in the run directory, written by the first run or `make evaluate-freeze`; later runs never read the store); judge a condition after it ran. Everything else in tracks by what they wait on — `quick` (databases), `gateway` (thinking off), `gateway-long` (thinking on), by hand — run by `scripts/owner_runs.sh`, each step to `verification/20_*.out` beginning with `make stamp`, a failed step not stopping the next. Two gateway jobs at once share its 4 slots (`GAIA_LLM_CONCURRENCY=2` each) |
 
 ## Definition of done (per phase)
 
@@ -1843,21 +2260,21 @@ A phase is done only when all of the following hold:
 
 ## Open items
 
-*Decided 2026-11-15 (D50): the adaptive time rule.*
+*Decided 2026-11-16: D52 with refinements (a)–(d); D56 (SQL Server asynchronously, on
+delivered builds). Gates 3.0, 3A (PostgreSQL), 3B ticked; Phase 4 approved, 4A built.*
 
-Everything the owner has to run is in **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**,
-in order, with expected results: the 3.P host run, the 3.0 SQL Server checks and
-cold-cache measurement, the 3B run with the configured model, the 3A profiling
-runs on both targets (including the SQL Server footprint), and what to send
-back. Then:
-
-1. The assistant records the SQL Server measurements and profiling runs, tunes
-   the budget defaults (`full_scan_max_pages` first: see "3A results", item 5)
-   from both dialects' data, and asks for the 3.0, 3A and 3B gates.
-2. **3C** evaluates (name-blind simulation, judge, AUROC).
-3. **Owner, before 3C:** label the stratified 40-column set (P3-4).
-4. **Later decisions:** P4-7 (PostgreSQL in Phase 4), P5-1/P5-2 (reviewer identity,
-   review granularity).
+1. **Owner:** D61 (b) the soft clarification and (c) definitions via the glossary and an SME —
+   accept, change or reject ((a), the 90 % threshold, accepted 2026-11-16).
+2. **Owner, asynchronous:** OWNER_VERIFICATION §18b — the golden run of `demo_pg` (the Phase 4
+   numbers); §19 — the API with the configured model; the SQL Server track (S1–S8); the rest of
+   3C (§13b–d); `demo_pg` semantics (§14d).
+3. **Owner:** P4-1 for `nge_small` whenever ready; P4-5/6 — built on the recommendations
+   (D65), say if either should change.
+4. **Owner, once:** `GAIA_MASTER_KEY` in `.env` (`make master-key >> .env`), then
+   `scripts/owner_runs.sh setup` and the tracks (D66, OWNER_VERIFICATION "Run plan", §20).
+5. **Assistant:** the Phase 4 gate once §18b's numbers are in (triage first); then Phase 5 (the
+   web UI, SME review first).
+6. **Later decisions:** P5-1/P5-2 (reviewer identity, review granularity).
 
 Resolved, kept for the record:
 
@@ -1870,3 +2287,5 @@ Resolved, kept for the record:
 | "Masking policy confirmed" gate | Replaced by exposure modes per provider (A2, P3-7) |
 | Thinking mode on wide bundles | `llm.timeout_s` 600 → 1800; read timeouts have their own retry budget |
 | Is `thinking` part of the skip key? | No, and it stays that way — the default path always uses thinking, so the gap is deliberate |
+| Tune the 3A budget defaults from both dialects' data | Overtaken by D52: defaults stay; PostgreSQL numbers decide, SQL Server's inform (`dw.sales_wide` stays `partial`, labelled) |
+| P4-7 (PostgreSQL in Phase 4) | Settled by D52 |

@@ -19,7 +19,12 @@ JSON mode guarantees syntactically valid JSON, not schema conformance
    (PHASES, cross-cutting "Failure").
 
 Truncated output (``finish_reason == "length"``) fails immediately: re-asking
-would truncate again at the same limit.
+would truncate again at the same limit. The error says so (``truncated``) and
+where the tokens went: with thinking on, ``max_tokens`` covers the chain of
+thought *and* the answer, so a narrow table can truncate when the model thinks
+long (3C, 2026-11-16: 12,437 of 16,000 tokens were thinking on a 14-column
+table). The caller decides what to do — the reasoner re-asks in smaller column
+chunks (``semantics.reasoner``).
 """
 
 from __future__ import annotations
@@ -40,6 +45,7 @@ __all__ = [
     "StructuredResult",
     "complete_structured",
     "extract_json",
+    "truncation_message",
 ]
 
 _FENCE = re.compile(r"^\s*```(?:json)?\s*(.*?)\s*```\s*$", re.DOTALL)
@@ -79,11 +85,24 @@ class StructuredResult[T: BaseModel]:
 
 
 class StructuredOutputError(LLMError):
-    """No schema-valid answer was obtained. ``calls`` keeps every raw payload."""
+    """No schema-valid answer was obtained. ``calls`` keeps every raw payload.
 
-    def __init__(self, message: str, *, calls: list[CallRecord]):
+    ``truncated``: the answer hit ``max_tokens`` (a smaller request may fit)."""
+
+    def __init__(self, message: str, *, calls: list[CallRecord], truncated: bool = False):
         super().__init__(message)
         self.calls = calls
+        self.truncated = truncated
+
+
+def truncation_message(max_tokens: int | None, usage: Usage) -> str:
+    """``output truncated at max_tokens=N: thinking T, answer A token(s)``."""
+    thinking = usage.reasoning_tokens
+    answer = max(0, usage.completion_tokens - thinking)
+    return (
+        f"output truncated at max_tokens={max_tokens}: thinking {thinking}, "
+        f"answer {answer} token(s)"
+    )
 
 
 def extract_json(content: str) -> object:
@@ -215,11 +234,8 @@ def complete_structured[T: BaseModel](
         )
 
         if response.finish_reason == "length":
-            rec.error = (
-                f"output truncated at max_tokens={max_tokens}; "
-                "raise llm.max_output_tokens for wide tables"
-            )
-            raise StructuredOutputError(f"{purpose}: {rec.error}", calls=calls)
+            rec.error = truncation_message(max_tokens, response.usage)
+            raise StructuredOutputError(f"{purpose}: {rec.error}", calls=calls, truncated=True)
 
         value, errors = _validate(response.content, schema, checker)
         if value is not None:

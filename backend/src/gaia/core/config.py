@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import os
 import re
+from datetime import date
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal
@@ -129,6 +130,7 @@ class ThinkingConfig(BaseModel):
     sql_generation: bool = False
     repair: bool = False
     classification: bool = False
+    answer: bool = False  # Phase 4C: the narrative next to the result table
 
 
 class RetryConfig(BaseModel):
@@ -360,8 +362,63 @@ class SemanticsConfig(BaseModel):
 class QueryConfig(BaseModel):
     max_repair_attempts: int = 2
     row_limit: int = 1000
+    # Phase 4A: a join no declared FK, tested hint, SME hint or view lineage backs is
+    # rejected ("reject", the validation rule) or only reported ("warn").
+    unverified_joins: Literal["reject", "warn"] = "reject"
+    # Phase 4C: result rows the narrative model sees (the user's table holds them all)
+    rows_to_model: int = 30
+    # "today" for relative periods; None = the real date. Fixed for reproducible runs
+    # (the golden set carries its own).
+    as_of: date | None = None
+    # Informational since Phase 4A: the guard's statement and function rules are fixed
+    # in code (gaia.query.validator, dialects/<d>/guard.py) and not read from here.
     allowed_statements: list[str] = Field(default_factory=lambda: ["select", "with"])
     forbid: list[str] = Field(default_factory=list)
+
+
+class RetrievalConfig(BaseModel):
+    """Phase 4B: how much of the catalog a question's context may hold."""
+
+    max_objects: int = 6  # found by relevance; bridges on join paths come on top
+    max_bridges: int = 3
+    max_expansions: int = 2  # implied objects: the facts behind a ranking, their dates
+    max_join_hops: int = 3
+    relative_cutoff: float = 0.25  # objects below this share of the best one are dropped
+    all_columns_up_to: int = 20  # objects with at most this many columns are shown whole
+    max_columns_per_object: int = 25
+    context_budget_tokens: int = 6000
+    vector_k: int = 40  # nearest meanings from the embeddings
+
+    def to_settings(self):
+        from gaia.query.retrieval import RetrievalSettings
+
+        return RetrievalSettings(
+            max_objects=self.max_objects, max_bridges=self.max_bridges,
+            max_expansions=self.max_expansions,
+            max_join_hops=self.max_join_hops, relative_cutoff=self.relative_cutoff,
+            all_columns_up_to=self.all_columns_up_to,
+            max_columns_per_object=self.max_columns_per_object,
+            context_budget_tokens=self.context_budget_tokens)
+
+
+class ChatConfig(BaseModel):
+    """Phase 4E: conversations over the API."""
+
+    # result rows kept with an answer in chat.message (personal-data columns masked);
+    # the live response holds all of them (up to query.row_limit)
+    keep_rows: int = 200
+    # earlier turns a follow-up question is read with
+    history_turns: int = 3
+
+
+class DataSourcesConfig(BaseModel):
+    """Phase 4F: data sources added at runtime (OUTLINE §24)."""
+
+    # a stored data source is usable only if its read-only probe passed this recently
+    reprobe_days: int = 30
+    # the admin endpoints (/api/admin/data-sources) write credentials: off until the API
+    # has authentication (P5-1); the CLI (make datasource) is the admin path meanwhile
+    admin_api: bool = False
 
 
 class Settings(BaseModel):
@@ -374,6 +431,9 @@ class Settings(BaseModel):
     scoring: ScoringConfig = Field(default_factory=ScoringConfig)
     semantics: SemanticsConfig = Field(default_factory=SemanticsConfig)
     query: QueryConfig = Field(default_factory=QueryConfig)
+    retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
+    chat: ChatConfig = Field(default_factory=ChatConfig)
+    datasources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     unresolved_env: list[str] = Field(default_factory=list)
     # Unresolved placeholders per config section: "targets.<name>" for a
     # target, otherwise the top-level key ("llm", "embeddings", ...).
@@ -395,11 +455,19 @@ class Settings(BaseModel):
         return sorted(names)
 
     def target(self, name: str | None = None) -> TargetConfig:
+        """A target by name: from ``config/gaia.yaml`` (the bootstrap path), else a data
+        source an administrator added (Phase 4F, ``gaia.datasources.resolver``)."""
         key = name or self.app.default_target
-        if key not in self.targets:
-            known = ", ".join(sorted(self.targets)) or "<none>"
-            raise KeyError(f"unknown target {key!r}; configured: {known}")
-        return self.targets[key]
+        if key in self.targets:
+            return self.targets[key]
+        from gaia.datasources.resolver import resolve
+
+        found = resolve(key, self)  # raises TargetUnusable for a stored but unusable one
+        if found is not None:
+            return found
+        known = ", ".join(sorted(self.targets)) or "<none>"
+        raise KeyError(f"unknown target {key!r}; configured: {known} (and none stored by "
+                       "that name: make datasource ARGS=list)")
 
 
 def _section(path: tuple[str, ...]) -> str:

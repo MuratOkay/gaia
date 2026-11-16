@@ -40,6 +40,10 @@ class DataSource(Base):
     __tablename__ = "data_sources"
     __table_args__ = (
         sa.UniqueConstraint("name", name="uq_data_sources_name"),
+        sa.CheckConstraint("origin IN ('config', 'admin')", name="origin"),
+        sa.CheckConstraint(
+            "status IN ('config', 'unverified', 'verified', 'failed', 'disabled', 'tombstoned')",
+            name="status"),
         {"schema": "catalog"},
     )
 
@@ -48,7 +52,6 @@ class DataSource(Base):
     dialect: Mapped[str] = mapped_column(sa.Text, nullable=False)
     database_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
     server_version: Mapped[str | None] = mapped_column(sa.Text)
-    # Credentials live in config/.env only — never in the metadata store.
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
@@ -58,6 +61,20 @@ class DataSource(Base):
         server_default=sa.func.now(),
         onupdate=sa.func.now(),
     )
+    # Phase 4F (migration 0010). origin "config": the target is in config/gaia.yaml and
+    # its password in .env (the bootstrap path, never stored here). origin "admin": added
+    # at runtime; the non-secret settings in ``connection``, the password encrypted
+    # (AES-GCM, gaia.datasources.crypto) in ``secret`` — never in clear, never returned.
+    origin: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="config")
+    # config | unverified | verified | failed | disabled | tombstoned (admin rows are
+    # usable only when verified by the read-only probe, recently)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, server_default="config")
+    connection: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    secret: Mapped[bytes | None] = mapped_column(sa.LargeBinary)
+    secret_key_id: Mapped[str | None] = mapped_column(sa.Text)
+    probed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    probe: Mapped[list[dict[str, Any]] | None] = mapped_column(JSONB)
+    tombstoned_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
 
     snapshots: Mapped[list[SnapshotRecord]] = relationship(
         back_populates="data_source", cascade="all, delete-orphan"

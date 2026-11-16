@@ -64,10 +64,17 @@ class Profiler(Protocol):
 
 @runtime_checkable
 class SqlGuard(Protocol):
-    """Validates generated SQL before it is executed."""
+    """Validates generated SQL before it is executed (Phase 4A).
+
+    Implementations: ``dialects/<d>/guard.py`` on ``gaia.query.validator``;
+    constructed with the target's ``GuardCatalog`` and the row limit."""
 
     dialect: str
 
     def validate(self, sql: str) -> list[str]:
         """Return a list of violations; empty means the statement is safe."""
+        ...
+
+    def check(self, sql: str) -> Any:
+        """A ``GuardResult``: violations, the statement to execute, joins, row cap."""
         ...

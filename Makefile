@@ -29,6 +29,10 @@ cleanup:
 	find . -type f -name "*.pyc" -delete
 	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
 
+.PHONY: strip-verification
+strip-verification: ## Delete the first line (captured local `cd` echo) of verification outputs
+	@bash $(ROOT)/scripts/strip_verification_first_line.sh $(ARGS)
+
 # --- stack -----------------------------------------------------------------
 
 .PHONY: up
@@ -83,6 +87,11 @@ check-env: ## Verify gaia-env imports the dependency stack
 dev-api: ## Run the FastAPI app with reload
 	cd $(ROOT)/backend && $(VENV)/bin/uvicorn gaia.main:app --reload --host 127.0.0.1 --port 8000
 
+.PHONY: stamp
+stamp: ## Print which code this is (first line of every verification output)
+	@cd $(ROOT)/backend && $(PY) -c "import gaia, sqlglot; print('gaia build', gaia.BUILD, '· sqlglot', sqlglot.__version__)" ; \
+	  git -C $(ROOT) log -1 --format='git %h %cs' 2>/dev/null || true
+
 .PHONY: test
 test: ## Run the test suite (ARGS="tests/integration/test_x.py -k name" for a subset)
 	cd $(ROOT) && $(VENV)/bin/pytest -q -c backend/pyproject.toml $(ARGS)
@@ -97,6 +106,14 @@ lint: ## Ruff check + format check
 	cd $(ROOT)/backend && $(VENV)/bin/ruff check src
 
 # --- target database -------------------------------------------------------
+
+.PHONY: master-key
+master-key: ## 4F: print a new GAIA_MASTER_KEY (encrypts data-source credentials; keep it in .env)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.datasource new-key
+
+.PHONY: datasource
+datasource: ## 4F: data sources added at runtime (ARGS="list | add … | probe NAME | update | disable | enable | remove | rotate-key")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.datasource $(ARGS)
 
 .PHONY: check-target
 check-target: ## Verify the read-only target connection (TARGET=demo_pg for PostgreSQL)
@@ -196,6 +213,10 @@ evaluate-labels: ## 3C: the owner's 40-column labelling template (ARGS="--file F
 evaluate: ## 3C: run conditions, resumable (ARGS="--out DIR --table ... [--condition B-P]")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics run $(TARGET_ARG) $(ARGS)
 
+.PHONY: evaluate-freeze
+evaluate-freeze: ## 3C: freeze a run's snapshot and evidence (no model; then profiling may change)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics freeze $(TARGET_ARG) $(ARGS)
+
 .PHONY: evaluate-judge
 evaluate-judge: ## 3C: judge the answers (ARGS="--out DIR --labels F")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics judge $(ARGS)
@@ -211,6 +232,36 @@ evaluate-report: ## 3C: metrics and criteria (ARGS="--out DIR --labels F")
 .PHONY: evaluate-cost
 evaluate-cost: ## 3C criterion 5: production run cost per table (TARGET=...; ARGS="--file F")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.evaluate_semantics cost $(TARGET_ARG) $(ARGS)
+
+# --- Phase 4: queries --------------------------------------------------------------
+
+.PHONY: query
+query: ## 4A: validate + run one statement through the SQL guard (TARGET=...; ARGS="--sql '...'")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.query $(TARGET_ARG) $(ARGS)
+
+.PHONY: retrieve
+retrieve: ## 4B: the schema context for one question (TARGET=...; ARGS="--question '...' [--context]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.retrieve ask $(TARGET_ARG) $(ARGS)
+
+.PHONY: retrieval-eval
+retrieval-eval: ## 4B: recall of a question set (TARGET=...; ARGS="--file F [--k 5] [--no-vectors]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.retrieve eval $(TARGET_ARG) $(ARGS)
+
+.PHONY: ask
+ask: ## 4C: ask a business question (TARGET=...; ARGS="--question '...' [--clarified '...'] [--show-sql]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.ask $(TARGET_ARG) $(ARGS)
+
+.PHONY: golden
+golden: ## 4D: run a golden set (TARGET=...; ARGS="--file F --out DIR [--only ids] [--replay DIR]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.golden $(TARGET_ARG) $(ARGS)
+
+.PHONY: clarifications
+clarifications: ## D61: clarifications asked and how often Gaia's choice was the user's (TARGET=...)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.clarifications $(TARGET_ARG) $(ARGS)
+
+.PHONY: query-check
+query-check: ## 4A: the SQL guard only; nothing executed or recorded (TARGET=...; ARGS="--sql '...'")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.query --dry-run $(TARGET_ARG) $(ARGS)
 
 .PHONY: review
 review: ## Show the SME review queue, highest priority first (TARGET=...; ARGS="--limit 100")

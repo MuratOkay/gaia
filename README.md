@@ -9,14 +9,14 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status: **Phases 0, 1 and 2 complete and verified live.** Phase 3 (evidence
-> collection, profiling and re-reasoning) is **approved** (2026-11-14). Its
-> pre-work 3.P — a PostgreSQL development target and the PostgreSQL dialect — is
-> done and verified in a sandbox; sub-phase 3.0 (timeouts, probe hardening,
-> re-measurement) is code complete and waits for runs on the real SQL Server;
-> **3B (reasoning with evidence, heuristic-v2, review queue) is done in the
-> sandbox**. What to run on your machine, in order:
-> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**. See [PHASES.md](PHASES.md).
+> Status (2026-11-16): **Phases 0–2 complete.** Phase 3: 3.P, 3.0, 3A
+> (PostgreSQL) and 3B done; the 3C evaluation is running on the owner's host.
+> **Phase 4 built: 4A (the SQL guard, the read-only executor), 4B
+> (retrieval), 4C (answering questions), 4D (golden runs), 4E (the chat API) and 4F
+> (data sources added at runtime)** (`make query`, `make retrieve`, `make ask`, `make golden`,
+> `make dev-api`, `make datasource`); the gate waits for the golden run on the host. PostgreSQL is the main dialect (D52); SQL
+> Server is verified asynchronously on delivered builds (D56). What to run on your
+> machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**. See [PHASES.md](PHASES.md).
 
 ---
 
@@ -32,6 +32,7 @@ gaia/
 ├── backend/                FastAPI app, Alembic, tooling
 ├── gaia-env/               Python 3.12 virtualenv (git-ignored)
 ├── frontend/               React + TS + Vite (Phase 5)
+├── scripts/owner_runs.sh   the owner's asynchronous verification runs, in tracks
 └── tests/                  unit and integration tests
 ```
 
@@ -303,6 +304,15 @@ Key decisions already fixed:
 | `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
 | `make review` | the SME review queue, highest priority first (`TARGET=...`) |
+| `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
+| `make dev-api` | the API on 127.0.0.1:8000, with the chat endpoints of Phase 4E (`/api/conversations`, server-sent events) |
+| `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
+| `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
+| `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |
+| `make evaluate*` | Phase 3C evaluation (plan, labels, run, judge, audit, report, cost); `make evaluate-freeze` freezes a run's inputs (`<out>/inputs.json`; the first run does it too) |
+| `make datasource` / `make master-key` | Phase 4F: data sources added at runtime — add, probe, list, update, disable/enable, remove, rotate-key / a new `GAIA_MASTER_KEY` |
+| `scripts/owner_runs.sh setup\|quick\|gateway\|gateway-long` | the owner's asynchronous runs in tracks (OWNER_VERIFICATION "Run plan"); `GAIA_LLM_CONCURRENCY=2` when two gateway tracks share the gateway |
+| `make stamp` | which code this is: build, sqlglot version, git commit (first line of every verification output) |
 | `make pg-target-up` / `pg-target-seed` / `pg-target-psql` | PostgreSQL development target |
 | `make pull-embed` | pull the embedding model |
 
@@ -316,6 +326,9 @@ acceptance checklist and open items are in PHASES.md.
 target and dialect (done) → **3.0** preconditions (code complete; SQL Server runs
 pending) → **3B** reasoning with evidence and scoring v2 (done in the sandbox,
 built before 3A at the owner's request) → **3A** evidence collection (done in the
-sandbox) → **3C** evaluation on a name-blind worst-case simulation. The 99 columns reasoned so far are 65 `deep_profile`,
+sandbox) → **3C** evaluation on a name-blind worst-case simulation (harness built,
+runs on the owner's host). **Phase 4** (approved 2026-11-16) starts with **4A**, the
+SQL guard and executor (done), then retrieval (4B, done), answering (4C, done), the golden
+runs (4D, done), the API (4E, done) and data-source management (4F). The 99 columns reasoned so far are 65 `deep_profile`,
 32 `deep_profile_flagged` and 2 `abstain`; they are the catalog-only baseline
 (condition N-C). SME review moves forward into Phase 5 (roadmap R1).

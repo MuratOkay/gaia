@@ -1,0 +1,12 @@
+question,expected,notes
+# DRAFT for nge_small: written from the table names in the owner's outputs; correct or extend.
+Revenue by transaction currency,dbo.transactions|dbo.currencies,
+Which payment methods are used most?,dbo.payments,
+What is the average discount per transaction?,dbo.transactions,
+How many customer addresses are there per city?,dbo.customer_addresses,
+What is the total value of trade-ins by condition?,dbo.trade_ins|dbo.trade_in_items,
+How are loyalty tiers distributed?,dbo.loyalty_memberships,
+How many page views were there per day?,web.page_views,
+Sales by year from the data warehouse,dw.fact_sales|dw.dim_date,
+Why do employment spells end?,hr.employment_spells,
+What do the quantities of the transaction lines add up to per transaction?,dbo.transaction_lines,

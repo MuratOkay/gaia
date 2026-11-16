@@ -1,0 +1,23 @@
+question,expected,notes
+Which store city had the highest revenue last month?,sales.orders|store.stores;rpt.v_daily_sales|store.stores,
+What were the ten best-selling products by quantity this year?,sales.order_lines|product.products,
+How many active customers do we have in each segment?,crm.customers,
+What is the average basket value per sales channel?,sales.orders;rpt.v_daily_sales,
+Which product categories have the highest margin?,product.products|product.categories;rpt.mv_product_margin|product.products|product.categories,
+Total overdue invoice amount by currency,finance.invoices,status code 2 = overdue
+How many employees does each department have?,hr.employees|hr.departments,
+Which stores have products below their reorder level?,store.inventory|store.stores,
+How much was refunded for each return reason?,sales.returns,
+Card payments last quarter by payment method,sales.payments,
+Which customers were referred by another customer?,crm.customers,
+Monthly debit and credit totals per ledger account,finance.gl_entries,
+How did the euro to lira exchange rate move over time?,finance.fx_rates,
+Which supplier provides the most products?,product.suppliers|product.products,
+How did the price of a product change over time?,product.price_history,
+Legacy transaction amounts by customer segment,legacy.tb_trx02|crm.customers;rpt.v_legacy_transactions|crm.customers,worst case: names carry no meaning
+Legacy transaction totals per store city,legacy.tb_trx02|store.stores;rpt.v_legacy_transactions|store.stores,worst case
+How long does delivery take on average from order to delivery?,sales.orders,
+How many order status changes happen per day?,sales.order_events,
+How many customers live in each city according to their billing address?,crm.addresses,
+What is the lifetime value of VIP customers?,rpt.v_customer_overview;sales.orders|crm.customers,
+Which sales representative sold the most?,sales.orders|hr.employees,no declared FK: needs a model hint

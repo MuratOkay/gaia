@@ -7,6 +7,10 @@ stores each answer under the request's key (``gaia.llm.replay.request_key``), so
 * judging, scoring and the report can be recomputed offline, and anyone can see
   exactly what the model was asked and what it said;
 * usage (tokens, latency) is kept per call for the cost part of the report.
+
+Truncated answers (``finish_reason == "length"``) are kept as well; transport
+failures and blank answers are not (there is nothing to replay), so a resumed
+run asks those again.
 """
 
 from __future__ import annotations
@@ -65,7 +69,9 @@ class RecordingLLMClient:
         )
         with self._lock:
             self.live_calls += 1
-        if response.finish_reason != "length" and response.content.strip():
+        # A truncated answer is kept too: replayed, it sends the reasoner straight
+        # to smaller chunks instead of paying for the same long call again.
+        if response.content.strip():
             doc = {
                 "key": key,
                 "model": response.model,

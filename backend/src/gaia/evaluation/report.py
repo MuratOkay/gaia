@@ -207,10 +207,12 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
     codes = [c for c in CONDITIONS if (out / c / "results.json").exists()]
     labelled = {(t, c) for (ds, t, c) in labels if ds == data_source}
     table: dict[str, Any] = {}
+    loaded: dict[str, tuple[list[dict[str, Any]], dict[str, Any]]] = {}
     for code in codes:
         doc = _load(out, code)
         judged = _judgements(out, code)
         rows = doc["columns"]
+        loaded[code] = (rows, judged)
         lab_rows = [r for r in rows if (r["table"], r["column"]) in labelled]
         summary = doc["summary"]
         calls = summary["calls"]
@@ -225,24 +227,48 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
             "latency_s": round(sum(c["latency_ms"] for c in calls) / 1000, 1),
             "second_round": summary["second_round"],
             "failed": summary["failed"],
+            "critique_failed": summary.get("critique_failed", []),
             "notes": summary["notes"],
         }
 
-    def acc(code: str, subset: str) -> float | None:
-        entry = table.get(code)
-        return entry[subset]["accuracy"] if entry else None
+    def paired(a: str, b: str, only: set[tuple[str, str]] | None
+               ) -> tuple[float | None, float | None, int, int]:
+        """Accuracy of ``a`` and ``b`` on the columns both answered and both had
+        judged (a failed table in one condition must not tilt the comparison),
+        the number of such columns, and how many were left out."""
+        if a not in loaded or b not in loaded:
+            return None, None, 0, 0
+
+        def keys(code: str) -> set[tuple[str, str]]:
+            rows, judged = loaded[code]
+            return {(r["table"], r["column"]) for r in rows
+                    if f"{r['table']}.{r['column']}" in judged
+                    and (only is None or (r["table"], r["column"]) in only)}
+
+        ka, kb = keys(a), keys(b)
+        common = ka & kb
+
+        def accuracy(code: str) -> float | None:
+            rows, judged = loaded[code]
+            return _metrics([r for r in rows if (r["table"], r["column"]) in common],
+                            judged, accept_at)["accuracy"]
+
+        return accuracy(a), accuracy(b), len(common), len(ka | kb) - len(common)
+
+    def left_out(n: int) -> str:
+        return f"; {n} column(s) answered or judged in one condition only, left out" if n else ""
 
     criteria = []
-    bp, bc = acc("B-P", "all"), acc("B-C", "all")
+    bp, bc, n1, out1 = paired("B-P", "B-C", None)
     criteria.append(("B-P beats B-C by ≥ 15 points (all columns)",
                      None if bp is None or bc is None else bp - bc >= MARGIN,
-                     f"B-P {_fmt(bp)} vs B-C {_fmt(bc)}"))
-    np_, nc = acc("N-P", "labelled"), acc("N-C", "labelled")
-    lab_n = table.get("N-P", {}).get("labelled", {}).get("n", 0)
+                     f"B-P {_fmt(bp)} vs B-C {_fmt(bc)} on {n1} paired column(s)"
+                     + left_out(out1)))
+    np_, nc, lab_n, out2 = paired("N-P", "N-C", labelled)
     criteria.append(("N-P ≥ N-C on the owner's labels",
                      None if np_ is None or nc is None else np_ >= nc,
                      f"N-P {_fmt(np_)} vs N-C {_fmt(nc)} on {lab_n} labelled column(s)"
-                     if lab_n else "no labelled columns yet"))
+                     + left_out(out2) if lab_n else "no labelled columns yet"))
     au = table.get("B-P", {}).get("all", {}).get("auroc")
     criteria.append(("AUROC ≥ 0.70 in B-P", None if au is None else au >= AUROC_MIN,
                      _fmt(au, pct=False)))
@@ -292,7 +318,9 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
             extra.append("not judged yet (`make evaluate-judge`)")
         if e["second_round"]:
             extra.append(f"re-reasoned after Stage 3: {', '.join(e['second_round'])}")
-        extra += [f"failed: {f}" for f in e["failed"]] + e["notes"]
+        extra += [f"failed: {f}" for f in e["failed"]]
+        extra += [f"critique failed (scored as not assessed): {f}" for f in e["critique_failed"]]
+        extra += e["notes"]
         if extra:
             lines += ["", f"**{code}**: " + "; ".join(extra)]
     if differ:

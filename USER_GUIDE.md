@@ -37,16 +37,28 @@ These stages exist and work:
 | **Reason** | `make reason` | A business meaning per table and column, with evidence, alternatives and an honest score (Phase 3B: scored from an evidence ledger) |
 | **Review queue** | `make review` | What the SME should look at first, and why |
 | **Embed** | (inside `make reason`) | 1024-dimension vectors for retrieval in Phase 4 |
+| **Query** (Phase 4A) | `make query`, `make query-check` | One SQL statement validated by the SQL guard and run read-only, recorded in `chat.query_run` — the path every generated query will take |
+| **Retrieve** (Phase 4B) | `make retrieve`, `make retrieval-eval` | The schema context for a business question — objects, meanings and their certainty, values, allowed joins — and its recall over a question set |
+| **Golden** (Phase 4D) | `make golden`, `make clarifications` | A set of questions with known answers, run and scored by result; the clarifications Gaia asked and how often its own choice was the user's |
+| **Chat API** (Phase 4E) | `make dev-api` | Conversations over HTTP: questions answered as server-sent events, clarifications and follow-ups as the next message |
+| **Data sources** (Phase 4F) | `make datasource` | Databases added at runtime, password encrypted, usable only once proven read-only; then `TARGET=<name>` everywhere |
+| **Ask** (Phase 4C) | `make ask` | A business question answered: a table and a narrative, or a clarifying question — with what was computed, the assumptions, the unconfirmed meanings relied on, and a confidence |
 
-Targets: SQL Server (`demo_mssql`, the default) and PostgreSQL (`demo_pg`, a
-synthetic development target). Every stage works on both; choose with
-`TARGET=<name>` in `make`, or `--target <name>` on the tools.
+Targets: SQL Server (`demo_mssql`, still the config default) and PostgreSQL
+(`demo_pg`, a synthetic development target). Every stage works on both; choose
+with `TARGET=<name>` in `make`, or `--target <name>` on the tools. Since
+2026-11-16 PostgreSQL is the **main dialect** (D52): every dialect change is
+built and tested there first; SQL Server follows, and its live results no longer
+block a delivery.
 
-Not built yet: the Phase 3 evaluation (3C), SQL generation (Phase 4), the web
-UI for SME review and chat (Phase 5).
+Built but still being run: the Phase 3 evaluation (3C, `make evaluate*`). Built
+in Phase 4 so far: the SQL guard and the read-only executor (4A), retrieval (4B),
+answering (4C), golden runs (4D), the chat API (4E), data sources added at runtime
+(4F). Not built yet: the web UI (Phase 5).
 
-The important consequence: **Gaia does not answer questions yet.** It builds the
-semantic understanding that will let it answer questions.
+Since Phase 4C **Gaia answers questions** from the command line (`make ask`). How often
+the answers are right is what Phase 4D measures; until then, read the confidence and the
+"unconfirmed" lines of every answer.
 
 ---
 
@@ -73,7 +85,6 @@ fixture script creates (§3.1).
 ## 3. First-time setup
 
 ```bash
-cd /home/murat/g120s/gaia
 
 cp .env.example .env          # then fill in real secrets
 make up                       # starts metadata PostgreSQL + Redis
@@ -225,6 +236,222 @@ Safety: only `SELECT`; read-only session; statement timeout
 budgets per table and per run; a per-table time ceiling no statement can
 outlive; one run per data source at a time. Sample rows stay in memory; only
 aggregates and at most five example values per column are stored.
+
+### Running SQL through the guard (`make query`, Phase 4A)
+
+```bash
+make query       TARGET=demo_pg ARGS="--sql 'SELECT count(*) FROM sales.orders'"
+make query       TARGET=demo_pg ARGS="--file infra/pg-target/queries/01_revenue_by_city.sql"
+make query-check TARGET=demo_pg ARGS="--file my.sql"        # validate only: no execution, no record
+```
+
+The guard checks the statement against Gaia's stored catalog snapshot and join
+paths — not the live database — and prints what it found: `ACCEPTED` or
+`REJECTED` with one line per violation (a code and a reason), the objects read,
+every join and what backs it (`fk`, `hint`, `sme` — with `_via_view` when a view
+column stands for its base column —, `shared_key` for two children of one key of
+which one side is aggregated, `same_column`, `generated`; `NO unverified` or
+`NO fan_out` otherwise — see Troubleshooting), the row cap, and the SQL
+that will run. That SQL is rendered by the guard: schema-qualified, capped, and
+exactly what was validated. Then it runs in a read-only session with the
+target's statement timeout and prints the rows.
+
+| Option | Meaning |
+|---|---|
+| `--sql TEXT` / `--file PATH` | the statement (a file path is relative to the repository root) |
+| `--dry-run` | validate only (`make query-check`) |
+| `--no-record` | do not write `chat.query_run` |
+| `--question TEXT` | the business question, stored with the run |
+| `--rows N` | rows to print (default 20; the cap is `query.row_limit`) |
+| `--json` | machine-readable output |
+
+Exit codes: 0 ok, 2 rejected, 3 the execution failed or timed out. Examples that
+show what is accepted and refused: `infra/pg-target/queries/`,
+`infra/sqlserver/queries/`.
+
+What is refused, in short: anything but one `SELECT`/`WITH` query; writes and
+locks anywhere inside it; objects not in the snapshot (including every system
+catalog); functions not on the dialect's allowlist (e.g. `set_config`,
+`pg_sleep`, `dblink`, `xp_cmdshell`, `OPENROWSET`); user functions; variables;
+on SQL Server also other databases, linked servers, temp tables, locking hints
+and `OPTION`; and joins with nothing behind them — comma or `CROSS` joins,
+`NATURAL` joins, `LATERAL`/`APPLY`, or a condition between columns no FK, tested
+hint, SME hint or view lineage connects.
+
+### Asking a question (`make ask`, Phase 4C)
+
+```bash
+make ask TARGET=demo_pg ARGS="--question 'Which store city had the highest order amount last month?'"
+make ask TARGET=demo_pg ARGS="--question 'Who are our best customers?' \
+    --clarified 'the ten customers with the highest order amount in 2025'"
+make ask TARGET=demo_pg ARGS="--question '…' --show-sql --as-of 2026-01-15"
+```
+
+What happens: retrieval builds the context (4B); the model either writes one query or
+asks back; the SQL guard checks the query (4A); it runs read-only; if the guard refuses
+it, the database rejects it or it runs too long, the model is told why and tries again
+(`query.max_repair_attempts`, 2); finally the model writes a short narrative of the
+result. Thinking is off for all of these calls (`llm.thinking.sql_generation`, `repair`,
+`answer`).
+
+An answer prints the narrative, the result table (`--rows N` rows; the table holds up to
+`query.row_limit`), and:
+
+| Line | Meaning |
+|---|---|
+| `confidence : medium (0.68)` and reasons | How sure Gaia is, and why: unconfirmed meanings relied on, repairs needed, joins resting on a model's hint, a result cut at the row limit, assumptions. A heuristic until Phase 6 calibrates it |
+| `computed :` | What the query computed, in business words, with the period and the population |
+| `assumption :` | A choice the question left open and the model made |
+| `unconfirmed :` | A meaning the answer relies on that is machine-inferred and not accepted (or that does not exist yet) |
+
+When the question can be read in more than one way, Gaia does not guess (P4-4): it prints
+`clarification :` with numbered options and the command to answer it:
+
+```bash
+make ask TARGET=demo_pg ARGS="--clarification <id> --clarified 2"              # an option
+make ask TARGET=demo_pg ARGS="--clarification <id> --clarified 'only 2025, by units'"
+```
+
+Every clarification is stored (`chat.clarification`, D61) with Gaia's best guess — the
+option it would have chosen and that option's query, checked by the guard but not run.
+Which option that is, is not shown to you on purpose: the point is to measure how often
+Gaia's choice is yours (`make clarifications`), and a marked option would pull answers
+towards it. When you choose Gaia's option, the stored query answers at once, without
+another model call. When the data is not there, it prints `cannot answer :` and why. Exit
+codes: 0 answered, 4 clarification, 5 cannot answer, 3 failed.
+
+Relative periods ("last month") are computed from today's date, or from `--as-of` /
+`query.as_of` — use that when the data ends in the past, as on `demo_pg` (2025).
+
+The SQL is not shown (P4-2) unless `--show-sql`, which prints every attempt and what went
+wrong with it. Every attempt is stored in `chat.query_run` (chained by `parent_id`) and
+every model call in `audit.llm_call`; `--no-record` skips both. A model remote from your
+data (`llm.locality: remote`) never sees the values of personal-data columns in a result:
+they reach it as `[hidden]`. `--replay DIR` answers from files (tests; recorded as model
+`replay`).
+
+### The chat API (`make dev-api`, Phase 4E)
+
+`make dev-api` serves the API on `127.0.0.1:8000` (no login yet, P5-1 — keep it local).
+
+| Endpoint | Does |
+|---|---|
+| `GET /api/data-sources` | the data sources — from `config/gaia.yaml` and added at runtime (4F): name, dialect, origin, status, introspected, usable, default |
+| `POST /api/conversations` `{"data_source": "demo_pg", "title"?}` | a new conversation (201) |
+| `GET /api/conversations?data_source=demo_pg` | conversations, newest first |
+| `GET /api/conversations/{id}` | a conversation and its turns |
+| `POST /api/conversations/{id}/messages` `{"content", "as_of"?, "reply_to_clarification"?}` | a turn: server-sent events, or JSON with `?stream=false` |
+
+A turn streams: `message` (your turn, stored) → `status` for each stage (retrieval,
+retrieved, generation, checking, running, repairing, narrating) → `result` (the table, as
+soon as it exists) → one of `answer`, `clarification`, `cannot_answer`, `failed` (Gaia's turn,
+stored) → `done`. Lines starting with `:` are keep-alives.
+
+```bash
+curl -sN -X POST 127.0.0.1:8000/api/conversations/$CID/messages \
+     -H 'content-type: application/json' -d '{"content": "Top 5 shops performing best last year."}'
+```
+
+When Gaia's last turn is a clarification, your next message answers it — `1` for the first
+option, or your own words; send `"reply_to_clarification": false` to ask something new
+instead. A follow-up ("and in 2024?", "only Ankara") is read with the last
+`chat.history_turns` answered turns. The `answer` event carries the narrative, the table
+(every row, up to `query.row_limit`), what was computed, assumptions, unconfirmed meanings
+and the confidence — never the SQL (P4-2). The stored turn keeps `chat.keep_rows` rows, with
+personal-data columns masked.
+
+### Data sources added at runtime (`make datasource`, Phase 4F)
+
+Targets in `config/gaia.yaml` work as before. Any other database can be added without
+editing a file; its password is stored encrypted in Gaia's metadata store.
+
+```bash
+make master-key >> .env                    # once: GAIA_MASTER_KEY=…  (keep a copy; see below)
+read -rs PW; export PW                     # the read-only login's password, not echoed
+make datasource ARGS="add --name sales_pg --dialect postgres --host 10.0.0.5 --port 5432 --database sales --user gaia_ro --password-env PW"
+make datasource ARGS="probe sales_pg"      # the read-only probe: 9 checks, as make check-target
+make introspect TARGET=sales_pg            # from here on, every command takes TARGET=sales_pg
+make datasource ARGS="list"                # config and added ones: origin, status, last probe
+make datasource ARGS="update sales_pg --host 10.0.0.6"     # any change: probe again
+make datasource ARGS="disable sales_pg"    # | enable | remove (asks; --yes)
+```
+
+Without `--password-env` the password is asked for. Options: `--option sslmode=require`
+(repeatable), `--limit statement_timeout_s=20` (the limits of `targets.*`). The audit
+record names you by `$USER`.
+
+* **Unusable until proven read-only.** A new data source is `unverified`; any command
+  with it says so and names the fix. `probe` runs the same nine checks as `make
+  check-target` — privileges, and a write that must fail. Passed: `verified`; failed:
+  `failed` with the failing checks (a login that can write always fails). Any change makes it
+  `unverified` again, and so does a proof older than `datasources.reprobe_days` (30).
+* **Removal** keeps the row and everything computed for it (snapshots, meanings, runs),
+  wipes the password and frees the name: the old one is listed as `sales_pg~1a2b3c4d`.
+* **Every action** is recorded in `audit.connection_change` — who, what, which fields;
+  never a value.
+* **The master key.** Lose it and the stored passwords are lost (add the data sources
+  again); the rest of the store is unaffected. To change it: put the old key in
+  `GAIA_MASTER_KEY_PREVIOUS`, a new one (`make master-key`) in `GAIA_MASTER_KEY`, run
+  `make datasource ARGS="rotate-key"`, then remove the previous key.
+* **Over HTTP**, `/api/admin/data-sources` (add, list, change, probe, remove) exists but is
+  off — `datasources.admin_api: true` switches it on. Leave it off while the API has no
+  login (Phase 5).
+
+### Golden runs (`make golden`, Phase 4D)
+
+```bash
+make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg"
+make golden TARGET=demo_pg ARGS="… --only g01,o03"
+make clarifications TARGET=demo_pg        # users' clarifications; --all adds golden and test runs
+```
+
+A golden file lists questions with known answers (`infra/pg-target/golden.yaml` documents
+the format). `expect: answer` questions have a reference query; `expect: clarify` questions
+must be asked back, and may carry the user's answer (`clarified`) and the reference for it.
+`identify_by` lists columns that identify the same thing (sku, name, id: one is enough);
+`rank_by` the column a top-N list is ranked by (rows tied at the cut are interchangeable);
+`order_matters` that the order is part of the answer. `as_of` is "today" for the whole set.
+
+The run asks every question as a user would, clarifies where the file says so, and scores
+the final answer by comparing its *result* with the reference's: columns by their values
+(names and extra columns do not matter), numbers at the precision shown, rows as a set or in
+order. It prints one line per question and writes `report.md` and `results.json` to `--out`:
+executable and correct shares (the Phase 4 targets: 80 % and 70 %), how often Gaia asked back
+when it should and when it should not, how often its best guess was the user's answer, and
+the cost. Every model answer is kept in `--out/llm`: an interrupted run resumes and a repeated
+run makes no new call.
+
+### Finding what a question needs (`make retrieve`, Phase 4B)
+
+```bash
+make retrieve TARGET=demo_pg ARGS="--question 'revenue by store city last month'"
+make retrieve TARGET=demo_pg ARGS="--question '…' --context"        # + the text the generator sees
+make retrieval-eval TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv"
+```
+
+`make retrieve` prints the ranking (the ten best objects, `*` = in the context), the
+context (each object with why it was chosen: `lexical`, `value`, `vector`, or `bridge`
+on a join path), the joins offered, how many meanings in it are uncertain, notes, and
+the size in tokens; `--context` adds the rendered context itself, `--json` everything
+as JSON, `--no-vectors` ranks by words only. It reads Gaia's store and asks Ollama for
+the question's embedding — if Ollama is down it says so and ranks by words.
+
+In the context a column reads like
+`total_amount numeric(14,2) — Order Total [measure, TRY] (uncertain 0.62)`: its type,
+its meaning, role and unit, and `(uncertain …)` when the meaning is machine-inferred
+and not accepted, `(no meaning yet)` when the object was never reasoned. Readable
+values (`values: 'web', 'store', …`, or `most frequent values (10 of ~40)`), date
+ranges and conversion hints (`integer date yyyymmdd: to_date(…)`) follow. Personal
+data never shows values. Only joins the SQL guard accepts are listed.
+
+`make retrieval-eval` reads a CSV `question,expected[,notes]` — `expected` lists the
+objects a correct answer needs (`schema.object`, separated by `|`; alternative sets by
+`;`) — and prints per question `ok` (all expected objects in the context and joined),
+`part` (in the context, not joined) or `MISS`, then `covered`, `connected`, `recall@k`,
+`MRR` and the mean context size. `--out F` writes everything as JSON.
+
+Settings: `retrieval.*` in `config/gaia.yaml` (objects per context, bridges, join hops,
+columns shown, token budget, nearest meanings from the embeddings).
 
 ### Measuring profiling cost (`make measure`)
 
@@ -476,11 +703,12 @@ All in `config/gaia.yaml`; secrets stay in `.env`.
 
 | Setting | Default | When to change |
 |---|---|---|
-| `llm.concurrency` | 3 | **Never raise above 3.** The gateway caps at 4 per model; a retry needs a free slot |
+| `llm.concurrency` | 3 | **Never raise above 3.** The gateway caps at 4 per model; a retry needs a free slot. Per command: `GAIA_LLM_CONCURRENCY=2 make …` — two jobs at once at 2 each share the 4 slots |
+| `datasources.reprobe_days` / `admin_api` | 30 / false | How long a data source added at runtime stays usable after its probe; the admin HTTP API (off until logins exist) |
 | `llm.timeout_s` | 1800 | Read timeout per completion. Sized for the widest bundle plus thinking-mode headroom |
 | `llm.thinking.semantics` / `.critique` | true | Turn off to trade depth for speed (~4–5× faster) |
 | `llm.retry.max_attempts_rate_limit` | 8 | Raise only if the gateway gets flakier |
-| `llm.max_output_tokens` | 16000 | Raise if you see truncation errors on wide tables |
+| `llm.max_output_tokens` | 16000 | Usually leave it. It covers the model's thinking *and* the answer; a truncated answer is re-asked in smaller column chunks automatically. Raising it lengthens the worst call (at ~15 tokens/s, 32k tokens outlast `llm.timeout_s`) and changes every request key, so cached and recorded answers stop matching |
 | `scoring.weights` | 0.30/0.25/0.20/0.15/0.10 | Must sum to 1.0; changing them changes every score |
 | `profiling.accept_at` | 0.80 | Lower to accept more columns; raises risk |
 | `semantics.prompt_major` | 2 | 1 = Phase 2 prompts (catalog only); changing it re-reasons every table once |
@@ -504,8 +732,9 @@ counts those of the target being checked.
 
 ### Secrets
 
-Only `.env`, never `config/gaia.yaml`, never the database. `.env` is
-git-ignored. If a key is missing, `make reason` fails with a clear message;
+Only `.env`, never `config/gaia.yaml`, never the database in clear. `.env` is
+git-ignored. The one exception by design: passwords of data sources added at runtime
+(4F) are in the metadata store, **encrypted** with `GAIA_MASTER_KEY` from `.env`. If a key is missing, `make reason` fails with a clear message;
 `make reason-dry` still works.
 
 
@@ -559,6 +788,55 @@ You will see a distinct error rather than a generic failure, so a slow provider
 is not mistaken for an unhealthy gateway. Read timeouts retry only once
 (`retry.max_attempts_timeout: 2`), because each attempt already costs the full
 timeout.
+
+### `output truncated at max_tokens=16000: thinking T, answer A token(s)`
+
+With thinking on, `llm.max_output_tokens` is shared by the chain of thought and
+the answer, so even a narrow table can run out when the model thinks long (3C,
+2026-11-16: 12,437 of 16,000 tokens were thinking on a 14-column table). Since
+2026-11-16 (D53) the reasoner handles it: it asks again with at most half the
+columns of the chunk that truncated (14 → 7 → 4 → 2), and a truncated critique
+is asked again in halves. The run prints `answer truncated on N column(s):
+asking again …`. Only if even 2-column chunks truncate does the table fail.
+
+Do **not** raise `llm.max_output_tokens` to cure this: the calls get longer than
+the read timeout allows at this gateway's speed (median ~15 tokens/s, slowest
+~8), and every request key changes, so cached answers and an evaluation run's
+recorded answers no longer apply.
+
+### `data source 'x' is unverified` / `failed` / `was last proven read-only more than … days ago`
+
+A data source added at runtime (4F) is used only while its read-only probe is current.
+`make datasource ARGS="probe x"`; if it ends `failed`, the listed checks say why — usually
+a login with more than read rights (`security.privileges`). `GAIA_MASTER_KEY is not set` or
+`does not decrypt`: the key in `.env` is missing or not the one the password was stored with
+(§5, "Data sources added at runtime").
+
+### `make query`: `REJECTED … unverified_join`
+
+The join's condition connects two columns Gaia has no join path for. Either the
+join is wrong, or the relationship exists but nothing records it yet: declare the
+FK in the database, let the model propose it (`make reason`) and Stage 3 test it
+(`make profile-tests`) — a model hint counts once its test passed and was
+specific (D48) — or, from Phase 5, confirm it as an SME. Two tables that both
+reference the same key (two facts on `customer_id`) join as `shared_key` once one
+side is aggregated by that key (otherwise: the fan trap, below).
+`query.unverified_joins: warn` turns this rule — and the fan-trap rule — into
+warnings; it is meant for diagnosis, not for answering questions.
+
+### `make query`: `REJECTED … neither side of this join is unique`
+
+The join follows a join path, but both sides can repeat, so every row on one side
+meets every matching row on the other — `order_lines JOIN payments ON order_id` pairs
+each payment with each line of its order, and any sum over it is inflated (a *fan
+trap*). Aggregate one side by the join column first (`WITH p AS (SELECT order_id,
+sum(amount) … GROUP BY order_id)`), or join each to the parent (`orders`) separately.
+
+### `make query`: `REJECTED … function_not_allowed`
+
+Functions are on a per-dialect allowlist (`dialects/<d>/guard.py`). A missing
+harmless function is added there with a test; a function that changes settings,
+reads files, sleeps, locks, writes or runs other SQL is never added.
 
 ### SQL Server: `security.privileges` or `security.read_only` fails (since 3.0)
 

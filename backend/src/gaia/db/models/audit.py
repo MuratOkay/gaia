@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+from typing import Any
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from gaia.db.models.base import Base
@@ -63,3 +65,31 @@ class LLMCall(Base):
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
+
+
+class ConnectionChange(Base):
+    """Who added, changed, probed, disabled or removed a data source, and when (Phase 4F,
+    OUTLINE §24). ``detail`` names what changed and the probe's verdicts — never a value
+    of a credential."""
+
+    __tablename__ = "connection_change"
+    __table_args__ = (
+        sa.Index("ix_connection_change_source", "data_source_id", "created_at"),
+        sa.CheckConstraint(
+            "action IN ('created', 'updated', 'probed', 'disabled', 'enabled', 'removed', "
+            "'rotated')", name="action"),
+        {"schema": "audit"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    data_source_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("catalog.data_sources.id", ondelete="SET NULL")
+    )
+    data_source_name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    action: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    actor: Mapped[str | None] = mapped_column(sa.Text)  # a user, once identities exist (P5-1)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )
+

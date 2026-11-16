@@ -41,6 +41,22 @@ not at 100 %: random integers against a 97 %-dense key are all found with 0.2 %
 probability, yet ~97 % of them are found every time, so a count "passed" into a
 payroll line id (``agg_product_performance.line_count``, 99 %).
 
+**The neighbour control** (D54, 2026-11-16, after the owner's §12 run, where
+the count still passed at 99 %). A density is a model of where the values lie,
+and counts break it: most are small (where ids are dense), a few are huge (where
+ids are sparse), so the density over their range is low and a 99 % pass looks
+specific. The control needs no model: the same test is run on a *neighbour* of
+each value — the value plus a seeded offset between 1 and ``NEIGHBOUR_SPAN`` —
+which is distributed like the values but has no reason to be a key. If
+neighbours are found about as often as the values, the match is chance: the
+result is specific only if at least that many hits are < 1 % likely at the
+neighbours' rate (the larger of that rate and the density). The offset is not
+always 1: a ``yyyymmdd`` date key's next integer is usually the next day, a key
+too, which would make every real date-dimension join look like chance; a few
+weeks further most integers are not dates, while a dense surrogate id stays
+dense. One more index seek with the statement the test already uses, only for
+integer tests that reached the keep threshold.
+
 Text and uuid values are specific. A non-specific pair is not a Stage 1
 candidate, and a non-specific result is not kept (it would only invite the
 model to see a reference in a quantity or a time); a non-specific Stage 3 test
@@ -62,6 +78,7 @@ top-k for codes and flags whose counts were sampled.
 from __future__ import annotations
 
 import math
+import random
 import re
 import uuid
 from dataclasses import dataclass
@@ -91,6 +108,7 @@ __all__ = [
 PASS_RATE = 0.95
 KEEP_RATE = 0.50
 CHANCE_MAX = 0.01
+NEIGHBOUR_SPAN = 97  # D54: neighbours are value + 1 … value + 97 (seeded)
 _TOKEN = re.compile(r"[a-z]+")
 _INTEGER = {"tinyint", "smallint", "int", "integer", "bigint", "int2", "int4", "int8"}
 
@@ -291,6 +309,7 @@ def find_candidates(
 class Inclusion:
     result: VerificationResult
     distinct_rate: float  # share of the tested distinct values found
+    neighbour_rate: float | None = None  # D54: share of nearby integers found (integer tests)
 
     @property
     def worth_keeping(self) -> bool:
@@ -405,25 +424,56 @@ def inclusion_test(
         )
     if missing and rate >= KEEP_RATE:
         detail += f"; {missing} value(s) not found: orphans or another parent"
-    if parent_family == "integer" and rate >= KEEP_RATE and (
-        density is not None or hasattr(profiler, "range_count_sql")
-    ):
-        local = _local_density(profiler, cur, parent_table, parent_column, sendable)
-        effective = local if local is not None else density
-        if effective is not None and chance_of_hits(len(hit), len(counts), effective) >= (
-            CHANCE_MAX
-        ):
+    control: float | None = None
+    if parent_family == "integer" and rate >= KEEP_RATE:
+        local, why = _local_density(profiler, cur, parent_table, parent_column, sendable)
+        if why:
+            detail += f"; key density where the values lie not measured ({why})"
+        control, why = _neighbour_rate(profiler, cur, parent_table, parent_column, sendable,
+                                       parent_type)
+        if control is not None:
+            detail += f"; nearby integers (value + 1…{NEIGHBOUR_SPAN}) are keys too: {control:.0%}"
+        elif why:
+            detail += f"; neighbour control not run ({why})"
+        rates = [r for r in (local if local is not None else density, control) if r is not None]
+        if rates and chance_of_hits(len(hit), len(counts), max(rates)) >= CHANCE_MAX:
             specific = False
     if not specific:
         detail += "; the parent key is dense, so any in-range integer matches: weak evidence"
     result = VerificationResult(
         test_id, "inclusion", rate >= PASS_RATE, round(rate, 4), detail, origin, specific
     )
-    return Inclusion(result, len(hit) / len(counts))
+    return Inclusion(result, len(hit) / len(counts), control)
+
+
+def _integers(sendable: dict[Any, Any]) -> list[int]:
+    return sorted({v for v in sendable.values() if isinstance(v, int) and not isinstance(v, bool)})
+
+
+def _neighbour_rate(profiler, cur, parent_table: str, parent_column: str,
+                    sendable: dict[Any, Any], parent_type: str | None
+                    ) -> tuple[float | None, str | None]:
+    """Share of the tested values' neighbours (value + a seeded offset in
+    1 … ``NEIGHBOUR_SPAN``) that are keys of the parent — the hit rate chance
+    alone gives values distributed like these (module docstring, "The neighbour
+    control"). (rate, why it was not measured)."""
+    ints = _integers(sendable)
+    if not ints:
+        return None, None
+    rng = random.Random(len(ints))  # noqa: S311 (a control sample, not a secret)
+    neighbours = [v + rng.randint(1, NEIGHBOUR_SPAN) for v in ints]
+    schema, name = parent_table.split(".", 1)
+    sql, params = profiler.inclusion_sql(
+        profiler.table(schema, name), parent_column, neighbours, parent_type)
+    try:
+        found = {_key(r[0]) for r in profiler.query(cur, sql, params)}
+    except Exception as exc:  # the density still applies
+        return None, f"{type(exc).__name__}: {str(exc)[:120]}"
+    return sum(1 for v in neighbours if _key(v) in found) / len(neighbours), None
 
 
 def _local_density(profiler, cur, parent_table: str, parent_column: str,
-                   sendable: dict[Any, Any]) -> float | None:
+                   sendable: dict[Any, Any]) -> tuple[float | None, str | None]:
     """Density of the parent key *where the tested values lie*: keys between the
     smallest and largest tested value / width of that range (one index range
     count). The key's overall density misleads when ids are dense in one range
@@ -431,18 +481,18 @@ def _local_density(profiler, cur, parent_table: str, parent_column: str,
     hr.payroll_lines.payroll_line_id at 99 % after the binomial check, because
     the ids are dense where the counts lie)."""
     if not hasattr(profiler, "range_count_sql"):
-        return None
-    ints = [v for v in sendable.values() if isinstance(v, int) and not isinstance(v, bool)]
+        return None, None
+    ints = _integers(sendable)
     if not ints:
-        return None
-    low, high = min(ints), max(ints)
+        return None, None
+    low, high = ints[0], ints[-1]
     schema, name = parent_table.split(".", 1)
     sql, params = profiler.range_count_sql(profiler.table(schema, name), parent_column, low, high)
     try:
         keys = int(profiler.query(cur, sql, params)[0][0])
-    except Exception:  # the global density still applies
-        return None
-    return min(1.0, keys / (high - low + 1))
+    except Exception as exc:  # the global density still applies; the detail says why
+        return None, f"{type(exc).__name__}: {str(exc)[:120]}"
+    return min(1.0, keys / (high - low + 1)), None
 
 
 def _key(value: Any) -> str:

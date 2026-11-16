@@ -1,7 +1,9 @@
 """Gaia FastAPI application.
 
 Phase 0 surface: ``/health`` (infrastructure + config diagnostics) and
-``/api/meta`` (redacted, non-secret configuration echo).
+``/api/meta`` (redacted, non-secret configuration echo). Phase 4E: the chat API
+(``gaia.api.chat``: data sources, conversations, questions answered as server-sent
+events). No authentication yet (P5-1): serve on 127.0.0.1 only (``make dev-api``).
 """
 
 from __future__ import annotations
@@ -16,6 +18,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gaia import __version__
+from gaia.api.admin import router as admin_router
+from gaia.api.chat import router as chat_router
 from gaia.core.config import get_settings
 from gaia.db.engine import asyncpg_dsn, dispose_engine
 
@@ -43,6 +47,9 @@ app = FastAPI(
     description="Metadata-driven semantic agent for business question answering.",
     lifespan=lifespan,
 )
+
+app.include_router(chat_router)
+app.include_router(admin_router)  # off unless datasources.admin_api (Phase 4F)
 
 app.add_middleware(
     CORSMiddleware,

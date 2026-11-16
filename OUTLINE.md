@@ -5,13 +5,16 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status (2026-11-15): Phases 0–2 done; Phase 3 approved and in progress
-> (3.P done; 3.0 verified on the host; 3B and 3A verified on the host with
-> defects, fixes in progress — PHASES "Owner verification (2026-11-15)"; 3C next). Delivery state, gates and
+> Status (2026-11-16): Phases 0–2 done; Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B
+> done, 3C runs resuming on the host; **Phase 4 built in the sandbox — 4A (SQL guard,
+> executor), 4B (retrieval), 4C (answering), 4D (golden runs), 4E (chat API) and 4F
+> (data sources added at runtime)**; the gate waits for the configured model's golden
+> run on the host. Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
-> Metadata store: PostgreSQL 18 + pgvector. Targets: SQL Server 2025 (first),
-> PostgreSQL (dialect since 3.P). Reasoning LLM: configurable per deployment;
+> Metadata store: PostgreSQL 18 + pgvector. Targets: **PostgreSQL (main dialect
+> since D52, 2026-11-16)** and SQL Server 2025 (the first target; since D52 its
+> live results are asynchronous and non-blocking). Reasoning LLM: configurable per deployment;
 > development uses `deepseek-v4.1-flash` via a gateway. Embeddings: local Ollama
 > `bge-m3`. Frontend: React + TypeScript (Vite, pnpm).
 >
@@ -76,14 +79,12 @@ Gaia never treats its own store as a business target.
 | Docker / Compose | 29.9.3 / v5.7.1 |
 | CPU / RAM / Disk free | 8 cores / 31 GB / 281 GB |
 | GPU | GTX 1050 Ti 4 GB — embeddings on CPU (`num_gpu: 0`) |
-| Project path | `/home/murat/g120s/gaia` |
 | Python env | `gaia-env` (pre-created by owner, Python 3.12.3) |
 | Host ODBC | `msodbcsql18 18.4.1.1`, `unixodbc-dev`, gcc 13.3 → `pyodbc` builds natively |
 | Target SQL Server | container `sql1`, external to Compose, `127.0.0.1:1433` (never `localhost`, D11) |
 | SQL Server version | 2025 RTM-CU7, 17.0.4065.4 |
 | Ollama | container `ollama-code`, `127.0.0.1:11435`, v0.17.7, `/api/embed` confirmed |
 | PostgreSQL dev target | Compose service `gaia-target-pg` (profile `target-pg`), `127.0.0.1:5434`, synthetic (D25) |
-| Backup source | `/home/murat/Downloads/nge-small-mssql-v0.3.0.bak` (6.86 GB) |
 
 Reserved host ports: `5433` (metadata pg18), `6380` (redis), `8000` (API),
 `5173` (Vite), `5434` (PostgreSQL dev target). External: `1433` (SQL Server),
@@ -117,7 +118,7 @@ A named Docker volume avoids the problem entirely.
 | Off-peak scheduling | Bulk re-reasoning prefers off-peak | Peak = 01:00–04:00 and 06:00–10:00 UTC weekdays; off-peak is half price |
 | Embeddings | **Local Ollama `bge-m3`, 1024-dim, `num_gpu: 0`** | No cloud embedding cost; schema text stays on-host; multilingual for future i18n |
 | Never embed with a coder model | `qwen2.5-coder` returns 1536 dims of untrained noise | Would silently destroy retrieval quality |
-| Target DB | SQL Server 2025 first; **PostgreSQL** dialect added in 3.P (D25, D26) | Both behind the dialect seam, each with its own type vocabulary |
+| Target DB | SQL Server 2025 first; **PostgreSQL** dialect added in 3.P (D25, D26); **PostgreSQL is the main dialect since D52** (2026-11-16): dialect work lands and is accepted there first, SQL Server follows with tests whose live results do not block | Both behind the dialect seam, each with its own type vocabulary. D52: the owner-only SQL Server round trip had become the critical path |
 | Target provisioning | **Owner restores a backup; Gaia never creates the database** (the synthetic PostgreSQL dev target is the one exception, D25) | The expectation that the vendor DB carried comments proved false — it has none — which led to the worst-case premise (D23) |
 | Read-only login | Created manually by owner; **Gaia verifies, never creates** | Target database stays untouched by the app |
 | SQL dialect | `sqlglot` with `read`/`write` = `tsql` or `postgres` | Required for AST validation of generated SQL and for view lineage |
@@ -1210,6 +1211,10 @@ the binding constraint.
 
 ## 24. Data source management (admin-supplied connections)
 
+> **Built in Phase 4F (2026-11-16, D65)** — as designed below, with application-level
+> AES-GCM (P4-6) and the HTTP side switched off until there is authentication. What was
+> built and verified: §37 and PHASES, "4F results". The section is kept as the design record.
+
 Raised during the Phase 2 addendum: administrators will add database
 connections through the UI, so targets cannot live in `config/gaia.yaml`
 forever. This section records the design so Phase 3 does not harden an
@@ -1488,3 +1493,232 @@ whether the score ranks right answers above wrong ones; the owner audits a fifth
 of the judgements without seeing them. On `demo_pg` the native worst case has an
 exact ground truth, with and without the view that names the legacy columns.
 Details and the decisions taken while building it: PHASES, "3C harness", D51.
+
+**Owner runs (2026-11-15/16).** B-C completed (99 columns, 20 calls); B-P stopped
+on a 14-column table whose answer was truncated — thinking had used 12,437 of
+the 16,000 output tokens — and a B-C critique had failed without a word. A
+truncated answer is now asked again in smaller column chunks (D53), failed
+critiques are reported, and two conditions are compared on the columns both
+answered (D55). The run resumes from its recordings (PHASES, "Owner runs of §12
+and §13b").
+
+---
+
+## 30. Dialect policy (D52, owner, 2026-11-16)
+
+PostgreSQL is the main dialect. The reason is speed of verification, not
+preference: the assistant can reproduce a PostgreSQL target and metadata store
+end to end, while every SQL Server result needed a round trip through the owner
+(days, in practice). From now on a dialect change is built and accepted on
+PostgreSQL first; the SQL Server counterpart follows with tests, and what only
+the owner can run is written to OWNER_VERIFICATION and answered when it can be.
+
+What does **not** become optional (refinements proposed with D52): the offline
+T-SQL tests, which run anywhere; anything about safety — a write path or a guard
+bypass on SQL Server stops its use until fixed; and the honesty of accuracy
+claims — `demo_pg` was designed by the assistant, so it proves the machinery,
+while meaning accuracy is measured on `nge_small` or on a realistic PostgreSQL
+copy of it.
+
+**D56 (owner).** SQL Server is verified asynchronously on delivered builds: every
+delivery is a commit with a build marker (`make stamp`), the owner runs the SQL
+Server track on the latest build when time allows, and each result is read
+against the build it names; fixes land in later builds.
+
+The slowest loop is still the reasoning model (~15 tokens/s through the gateway;
+a table with thinking takes 2–15 minutes). D52 shortens the database loop; it
+does not shorten that one, which is why Phase 4's generation runs with thinking
+off and why every evaluation run is resumable.
+
+---
+
+## 31. Phase 4A — the SQL guard (done in the sandbox)
+
+Before Gaia generates any SQL, it has the only door SQL can go through. A
+statement is parsed with `sqlglot` and checked against allowlists — a single
+`SELECT`/`WITH` query; functions by the name the database will see — and against
+Gaia's own store, never the live database: every object must be in the catalog
+snapshot (so no system catalog is ever readable), every column must resolve, and
+every join must be backed by a join path. Join paths are key classes built from
+declared FKs, model hints whose claim test passed (D48), SME hints and view
+lineage, so two facts that reference the same key join as readily as a parent and
+its child, while a join invented between unrelated columns is refused. A row cap
+is added or lowered. Then — the design's central rule — what runs is the guard's
+**rendering** of the tree it validated, never the text it was given: anything the
+parser misread can only become something harmless. The rendering is parsed and
+checked once more, executed in the dialect's read-only session with the statement
+timeout, and recorded with the snapshot and the semantic versions it read.
+
+The guard is the second layer, not the first: the read-only login and session
+stay the boundary (D4), and a statement forced past the guard in the tests still
+meets "read-only transaction" (PostgreSQL) or a permission error (SQL Server).
+Since D58 the guard also refuses joins that multiply rows: besides a join path,
+one side of every join must be unique (a key, or a derived table grouped by the
+join column) — the fan trap, `order_lines ⋈ payments ON order_id`, is the commonest
+silent error of generated SQL, and view lineage is an alias, not a join.
+
+Its suites — 78 + 46 refused statements (fan traps included since D58), 29 accepted, on PostgreSQL and T-SQL —
+pass with every sqlglot major from 25 to 30; where an old parser differs it
+refuses, never accepts. Decisions: D57. Details: PHASES, "4A results".
+
+---
+
+## 32. Phase 4B — retrieval (done in the sandbox)
+
+A question becomes a schema context: the objects it needs, what Gaia believes their
+columns mean and how sure it is, the values and date ranges that make filters
+writable, and the only joins allowed. Two channels find the objects. The lexical one
+needs nothing but the store: BM25 over names split into words (with `qty`, `trx`,
+`cust`… expanded), meanings, synonyms and the readable values of low-cardinality
+columns — so it works without the embedding service and on objects never reasoned,
+where names are all there is. The vector one compares the question with the
+`bge-m3` embeddings of the current meanings. Ranks are fused, columns roll up to
+their objects, and confidence weights the result without ever filtering it (R2):
+an uncertain meaning is used and said to be uncertain; an abstained one is not used.
+
+The objects found are connected by the guard's own join paths — declared FKs first,
+then through views, then tested model hints — with bridge objects added on the way,
+and only joins the guard accepts are offered, so the generator cannot be led into a
+join it will then be refused, nor into a fan trap. What reaches a remote model
+follows the exposure policy: enum labels, small code sets and date ranges, never
+values of personal data.
+
+On `demo_pg`, with meanings derived from names and no vectors, every expected object
+was in the context for all 22 test questions and joined there for 19; the other three
+need joins that exist only as model hints. Real numbers need real meanings and
+`bge-m3` on the owner's host: `make retrieval-eval` is the Phase 2 "retrieval smoke
+test" made a tool. Decisions: D58, D59. Details: PHASES, "4B results".
+
+---
+
+## 33. Phase 4C — answering (done in the sandbox)
+
+A question now ends in an answer. Retrieval builds the context; one model call decides
+whether the question can be answered as asked and, if so, writes the query with what it
+computes, what it assumes and the columns it relies on; the guard checks it; it runs
+read-only; a refusal, a database error or a timeout goes back to the model in the same
+conversation, twice at most; and a second call writes a few sentences about the result.
+The user sees a table and that narrative (P4-2) — the SQL is kept for audit, not shown.
+
+The owner's rule for ambiguity is *clarify, always* (P4-4): two readings that give
+different numbers, a relative period outside the data, a join that is not there — the
+answer is a question back, with options. Relative periods are written as dates computed
+from "today", so every answer can say which period it means and every run can be
+repeated. Nothing the narrative model sees includes values of personal data when the model
+is remote. Every answer carries its interpretation, its assumptions, the unconfirmed
+meanings it relies on and a confidence that says why it is what it is.
+
+In the sandbox the pipeline was run against the real guard, database and store with a
+scripted model, through every path; the golden set of `demo_pg` — 21 questions with
+reference SQL, 4 that must be clarified — passes the whole pipeline with its reference
+answers; and a replayed run showed the loop working as intended: a fan-trap join refused,
+explained, corrected, and the golden number returned. What the configured model makes of
+all this is the next measurement (4D). Decisions: D60. Details: PHASES, "4C results".
+
+---
+
+## 34. Phase 4D — golden runs, and clarifications remembered (done in the sandbox)
+
+A golden run asks every question of a set as a user would — clarifying where the set says
+the user would — and scores the final answer by its result, not its SQL: two right queries
+rarely look alike, two right results always hold the same values. Columns are matched by
+their values, numbers at the precision shown, rows tied at a "top ten" cut are
+interchangeable. The Phase 4 targets — executable for 80 %, correct for 70 % — are read from
+such a run on the owner's host.
+
+The owner's own questions changed two things before any model saw them. They are phrased
+the way people ask — "top 5 shops performing best last year" — and each is ambiguous in a
+way that changes the numbers, so each is a clarification test. And they exposed the limits
+of word matching: "shops" found nothing in a database of "stores", and "the best supplier in
+2025" needs sales and dates the question never names. A short list of business synonyms and
+two structural rules — a ranking needs the activity behind it, a period needs the dated facts
+— took the names-only coverage of those questions from four in seven to six in seven.
+
+The owner also proposed that Gaia learn from clarifications (D61). Gaia now records, with
+every question it asks back, the answer it would have given: the option it would choose and
+that option's query, checked but never shown or run. The user's choice is recorded beside it.
+What that makes possible is a measurement before any behaviour change: how often, for a kind
+of ambiguity on a data source, Gaia's choice is the user's. Only when that is measured high
+enough — on users' clarifications, not test runs — would Gaia answer such a question without
+asking, and then still say what it assumed and offer the other readings; what it learns is a
+definition, confirmed by an SME before it applies to everyone. Decisions: D61–D63. Details:
+PHASES, "4D results".
+
+---
+
+## 35. Phase 4E — the chat API (done in the sandbox)
+
+Questions become conversations. A turn streams its progress — found the data, writing the
+query, checking it, running it — and the table goes out the moment it exists, before the
+narrative, which at the gateway's pace can take tens of seconds more. An open clarification
+is answered by simply replying ("1"), and when that reply is the option Gaia would have
+chosen, its stored best guess answers at once. A follow-up ("and in 2024?") is read with the
+questions before it and what was computed for them. What is kept of an answer is enough to
+show it again and never personal data: a bounded copy of the table with personal-data columns
+masked, and no SQL. Decision D64; details: PHASES, "4E results".
+
+---
+
+## 36. Learning from clarifications: methods considered (owner question, 2026-11-16 — not a decision)
+
+D61 records, for every clarification, the option Gaia would have chosen and the one the user
+chose. That is a labelled dataset produced as a side effect of clarifying always — and, while
+Gaia always asks, an unbiased one: no answer was withheld because Gaia was sure. What can be
+learned from it, in increasing order of data needed:
+
+1. **A proportion with an honest interval** (per ambiguity kind and data source). The agreement
+   rate is a binomial proportion; its 95 % lower bound (Beta posterior) is what a ≥ 90 % rule
+   should compare: 27/30 is an observed 90 % but a lower bound of 0.77; 30/30 gives 0.91; 95 %
+   observed needs ~100–200 answers to clear 0.90. A hierarchical (partially pooled) version
+   shares strength across kinds and data sources, so a new data source starts from the others'
+   rate instead of from nothing. Tens of answers suffice.
+2. **Selective prediction with a guarantee.** Treat "answer without asking" as a classifier
+   that may abstain; choose its threshold on held-out clarifications so that the error rate
+   among the questions it answers stays below a target (risk-coverage curve). Conformal
+   prediction makes the guarantee distribution-free: answer directly only when the calibrated
+   prediction set holds a single option. Hundreds of answers.
+3. **A learned chooser.** Features the store already has — the question's `bge-m3` embedding,
+   the options' embeddings, the ambiguity kind, retrieval scores, who asks — into a
+   logistic model or gradient-boosted trees, calibrated like the scores of Phase 6 (isotonic).
+   Or case-based: the nearest past clarification by embedding, and its answer, given to the
+   model in the prompt (in-context learning). Hundreds to a few thousand answers.
+4. **Neural models.** A cross-encoder fine-tuned to score (question, option) pairs, or a reward
+   model of users' preferences. Thousands of answers per population, ideally pooled across
+   customers — which their data separation usually forbids — and their gain over 3 is mostly in
+   paraphrase robustness, which the embeddings of 3 already provide.
+
+What "more precise" means here is not top-1 accuracy — the model's best guess already is the
+top-1 — but **coverage at a fixed error rate**: how many questions can be answered without asking
+while wrong answers stay under, say, 5 %. Methods 1–2 deliver that with the data a customer will
+realistically produce; 3 adds generalisation across paraphrases; 4 is unlikely to pay before a
+large multi-tenant dataset exists. Once Gaia starts answering without asking, the data stops
+being unbiased (the user only corrects what they notice): keeping a small random share of
+questions asked anyway — exploration, as in contextual bandits — keeps the measurement honest.
+
+---
+
+## 37. Phase 4F — data sources added at runtime (done in the sandbox)
+
+§24's design, built. `config/gaia.yaml` stays the bootstrap path; any other name is looked up
+in the metadata store, so every existing command and the API work with an added data source
+without knowing where it came from (`TARGET=<name>`). What makes it safe to let an
+administrator type in a connection:
+
+* **The password is encrypted in the application** (AES-256-GCM) with a key that lives only in
+  `.env` (`GAIA_MASTER_KEY`), bound to its row — copied onto another data source, it does not
+  decrypt. A second key variable makes rotation possible without downtime
+  (`make datasource ARGS="rotate-key"`). The password is never returned, logged, audited or
+  put in an error.
+* **Read-only is proven, not assumed.** A new data source is unusable until the same
+  nine-check probe as `make check-target` passes — privileges, and a write that must fail — and
+  becomes unusable again after any change or when its last proof is older than 30 days. A
+  superuser's credentials fail it.
+* **Nothing is deleted.** Removal tombstones the row, wipes the secret and frees the name; the
+  snapshots, meanings and runs that point at it stay readable.
+* **Every change is audited** (`audit.connection_change`: who, what, which fields — never
+  values).
+
+The administration API exists but is off (`datasources.admin_api`) until Phase 5 brings
+logins (P5-1); until then it is a CLI for whoever holds the server. Decision D65; details:
+PHASES, "4F results".
+

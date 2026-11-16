@@ -45,6 +45,12 @@ def request_key(messages: list[Message], params: dict) -> str:
 def _describe(messages: list[Message]) -> dict[str, str | None]:
     system = messages[0].content if messages else ""
     purpose = "critique" if system.startswith("You are a sceptical reviewer") else "semantics"
+    if system.startswith("You write one read-only SQL query"):
+        purpose = "sql_repair" if len(messages) > 2 else "sql_generation"
+        question = messages[1].content.rsplit("Question: ", 1)[-1].strip()[:80]
+        return {"purpose": purpose, "table": question}
+    if system.startswith("You explain the result of a database query"):
+        return {"purpose": "answer", "table": None}
     table = None
     for m in messages:
         marker = '"table": "'

@@ -258,8 +258,14 @@ def _calls(outcomes) -> list[dict[str, Any]]:
                         "prompt_tokens": c.usage.prompt_tokens,
                         "completion_tokens": c.usage.completion_tokens,
                         "reasoning_tokens": c.usage.reasoning_tokens,
-                        "latency_ms": c.latency_ms})
+                        "latency_ms": c.latency_ms}
+                       | ({"error": c.error[:300]} if c.error else {}))
     return out
+
+
+# Reasoner notes worth a line in the summary (the rest — dropped join hints — are
+# per-table detail already visible in the answers).
+_SUMMARY_NOTES = ("truncated", "column chunks")
 
 
 def run_condition(ctx: EvalContext, code: str) -> dict[str, Any]:
@@ -309,11 +315,19 @@ def run_condition(ctx: EvalContext, code: str) -> dict[str, Any]:
 
     rows: list[dict[str, Any]] = []
     failed: list[str] = []
+    critique_failed: list[str] = []
     for name in world_scope:
         outcome, rendered = outcomes[name]
+        real = world.real_table(name)
+        notes.extend(f"{real}: {n}" for n in outcome.notes
+                     if any(k in n for k in _SUMMARY_NOTES))
         if outcome.reasoning is None:
-            failed.append(f"{world.real_table(name)}: {outcome.error}")
+            failed.append(f"{real}: {outcome.error}")
             continue
+        if outcome.critique is None and outcome.critique_error:
+            # Scored with counter_evidence "not assessed": the condition is not
+            # complete. The failed call was not recorded, so a re-run asks again.
+            critique_failed.append(f"{real}: {outcome.critique_error}")
         rows.extend(_score(ctx, cond, world, name, outcome, rendered,
                            2 if name in second else 1))
     directory = ctx.out / code
@@ -325,6 +339,7 @@ def run_condition(ctx: EvalContext, code: str) -> dict[str, Any]:
         "columns": len(rows),
         "second_round": [world.real_table(n) for n in second],
         "failed": failed,
+        "critique_failed": critique_failed,
         "notes": notes,
         "calls": _calls(all_calls),
         "wall_s": round(time.perf_counter() - started, 1),

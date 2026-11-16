@@ -19,10 +19,19 @@ Prompt generation 2 (Phase 3B) adds the evidence block, the ``semantic_type``
 field and chunking of wide tables: when a bundle would exceed the context or
 output budget it is reasoned and critiqued in column chunks, and the answers
 are merged (``semantics.chunking``). Generation 1 behaves exactly as in Phase 2.
+
+A truncated answer (``finish_reason == "length"``) is not a dead end. With
+thinking on, the output budget covers the chain of thought too, so even a
+narrow table can run out (3C, 2026-11-16). The reasoner then plans the table
+again with at most half the columns of the chunk that truncated, up to
+``MAX_TRUNCATION_SPLITS`` times; a truncated critique is re-asked in halves
+the same way. Nothing changes for answers that fit: their prompts stay
+byte-identical, so recorded and cached answers still apply.
 """
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 
 from gaia.llm.base import LLMClient, Message
@@ -47,6 +56,7 @@ from gaia.semantics.schemas import (
 )
 
 __all__ = [
+    "MAX_TRUNCATION_SPLITS",
     "DeclaredJoin",
     "ReasonerSettings",
     "TableOutcome",
@@ -58,6 +68,10 @@ __all__ = [
 
 # (from "schema.table", from columns, to "schema.table", to columns)
 DeclaredJoin = tuple[str, tuple[str, ...], str, tuple[str, ...]]
+
+# How often a truncated answer is re-asked with half the columns: 14 columns
+# -> 7 -> 4 -> 2. Each level is one more round of calls, so it stays small.
+MAX_TRUNCATION_SPLITS = 3
 
 
 def reasoning_prompt(major: int = 1) -> Prompt:
@@ -118,6 +132,8 @@ class TableOutcome:
     notes: list[str] = field(default_factory=list)
     evidence: RenderedEvidence | None = None
     chunks: int = 1
+    # Columns of the chunk whose reasoning hit max_tokens (None: no truncation).
+    truncated_columns: int | None = None
 
     @property
     def ok(self) -> bool:
@@ -227,8 +243,14 @@ class TableReasoner:
     def critique_prompt_version(self) -> str:
         return critique_prompt(self.settings.prompt_major).version
 
-    def plan(self, bundle: TableBundle, evidence: RenderedEvidence | None) -> list[list[str]]:
-        """Column chunks for this bundle (one chunk unless it is too wide)."""
+    def plan(
+        self,
+        bundle: TableBundle,
+        evidence: RenderedEvidence | None,
+        max_columns: int | None = None,
+    ) -> list[list[str]]:
+        """Column chunks for this bundle (one chunk unless it is too wide, or
+        ``max_columns`` caps it after a truncated answer)."""
         s = self.settings
         if s.prompt_major < 2:
             return [bundle.column_names]
@@ -243,10 +265,34 @@ class TableReasoner:
             fixed_tokens=fixed,
             context_budget=s.context_budget_tokens,
             max_output_tokens=s.max_tokens,
+            max_columns=max_columns,
         )
 
     def run(self, bundle: TableBundle, evidence: RenderedEvidence | None = None) -> TableOutcome:
-        chunks = self.plan(bundle, evidence)
+        """Reason and critique one table; re-plan in smaller chunks after a
+        truncated answer. Calls of every attempt are kept (cost, audit)."""
+        cap: int | None = None
+        spent: list = []
+        spent_notes: list[str] = []
+        for attempt in range(MAX_TRUNCATION_SPLITS + 1):
+            outcome = self._run_chunks(bundle, evidence, self.plan(bundle, evidence, cap))
+            outcome.calls[:0] = spent
+            outcome.notes[:0] = spent_notes
+            width = outcome.truncated_columns
+            # Generation 1 (Phase 2 prompts) has no chunks: it fails as before.
+            if (width is None or width <= 1 or attempt == MAX_TRUNCATION_SPLITS
+                    or self.settings.prompt_major < 2):
+                return outcome
+            cap = math.ceil(width / 2)
+            spent = outcome.calls
+            spent_notes = [*outcome.notes,
+                           f"answer truncated on {width} column(s): asking again with at "
+                           f"most {cap} column(s) per chunk"]
+        return outcome  # pragma: no cover - the loop always returns
+
+    def _run_chunks(
+        self, bundle: TableBundle, evidence: RenderedEvidence | None, chunks: list[list[str]]
+    ) -> TableOutcome:
         if len(chunks) == 1:
             outcome = self._run_one(bundle, evidence)
             outcome.evidence = evidence
@@ -262,6 +308,8 @@ class TableReasoner:
             outcome.notes.extend(f"chunk {i}/{len(chunks)}: {n}" for n in sub.notes)
             if sub.reasoning is None:
                 outcome.error = f"chunk {i}/{len(chunks)}: {sub.error}"
+                if sub.truncated_columns is not None:
+                    outcome.truncated_columns = len(columns)
                 return outcome
             reasonings.append(sub.reasoning)
             outcome.join_hints.extend(sub.join_hints)
@@ -299,6 +347,8 @@ class TableReasoner:
         except StructuredOutputError as exc:
             outcome.calls.extend(exc.calls)
             outcome.error = str(exc)
+            if exc.truncated:
+                outcome.truncated_columns = len(expected)
             return outcome
 
         outcome.calls.extend(result.calls)
@@ -311,10 +361,31 @@ class TableReasoner:
         if not self.critique_enabled:
             return outcome
 
+        critique, error = self._critique(bundle, outcome.reasoning, evidence, outcome, 0)
+        if critique is None:
+            # The reasoning stands; its columns score counter_evidence as
+            # "not assessed" and cannot be auto-approved.
+            outcome.critique_error = error
+        else:
+            outcome.critique = critique
+        return outcome
+
+    def _critique(
+        self,
+        bundle: TableBundle,
+        reasoning: TableReasoning,
+        evidence: RenderedEvidence | None,
+        outcome: TableOutcome,
+        depth: int,
+    ) -> tuple[TableCritique | None, str | None]:
+        """The critique of ``reasoning``; re-asked in two halves when it is
+        truncated (at most ``MAX_TRUNCATION_SPLITS`` levels)."""
+        s = self.settings
+        expected = bundle.column_names
         try:
             crit = complete_structured(
                 self.llm,
-                critique_messages(bundle, outcome.reasoning, evidence, s.prompt_major),
+                critique_messages(bundle, reasoning, evidence, s.prompt_major),
                 TableCritique,
                 purpose="critique",
                 model=s.model,
@@ -328,12 +399,29 @@ class TableReasoner:
                 cache_ttl_s=s.cache_ttl_s,
             )
         except StructuredOutputError as exc:
-            # The reasoning stands; its columns score counter_evidence as
-            # "not assessed" and cannot be auto-approved.
             outcome.calls.extend(exc.calls)
-            outcome.critique_error = str(exc)
-            return outcome
+            if not (exc.truncated and len(expected) > 1 and depth < MAX_TRUNCATION_SPLITS
+                    and s.prompt_major >= 2):
+                return None, str(exc)
+            half = math.ceil(len(expected) / 2)
+            halves = [expected[:half], expected[half:]]
+            outcome.notes.append(
+                f"critique truncated on {len(expected)} column(s): asking again in halves")
+            parts = []
+            for i, columns in enumerate(halves, start=1):
+                wanted = set(columns)
+                part = chunk_bundle(bundle, columns, i, len(halves))
+                claims = reasoning.model_copy(update={
+                    "columns": [c for c in reasoning.columns if c.name in wanted],
+                    "join_hints": [h for h in reasoning.join_hints
+                                   if wanted & set(h.from_columns)],
+                })
+                sub_evidence = evidence.subset(columns) if evidence is not None else None
+                sub, error = self._critique(part, claims, sub_evidence, outcome, depth + 1)
+                if sub is None:
+                    return None, f"critique half {i}/{len(halves)}: {error}"
+                parts.append(sub)
+            return merge_critiques(parts), None
 
         outcome.calls.extend(crit.calls)
-        outcome.critique = _canonical_critique(crit.value, bundle)
-        return outcome
+        return _canonical_critique(crit.value, bundle), None

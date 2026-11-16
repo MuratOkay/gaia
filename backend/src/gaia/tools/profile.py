@@ -100,6 +100,8 @@ def _print_report(report: ProfileReport, *, detail: bool) -> None:
             flag = ("" if j["kept"] else "  (not kept)") + (
                 "" if j["specific"] else "  (weak: dense integer key)"
             )
+            if j.get("neighbours") is not None:  # D54: value + 1 found this often
+                flag += f"  [neighbours {j['neighbours']:.0%}]"
             print(f"  {j['child']:<38} -> {j['parent']:<38} {rate:>9} {share:>11}{flag}")
     if report.tests:
         print(f"tests          : {len(report.tests)}")

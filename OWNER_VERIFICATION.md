@@ -1,13 +1,95 @@
 # Owner verification — what to run on your machine
 
-Everything in Phase 3 so far (3.P, 3.0, 3B, 3A) was built and tested in a
-sandbox that has PostgreSQL 16 but **no SQL Server, no Docker, no Ollama and no
-LLM gateway**.
-This file lists, in order, what only your machine can verify, the exact
-commands, what you should see, and what to send back.
+Everything so far was built and tested in a sandbox that has PostgreSQL 16 —
+since 2026-11-16 a full reproduction of the PostgreSQL side: `demo_pg` seeded at
+scale 1 (the same 2,973,244 rows as on your host) and a metadata store with
+pgvector — but **no SQL Server, no Docker, no Ollama and no LLM gateway**.
+This file lists what only your machine can verify, the exact commands, what you
+should see, and what to send back.
 
-Work through it top to bottom; each section depends on the previous one.
-Tick the boxes as you go. Times are rough.
+## How this file works from 2026-11-16 (D52, D56)
+
+PostgreSQL is the main dialect (D52). What I can run myself on PostgreSQL, I run
+before I hand anything over. What only you can run — SQL Server, the LLM gateway,
+Ollama — is listed below as **asynchronous items**: run them when you can, send
+the outputs, and I triage them when they arrive, before new work goes on top.
+
+* SQL Server items never block, with one exception: anything that shows a write
+  path or a guard bypass (safety, D52 b).
+* **Run them on the latest delivered build** (D56). Every delivery is a commit;
+  start every output file with `make stamp` — it prints the build, the sqlglot
+  version and the git commit — so each result is read against the code that
+  produced it. A finding is fixed in a later build and the item is run again
+  there. *Latest build: `2026-11-16 · D65 (4F)`; it contains every fix the open
+  items below were written for.*
+* Sections 1–13 are history (done, or superseded where §14/§15 say so).
+
+### Run plan — what depends on what (2026-11-16)
+
+Almost nothing has to wait for anything else. The real dependencies are three:
+
+1. **Once per delivery, first:** the new dependencies (`make venv`), the migrations
+   (`alembic upgrade head`), and — since 4F — a `GAIA_MASTER_KEY` in `.env`. One `make test`
+   on the latest build replaces every earlier section's test step (§15a–§19a).
+2. **Freeze 3C before profiling SQL Server again.** The rest of 3C must see the evidence
+   B-C and B-P saw. Since this build the inputs are frozen into `evaluations/nge_small`
+   (`make evaluate-freeze`, seconds, no model); after that, `make profile` on SQL Server
+   (S2, S3) is free to run at any time.
+3. **Judge a 3C condition after it has run** (judging is per condition, so B-C and B-P can be
+   judged today).
+
+Everything else runs in parallel, in three tracks that wait on different things:
+
+| Track | Waits on | Items | Time |
+|---|---|---|---|
+| `quick` | the databases (and Ollama for retrieval) | freeze 3C inputs; §15 queries on both targets; §16 retrieval on both; S2/S3 SQL Server profile; data sources list | ~20 min |
+| `gateway` | the LLM gateway, **thinking off** (fast calls) | §18b golden run; 3C judging of B-C/B-P and its report (criteria 1 and 3); S7 two questions | 1–2 h |
+| `gateway-long` | the LLM gateway, **thinking on** (slow calls) | 3C N-C, N-P, B-P-nt; the `demo_pg` 3C run; judging and reports; §14d `demo_pg` meanings | overnight |
+| by hand | you | §18c a clarification; §19b the chat API (`make dev-api`) | 15 min |
+
+`scripts/owner_runs.sh setup | quick | gateway | gateway-long` runs a track unattended:
+every step writes `verification/20_<step>.out` starting with `make stamp`, a failing step
+does not stop the next, and every LLM step is resumable (run the track again). `quick` can
+run beside either gateway track. Two gateway tracks at once must share the gateway's 4 slots:
+`GAIA_LLM_CONCURRENCY=2` in front of each. Better numbers come later for free: after §14d,
+re-running §16b and §18b measures retrieval and answers with full meanings.
+
+What I read first when it arrives: `20_golden_pg.out` (the Phase 4 gate), then
+`20_report_nge.out` (3C criteria 1 and 3), then the rest in any order.
+
+### SQL Server track (D56) — asynchronous, non-blocking except safety
+
+| Id | What | Where | Written for | Status | What a result changes |
+|---|---|---|---|---|---|
+| S1 | `make test` with `GAIA_TEST_MSSQL=1` (8 live tests; 2 new for 4A) | §15a | D57 | open (D55 build: **401 passed, 0 skipped**, 2026-11-16) | a failing live test → a SQL Server fix in a later build |
+| S2 | D54 (neighbour control) on the counts: `line_count`, `units_sold`, `units` | §14c | D55 | open | the 3A SQL Server note |
+| S3 | `dw.sales_wide` stays `partial` | §14c | D55 | open (accepted as partial) | nothing unless it fails |
+| S4 | 4A on SQL Server: guarded queries on `nge_small`, refusals | §15c | D57 | open | T-SQL guard or executor; a bypass is **safety** |
+| S5 | 3C on `nge_small` (SQL Server data, LLM-bound): ~~resume B-C/B-P~~ **done 2026-11-16**; then N-C, N-P, B-P-nt, judge, audit, report | §13b–d | D55 | open (B-C, B-P complete) | the 3C gate |
+| S6 | Retrieval on `nge_small`: correct the draft questions, then `make retrieval-eval` (reads only Gaia's store) | §16c | D59 | open | retrieval defaults; the golden set |
+| S7 | Questions answered on `nge_small` with the configured model | §17c | D60 | open | the T-SQL prompt rules; 4D on SQL Server |
+| S8 | The `nge_small` golden run, once its questions exist (P4-1) | §18d | D63 | waiting for the questions | the Phase 4 numbers on SQL Server |
+
+### Other owner items
+
+| Id | What | Where | Blocks |
+|---|---|---|---|
+| L1 | `demo_pg` semantics for every object (`make reason TARGET=demo_pg`) | §14d | Phase 4 step 4D (the golden run), not 4B/4C |
+| L2 | 4A on your PostgreSQL 18 host: migrate, the example queries (the D48 hint join with your model's real hints) | §15b | nothing (verified on PostgreSQL 16 here) |
+| L3 | Decisions P4-1 … P4-9 (PHASES, Phase 4) | §15d | 4C/4D |
+| L4 | Optional: a realistic PostgreSQL copy of `nge_small` | §14f | nothing |
+| L5 | Retrieval on `demo_pg` with your meanings and `bge-m3` (after L1 for the full picture) | §16b | nothing; its numbers set the retrieval defaults |
+| L6 | The first real-model answers on `demo_pg`: five golden questions and a clarification | §17b | nothing (optional since §18b, which covers it) |
+| L7 | **The golden run of `demo_pg` with the configured model** — the Phase 4 acceptance numbers | §18b | the Phase 4 gate |
+| L8 | A clarification answered by you, and its record (D61) | §18c | nothing |
+| L9 | The chat API with the configured model: a question, a follow-up, a clarification | §19 | nothing |
+| L10 | A data source added at runtime: master key, add, probe, use (4F) | §20 | nothing |
+
+Done on 2026-11-16: D52 refinements accepted; gates 3.0, 3A (PostgreSQL), 3B ticked;
+Phase 4 approved (4A first).
+
+Work through the numbered sections in order when you do run them; each lists
+its expected results. Tick the boxes as you go. Times are rough.
 
 | § | What | Needs | Time |
 |---|---|---|---|
@@ -24,6 +106,13 @@ Tick the boxes as you go. Times are rough.
 | 11 | After the 2026-11-15 fixes and decisions: migrate, test, profile, test claims, re-score, reason | `sql1`, `demo_pg`, LLM gateway (11e only) | 30 min + LLM |
 | 12 | After the §11 review: test, re-profile SQL Server, re-score, queue (no LLM) | `sql1`, `demo_pg` | 15 min |
 | 13 | Phase 3C: labels, evaluation runs, judge, audit, report, production cost | LLM gateway | 1 h + overnight |
+| 14 | After the 2026-11-16 fixes (D52–D55): tests, resume 3C, SQL Server checks (async), decisions | LLM gateway (14b, 14d), `sql1` (14c) | 20 min + LLM |
+| 15 | Phase 4A: migrate, tests, the SQL guard on both targets | metadata DB, `demo_pg`, `sql1` (15c) | 15 min |
+| 16 | Phase 4B: tests, retrieval on both targets | metadata DB, Ollama | 10 min |
+| 17 | Phase 4C: tests, the first questions answered by the configured model | LLM gateway, Ollama | 20–30 min |
+| 18 | Phase 4D: migrate, tests, the golden run, a clarification of yours | LLM gateway, Ollama | 45–90 min, mostly unattended |
+| 19 | Phase 4E: migrate, tests, the chat API | LLM gateway, Ollama | 15 min |
+| 20 | Phase 4F: the master key, a data source added at runtime; the run plan's tracks | metadata DB, `demo_pg` | 10 min (+ the tracks) |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -42,7 +131,6 @@ New since your last run: the PostgreSQL target variables (3.P), migration
 `profiling.budget` block.
 
 ```bash
-cd /home/murat/g120s/gaia
 diff <(grep -o '^[A-Z_]*=' .env | sort) <(grep -o '^[A-Z_]*=' .env.example | sort)
 ```
 
@@ -543,11 +631,11 @@ make review TARGET=demo_pg > verification/11_review_pg.out
 make review                > verification/11_review_mssql.out
 ```
 
-- [ ] `llm : calls=0`; tables `rescored` (a table without a usable stored answer says
+- [x] `llm : calls=0`; tables `rescored` (a table without a usable stored answer says
       `needs_reasoning`)
-- [ ] the queue no longer holds pass-through view columns (`rpt.v_legacy_transactions.
+- [x] the queue no longer holds pass-through view columns (`rpt.v_legacy_transactions.
       customer_code`, `…transaction_id`, …) and `legacy.tb_mst01.c07` is no longer `abstain`
-- [ ] `payments.currency_code`, `trade_ins.currency_code`, `payments.method`,
+- [x] `payments.currency_code`, `trade_ins.currency_code`, `payments.method`,
       `trade_ins.source_system` carry no `contradiction` tag
 
 ### 11e · Reason where the model would see something new
@@ -561,10 +649,23 @@ make review TARGET=demo_pg > verification/11_review2_pg.out
 make review                > verification/11_review2_mssql.out
 ```
 
-- [ ] the dry runs list `would_reason (evidence changed)` only for tables whose shown
+- [x] the dry runs list `would_reason (evidence changed)` only for tables whose shown
       evidence changed (blank text, new or failed tests, new candidates); everything else
       `would_rescore` or `skipped`; views `… N pass-through column(s) inherit`
-- [ ] `reasoned=… failed=0`; a view with computed columns sends only those to the model
+- [x] `reasoned=… failed=0`; a view with computed columns sends only those to the model
+
+*Owner run, 2026-11-16 (`verification/11e_*`, `11_reason_mssql.out`, `11_review2_*`):
+both targets `reasoned=0 rescored=0 skipped=8 / 10 failed=0`, `calls=0` — correct: the
+§12 re-scores had already applied everything, and nothing the model would see had
+changed (on `demo_pg` only `hr.departments`' evidence changed, outside this scope).
+Hint lifecycle as designed: wrong parents `refuted` (`f2 → customer_id`, `f9 → store_id`,
+`condition → condition_key`), `v_legacy_transactions` hints `stale` (its pass-through
+columns now inherit), `f2 → customer_code` and `f9 → store_code` `inferred`. No test
+recorded as not run. Seven of eight `v_legacy_transactions` columns inherit (the
+eighth, `transaction_date`, is computed). Queues: no pass-through view column, `c07` not
+`abstain`, none of the four FK code columns tagged `contradiction`. Also received:
+`12_alltests_new.out`, **401 passed, 0 skipped** — the D55 build with every live test,
+SQL Server included (S1 for that build).*
 
 Then send the files above and:
 
@@ -649,6 +750,10 @@ make evaluate TARGET=demo_pg ARGS="--out evaluations/demo_pg --schema legacy --c
 - [ ] each condition prints `… column(s), N call(s)` and no `FAILED`; a repeated command
       prints `0 new` calls (resumed)
 
+*Owner run, 2026-11-15/16: the first command stopped — B-P `FAILED 1`
+(`dbo.customer_addresses`, truncated answer), and a B-C critique had failed without
+being reported. Both fixed (D53, D55); resume with §14b, then continue here.*
+
 ### 13c · Judge, audit, report
 
 ```bash
@@ -671,6 +776,508 @@ When the gateway allows (the longest step: all 71 objects, ~140 calls):
 make reason ARGS="--cost-report" > verification/13_reason_all.out
 make evaluate-cost ARGS="--file verification/13_cost_mssql.md"
 ```
+
+---
+
+## 14 · After the 2026-11-16 fixes (D52–D55)
+
+What changed — PHASES, "Owner runs of §12 and §13b (2026-11-15/16) and fixes":
+
+* **D53** — a truncated answer is asked again in smaller column chunks (a
+  truncated critique in halves). The cause in your run was thinking, not width:
+  12,437 of the 16,000 output tokens were the model's chain of thought on a
+  14-column table. **Do not raise `llm.max_output_tokens`**: at this gateway's
+  ~15 tokens/s a bigger budget outlasts the 1,800 s read timeout, and it changes
+  every request key, so your 37 recorded answers would all be asked again.
+* **E2** — a failed critique is now reported (`CRITIQUE FAILED`, exit 2). In your
+  B-C run the critique of `dbo.payments` had failed (a gateway error) without a word.
+* **D55** — the report compares two conditions on the columns both answered.
+* **D54** — the neighbour control for integer joins: §12 showed D3b did not stop
+  `line_count → payroll_line_id` on SQL Server (reproduced and explained in PHASES).
+* `make stamp` prints the build; start every output with it.
+
+### 14a · Build and tests (superseded by §15a)
+
+```bash
+make stamp                                   # gaia build 2026-11-16 · D55
+make test > verification/14_tests.out        # with §9's exports, incl. GAIA_TEST_MSSQL=1
+```
+
+- [ ] *Superseded by §15a* (the latest build has more tests); kept for the record:
+      `gaia build 2026-11-16 · D55`, 401 passed, 0 skipped.
+
+### 14b · Resume the 3C runs (S5) — before any new `make profile` on SQL Server
+
+The conditions read the stored Stage 1 evidence. A new profile run would change
+what B-P shows the model, so its recorded answers would no longer match and every
+B-P call would be asked again. So: **no `make profile` on `demo_mssql`, and no change
+to `llm.*` or the prompts, until the `nge_small` runs of §13b are finished.**
+
+```bash
+(make stamp; make evaluate ARGS="--out evaluations/nge_small --table dbo.transactions \
+  --with-neighbours --condition B-C --condition B-P") > verification/14_BC_BP.out 2>&1
+```
+
+- [x] `B-C      99 column(s), 1 new call(s), 19 replayed` — the `dbo.payments` critique
+      asked again — and no `CRITIQUE FAILED`. (If the gateway fails it again:
+      `CRITIQUE FAILED 1`, exit 2; run the same command again.)
+- [x] `B-P 99 column(s)`, no `FAILED`. `dbo.customer_addresses` is asked once more with
+      the same prompt (~15 min; its truncated answer was not recorded by the old code).
+      If it truncates again you see
+      `dbo.customer_addresses: answer truncated on 14 column(s): asking again with at most 7 column(s) per chunk`
+      and two chunk calls plus their critiques. A second round may follow if its claim
+      tests change its evidence.
+- [x] `B-P      99 column(s), N new call(s), 18 replayed` (N = 2 if the table fits this time,
+      ~5 if it is split, a few more with a second round)
+- [ ] last line `model calls: N new, 37 replayed`
+- [ ] the same command once more: `0 new` everywhere *(not run — optional)*
+
+*Owner run, 2026-11-16 (`verification/14_BC_BP.out`): `B-C 99 column(s), 1 new call(s), 19
+replayed, 228.9 s`; `B-P 99 column(s), 4 new call(s), 18 replayed, 6412.6 s; second round: 1`;
+`model calls: 5 new, 37 replayed` — as expected: `dbo.customer_addresses` fitted this time (no
+split needed), Stage 3 changed one table's evidence, so one second round. No FAILED, no
+CRITIQUE FAILED. The four B-P calls took ~27 minutes each: the gateway, not the pipeline, is
+what makes 3C slow. Criteria 1 and 3 can be computed after judging (§13c).*
+
+Then the rest of §13b (N-C, N-P, B-P-nt; the `demo_pg` run), §13c and §13d as written.
+
+### 14c · SQL Server, asynchronous, non-blocking (S2, S3)
+
+**After** the `nge_small` runs of §13b:
+
+```bash
+(make stamp; make profile TARGET=demo_mssql ARGS="--force --report") > verification/14_profile_mssql.out 2>&1
+```
+
+- [ ] `agg_product_performance.line_count` and `.units_sold -> hr.payroll_lines.payroll_line_id`,
+      and `agg_sales_by_month.line_count` / `.units -> dw.agg_customer_ltv.customer_key`:
+      `(not kept)  (weak: dense integer key)  [neighbours NN%]` with NN close to the
+      hit rate. *If one is still kept*, its `[neighbours NN%]` says why — send the line.
+- [ ] genuine integer references are still kept, e.g. `dw.sales_wide.date_key ->
+      dw.dim_date.date_key` with a low neighbour rate (nearby integers of a `yyyymmdd` key
+      are mostly not dates; the sandbox's date-key test gives 31 %). References into dense
+      surrogate ids may turn `(weak …)`: that is the documented limit of dense keys (3A),
+      not a regression. Send the kept pairs that changed (compare with `12_profile_mssql.out`)
+- [ ] `dw.sales_wide`: still `partial` is acceptable (its metrics come from the sample and
+      say so); send its notes
+
+### 14d · `demo_pg` semantics for Phase 4 (L1)
+
+Phase 4's golden run (step 4D) needs current meanings for every `demo_pg` object.
+Overnight, whenever the gateway allows:
+
+```bash
+(make stamp; make reason TARGET=demo_pg ARGS="--cost-report") > verification/14_reason_pg.out 2>&1
+(make stamp; make profile-tests TARGET=demo_pg; make reason TARGET=demo_pg) > verification/14_reason_pg_2.out 2>&1
+```
+
+- [ ] `failed=0`; truncations, if any, end in chunks (`answer truncated … asking again`)
+
+### 14e · Decisions — answered 2026-11-16 (refinements accepted, gates ticked, 4A started); P4 → §15d
+
+1. **D52 refinements** (PHASES, decisions log): (a) offline T-SQL tests stay blocking;
+   (b) safety findings on SQL Server are never non-blocking; (c) the asynchronous ledger
+   above; (d) accuracy claims stay on realistic data. Accept, change or reject each.
+2. **Phase 3 gates**: 3.0, 3B and 3A are ready for your tick (PHASES, Phase 3 "Gate").
+3. **Phase 4**: P4-1 … P4-9 (PHASES, Phase 4 "Decisions needed") and approval to start.
+4. **P4-8**: switch `app.default_target` to `demo_pg` when Phase 4 starts? From §14 on,
+   every SQL Server command names `TARGET=demo_mssql` explicitly, so nothing here breaks.
+
+### 14f · Optional: a realistic PostgreSQL copy of `nge_small` (L4)
+
+`demo_pg` proves the machinery; I designed it, so it cannot prove accuracy. A
+PostgreSQL copy of `nge_small` (e.g. with `pgloader` from the restored SQL Server
+database into a new database on the `gaia-target-pg` server) would put real data
+in the main dialect: your labels would carry over, 3C and Phase 4's golden set
+could run on PostgreSQL. It is a copy you make, like the backup restore (Gaia
+still creates no database but the `demo_pg` fixture). Types and indexes change
+on the way (`datetime2` → `timestamp`, no columnstore), and it costs you an hour
+or two. Tell me whether you want it; I will then write the exact steps (cast
+rules, the read-only role for its schemas, the target entry).
+
+---
+
+## 15 · Phase 4A: the SQL guard, the executor, query runs
+
+What is new (PHASES, "Phase 4" → "4A results", D57): every SQL statement Gaia will
+ever run for a question goes through a guard that accepts only a single read-only
+query over objects in Gaia's catalog, with functions from an allowlist, joins backed
+by a declared FK, a tested model hint (D48), an SME hint or view lineage, and a row
+cap. What runs is the guard's rendering, in a read-only session with the statement
+timeout; every run is recorded in `chat.query_run`. `make query` runs one statement
+through all of it; `make query-check` only validates.
+
+### 15a · Migrate and test (S1)
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..
+(make stamp; make test) > verification/15_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
+```
+
+- [ ] `Running upgrade 0006 -> 0007, Query runs (Phase 4A): …`
+- [ ] `gaia build 2026-11-16 · D57 (4A) · sqlglot <version>`
+- [ ] **575 passed, 0 skipped** (Ollama up; 573 passed, 2 skipped without). Sandbox: 565
+      passed, 10 skipped (8 SQL Server live, 2 Ollama). The PostgreSQL and offline tests
+      must pass (blocking); a failing SQL Server live test is S1 (non-blocking) — send it.
+      Look for `test_guarded_statements_run_on_sql_server` and
+      `test_executor_timeout_and_forced_write_on_sql_server`; `-s` prints what the first ran.
+
+### 15b · On your PostgreSQL host (L2)
+
+```bash
+(make stamp; for f in infra/pg-target/queries/*.sql; do echo "== $f"; \
+   make query TARGET=demo_pg ARGS="--file $f --rows 5"; done) > verification/15_query_pg.out 2>&1
+```
+
+- [ ] `01_revenue_by_city`: `ACCEPTED`, `join : ok fk`, `row cap : 1000 (added)`, `execution : ok`
+- [ ] `02_legacy_hint_join`: `ACCEPTED`, `join : ok hint legacy.tb_trx02.f2 = crm.customers.customer_code`
+      — your model proposed that join and its test passed at 99 % (§11). In the sandbox it is
+      rejected (no model ran there). If yours says `unverified_join`, the hint is no longer
+      `inferred` (e.g. `stale`): send the line and the SQL below
+- [ ] `03_view_lineage_join`: `ACCEPTED` with `hint_via_view` (the view column *is* `f2`), same
+      condition (`shared_key` on the D57 build; the join check was refined in D58)
+- [ ] `90_…`, `91_…`: `REJECTED` (`function_not_allowed`, `write_operation`), exit 2, nothing executed
+- [ ] every accepted and rejected run printed `recorded : chat.query_run …`
+
+```sql
+-- make psql
+SELECT status, origin, left(submitted_sql, 60), row_count, row_cap_reached, elapsed_ms,
+       semantic_versions
+FROM chat.query_run ORDER BY created_at DESC LIMIT 10;
+SELECT from_columns, to_table, to_columns, status FROM semantics.join_hint
+WHERE source = 'llm' AND from_table = 'tb_trx02';
+```
+
+### 15c · On SQL Server (S4 — asynchronous; a bypass would be safety)
+
+```bash
+(make stamp; for f in infra/sqlserver/queries/*.sql; do echo "== $f"; \
+   make query TARGET=demo_mssql ARGS="--file $f --rows 5"; done) > verification/15_query_mssql.out 2>&1
+```
+
+- [ ] `01_customers_by_year`: `ACCEPTED` with `join : ok fk` and `execution : ok` — or
+      `REJECTED … unverified_join` if `transactions.customer_id` has no declared FK (then send
+      the line; it is the guard doing its job, not a defect)
+- [ ] `02_all_transactions`: `SELECT TOP 1000 …`, `execution : ok`, `row cap reached`
+- [ ] `90_refused_exec`, `91_refused_system_catalog`: `REJECTED`, nothing executed
+- [ ] **safety**: no statement in `90_`/`91_` reached `execution :`
+
+### 15d · Decisions before 4C/4D (L3)
+
+P4-1 (golden questions: I write ~20 for `demo_pg` with expected results, you add 5–10
+from a short business description without looking at the schema; `nge_small` questions
+from you), P4-2 (answer style), P4-4 (clarify vs guess), P4-8 (`app.default_target` →
+`demo_pg`). P4-3 (row limit 1000) is what 4A uses now. The correct-result target (≥ 70 %)
+stays a trial, as you said: its first numbers come with 4D.
+
+---
+
+## 16 · Phase 4B: retrieval
+
+What is new (PHASES, "4B results", D58, D59): `make retrieve` turns a question into
+the schema context the SQL generator (4C) will see — the objects, columns, meanings
+with their certainty, readable values, and the joins allowed. `make retrieval-eval`
+measures it over a question set. Both read only Gaia's store (and Ollama for the
+question's embedding), never a target.
+
+Also changed in the guard (D58): joins that multiply rows are refused (`fan_out`). If
+you ran §15 on the D57 build, `03_view_lineage_join` said `shared_key`; it now says
+`hint_via_view`. Nothing else in §15 changes.
+
+### 16a · Tests
+
+```bash
+(make stamp; make test) > verification/16_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
+```
+
+- [ ] `gaia build 2026-11-16 · D59 (4B) · sqlglot <version>`
+- [ ] **598 passed, 0 skipped** (596 / 2 without Ollama). Sandbox: 588 passed, 10 skipped.
+
+### 16b · Retrieval on `demo_pg` (L5)
+
+Best after §14d (every object reasoned); useful already now (legacy, rpt, hr are).
+
+```bash
+(make stamp; make retrieve TARGET=demo_pg ARGS="--question 'Legacy transaction amounts by customer segment' --context") \
+  > verification/16_retrieve_pg.out 2>&1
+(make stamp; make retrieval-eval TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv --out verification/16_retrieval_pg.json"; \
+ make retrieval-eval TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv --no-vectors") \
+  > verification/16_retrieval_pg.out 2>&1
+```
+
+- [ ] `16_retrieve_pg.out`: no `embeddings unavailable` note (Ollama answered); the context
+      holds `legacy.tb_trx02` and `crm.customers` joined by
+      `legacy.tb_trx02.f2 = crm.customers.customer_code (tested, inferred by the model)`; the
+      meanings of `f2`, `f7` are your model's, with `(uncertain …)` where not accepted
+- [ ] `16_retrieval_pg.out`: two summary lines (with vectors, then without). The sandbox, with
+      meanings derived from names and no vectors, gave `covered 100% · connected 86% ·
+      recall@5 91% · MRR 0.92`; with your meanings the two legacy questions should become `ok`
+      (the `f2`, `f9` hints). Whatever the numbers, send both files: they set the retrieval
+      defaults (and the proposed retrieval target, PHASES Phase 4 acceptance)
+
+### 16c · Retrieval on `nge_small` (S6)
+
+`infra/sqlserver/retrieval_questions.csv` is a **draft** I wrote from the table names in
+your outputs. Correct the `expected` objects (and add questions you care about — they can
+seed the golden set, P4-1), then:
+
+```bash
+(make stamp; make retrieval-eval TARGET=demo_mssql ARGS="--file infra/sqlserver/retrieval_questions.csv --out verification/16_retrieval_mssql.json") \
+  > verification/16_retrieval_mssql.out 2>&1
+```
+
+- [ ] it runs; most of `nge_small` has no meanings yet (only the 10 tables of the Phase 2
+      scope are reasoned until §13d), so expect names-only retrieval elsewhere — the output
+      says `(no meaning yet)` for those objects in `make retrieve … --context`
+
+---
+
+## 17 · Phase 4C: questions answered
+
+What is new (PHASES, "4C results", D60): `make ask` answers a business question — a
+table and a narrative (P4-2), or a clarifying question (P4-4), or "cannot answer" —
+with what it computed, what it assumed, which meanings it relies on that are not
+confirmed, and an explained confidence. The SQL is hidden unless `--show-sql`. These
+are the first calls of the configured model for SQL: thinking is off for generation,
+repair and the narrative (`llm.thinking.sql_generation / repair / answer`), so each call
+should take seconds to tens of seconds, not minutes.
+
+### 17a · Tests
+
+```bash
+(make stamp; make test) > verification/17_tests.out 2>&1     # §9's exports, incl. GAIA_TEST_MSSQL=1
+```
+
+- [ ] `gaia build 2026-11-16 · D60 (4C) · sqlglot <version>`
+- [ ] **614 passed, 0 skipped** (612 / 2 without Ollama). Sandbox: 604 passed, 10 skipped.
+
+### 17b · Five golden questions on `demo_pg` (L6)
+
+From `infra/pg-target/golden.yaml`; `--as-of 2026-01-15` because the data ends in 2025.
+
+```bash
+(make stamp
+ for q in "What was the total order amount in December 2025, excluding cancelled orders?" \
+          "Which store city had the highest order amount last month, excluding cancelled orders?" \
+          "What is the total amount of overdue invoices per currency?" \
+          "What is the total amount of the legacy transactions per customer segment?" \
+          "Who are our best customers?"; do
+   echo "=== $q"; make ask TARGET=demo_pg ARGS="--question \"$q\" --as-of 2026-01-15 --show-sql"
+ done
+ echo "=== follow-up"
+ make ask TARGET=demo_pg ARGS="--question 'Who are our best customers?' --clarified 'the ten customers with the highest order amount in 2025, cancelled orders excluded' --as-of 2026-01-15 --show-sql"
+) > verification/17_ask_pg.out 2>&1
+```
+
+The references (what the sandbox's reference SQL returns on `demo_pg` at scale 1):
+
+| Question | Reference |
+|---|---|
+| g01 December 2025, cancelled excluded | 51,222,131.78 |
+| g02 best store city last month | Adana, 3,934,224.77 |
+| g07 overdue invoices per currency | 3 currencies; TRY 69,329,887.03, EUR 754,758.42, … (status code 2 — hard: no catalog says "2 = overdue") |
+| g16 legacy amount per segment | 4 segments; retail 796,459,393.75, smb 120,272,101.53, … (needs the `f2` hint) |
+| c01 best customers | a clarification, not a number |
+
+- [ ] each answered question prints a narrative, the table, `confidence`, `computed` and, where
+      relevant, `assumption` / `unconfirmed` lines; `model : N call(s)` with N = 2 (no repair)
+      or 3–4 (repairs)
+- [ ] the numbers: compare with the table above and note each as right / wrong / clarified
+      — this is a first look, 4D does it for all 25 questions automatically
+- [ ] `Who are our best customers?` ends with `clarification : …` and options (exit 4); the
+      follow-up answers with ten customers
+- [ ] send the file, and this, which shows every attempt and what went wrong:
+
+```sql
+-- make psql
+SELECT created_at, attempt, status, left(question, 50), row_count, elapsed_ms, llm_ms,
+       prompt_tokens, completion_tokens, left(error, 120)
+FROM chat.query_run WHERE origin = 'cli' ORDER BY created_at DESC LIMIT 20;
+```
+
+### 17c · Two questions on `nge_small` (S7)
+
+```bash
+(make stamp
+ make ask TARGET=demo_mssql ARGS="--question 'What was the total transaction amount per currency in 2024?' --show-sql"
+ make ask TARGET=demo_mssql ARGS="--question 'How many customers made at least one transaction?' --show-sql"
+) > verification/17_ask_mssql.out 2>&1
+```
+
+- [ ] answers or clarifications — not `failed`; the SQL is T-SQL (`TOP`, `YEAR()`/`DATEADD`), and
+      any repair says why in `--show-sql`'s `problem:` lines. Send the file.
+
+---
+
+## 18 · Phase 4D: the golden run
+
+What is new (PHASES, "4D results", D61–D63): `make golden` runs a golden set through the
+whole pipeline and scores every final answer against its reference by its *result* (not
+its SQL). Your seven questions are in `infra/pg-target/golden.yaml` as o01–o07. All seven
+are ambiguous in a way that changes the numbers, so each expects a clarification; the
+`clarified` line of each is the answer I assumed you would give. **Please read those seven
+and correct any `clarified` text that is not what you meant** — the reference SQL follows it,
+and I will rewrite the SQL to match.
+
+Gaia now also records every clarification with its best guess (D61): the option it would
+have chosen and that option's query (checked, never run for you). The runner scores that
+guess against your clarified answer — the first measurement of whether Gaia could one day
+answer such questions without asking.
+
+### 18a · Migrate and test
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0007 -> 0008
+(make stamp; make test) > verification/18_tests.out 2>&1         # §9's exports, incl. GAIA_TEST_MSSQL=1
+```
+
+- [ ] `Running upgrade 0007 -> 0008, Clarifications (D61): …`
+- [ ] `gaia build 2026-11-16 · D63 (4D) · sqlglot <version>`
+- [ ] **626 passed, 0 skipped** (624 / 2 without Ollama). Sandbox: 616 passed, 10 skipped.
+
+### 18b · The golden run of `demo_pg` (L7)
+
+About 80 model calls (generation, clarifications, re-asks after them, narratives; repairs
+on top), thinking off, three at a time: expect 30–60 minutes. Resumable: if it stops, run
+the same command again; answered calls are replayed. Best after §14d (all `demo_pg`
+objects reasoned); useful before it too.
+
+```bash
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg") \
+  > verification/18_golden_pg.out 2>&1
+```
+
+- [ ] it ends with the report (also in `evaluations/golden_demo_pg/report.md`): the two
+      acceptance lines (executable ≥ 80 %, correct ≥ 70 %), the clarification lines, cost, and a
+      table of all 32 questions with why each wrong one is wrong
+- [ ] the same command once more prints `model calls: 0 new`
+- [ ] **send** `report.md`, `results.json` and `18_golden_pg.out` — with them I read every wrong
+      answer, fix what is Gaia's fault (prompt, retrieval, guard) and tell you what is the
+      model's; that is the Phase 4 gate's evidence
+
+### 18c · A clarification of yours (L8)
+
+```bash
+(make stamp
+ make ask TARGET=demo_pg ARGS="--question 'Top 5 shops performing best last year.' --as-of 2026-01-15"
+) > verification/18_clarify.out 2>&1
+# then answer it yourself, with the id it printed: a number, or your own words
+make ask TARGET=demo_pg ARGS="--clarification <id> --clarified <your answer> --as-of 2026-01-15" \
+  >> verification/18_clarify.out 2>&1
+make clarifications TARGET=demo_pg >> verification/18_clarify.out 2>&1
+```
+
+- [ ] the first command prints a question and 2–4 numbered options, and the id (exit 4)
+- [ ] the second answers; if you chose the option Gaia would have chosen, it says `answered
+      with the best guess stored with the clarification` (no generation call)
+- [ ] `make clarifications` lists it with `agrees` or `differs`
+
+### 18d · `nge_small` (S8, when its questions exist)
+
+When you have questions for `nge_small` (P4-1), send them; I write `infra/sqlserver/golden.yaml`
+and the run is the same command with `TARGET=demo_mssql`.
+
+---
+
+## 19 · Phase 4E: the chat API
+
+What is new (PHASES, "4E results", D64): conversations over HTTP. A question streams its
+progress as server-sent events — the table arrives before the narrative — and the answer, a
+clarification, "cannot answer" or a failure is stored as a turn. Answering an open
+clarification is just the next message ("1" picks the first option). A follow-up ("and in
+2024?") is read with the conversation so far. No login yet (P5-1): the API listens on
+127.0.0.1 only.
+
+### 19a · Migrate and test
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0008 -> 0009
+(make stamp; make test) > verification/19_tests.out 2>&1
+```
+
+- [ ] `Running upgrade 0008 -> 0009, Conversations (Phase 4E): …`
+- [ ] `gaia build 2026-11-16 · D64 (4E) · …`; **629 passed, 0 skipped** (sandbox: 619 + 10 skipped)
+
+### 19b · A conversation (L9)
+
+In one terminal: `make dev-api` (uvicorn on 127.0.0.1:8000). In another:
+
+```bash
+API=127.0.0.1:8000/api
+say() { curl -sN -X POST "$API/conversations/$CID/messages" -H 'content-type: application/json' \
+          -d "{\"content\": \"$1\", \"as_of\": \"2026-01-15\"}"; echo; }
+(make stamp
+ curl -s $API/data-sources; echo
+ CID=$(curl -s -X POST $API/conversations -H 'content-type: application/json' \
+        -d '{"data_source": "demo_pg"}' | python3 -c 'import sys, json; print(json.load(sys.stdin)["id"])')
+ say "Which three store cities had the highest order amount in December 2025, excluding cancelled orders?"
+ say "And in November 2025?"
+ say "Top 5 shops performing best last year."
+ say "1"
+ curl -s $API/conversations/$CID | python3 -m json.tool
+) > verification/19_chat.out 2>&1
+```
+
+- [ ] each `say` prints `event: message`, several `event: status`, `event: result` (before the
+      narrative), then `event: answer` (or `event: clarification`), `event: done`; a
+      `: keep-alive` line appears while the model works more than 15 s
+- [ ] the follow-up's answer is about November 2025 and the same measure
+- [ ] "Top 5 shops…" ends with `event: clarification` and options; `1` answers it
+- [ ] the last command lists the eight turns; the stored answers carry no SQL
+- [ ] send `19_chat.out`
+
+---
+
+## 20 · Phase 4F: data sources added at runtime
+
+What is new (PHASES, "4F results", D65): a data source can be added without editing
+`config/gaia.yaml` — `make datasource ARGS="add …"` — with its password encrypted in the
+metadata store (AES-256-GCM, the key in `.env`, never in the database). It is unusable until
+the read-only probe passes (`verified`, the same 9 checks as `make check-target`), and again
+after any change or after `datasources.reprobe_days` (30). Then every command works with it:
+`TARGET=<name>`. Config targets are unchanged. Also new: `make evaluate-freeze` and
+`GAIA_LLM_CONCURRENCY` (the run plan above), `scripts/owner_runs.sh`.
+
+### 20a · Setup (once)
+
+```bash
+make master-key >> .env                  # GAIA_MASTER_KEY=…  — keep it; losing it loses stored passwords
+scripts/owner_runs.sh setup              # make venv (new: cryptography), alembic upgrade head (→ 0010), make test
+```
+
+- [ ] `20_migrate.out`: `… -> 0010, Data sources added at runtime (Phase 4F) …`
+- [ ] `20_tests.out`: `gaia build 2026-11-16 · D65 (4F) · …` and **636 passed, 0 skipped** (sandbox: 626 +
+      10 skipped)
+
+### 20b · A data source of your own (L10)
+
+The `demo_pg` database once more, added at runtime under another name:
+
+```bash
+(make stamp
+ read -rs -p "gaia_ro password: " PW; echo; export PW
+ make datasource ARGS="add --name pg_copy --dialect postgres --host 127.0.0.1 --port 5434 --database gaia_target_pg --user gaia_ro --password-env PW"
+ make introspect TARGET=pg_copy                   # refused: not verified yet
+ make datasource ARGS="probe pg_copy"
+ make introspect TARGET=pg_copy
+ make query TARGET=pg_copy ARGS="--sql 'SELECT count(*) AS n FROM sales.orders' --no-record"
+ make datasource ARGS="list"
+ make datasource ARGS="remove pg_copy --yes"
+) > verification/20_datasource.out 2>&1
+```
+
+- [ ] the first `introspect` is refused: `data source 'pg_copy' is unverified …`
+- [ ] `probe` prints `verified` and nine `[PASS]` lines
+- [ ] the second `introspect` reads 28 objects; the query returns 250,000
+- [ ] `list` shows `pg_copy admin verified`, and never a password; `remove` keeps it as
+      `pg_copy~…` (tombstoned)
+- [ ] optional, a safety check: the same `add` with `--user postgres` (the container's superuser)
+      must end `failed` at `probe`, with `security.privileges` failing
+
+### 20c · The tracks
+
+`scripts/owner_runs.sh quick`, `… gateway`, `… gateway-long` — when and as you can (the run
+plan, top of this file). Send `verification/20_*.out` as they appear.
 
 ---
 

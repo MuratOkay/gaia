@@ -3,7 +3,7 @@ LLM, a fake embedder, and an opt-in disposable PostgreSQL database.
 
 The database fixture runs only when ``GAIA_TEST_DATABASE_URL`` is set and the
 database name contains "test". It DROPS and recreates the ``catalog``,
-``semantics`` and ``audit`` schemas in that database, so never point it at
+``semantics``, ``profiling``, ``audit`` and ``chat`` schemas in that database, so never point it at
 the real metadata store.
 """
 
@@ -331,6 +331,8 @@ class FakeLLM:
     ``fail_tables``          reasoning returns invalid JSON (every attempt)
     ``critique_fail_tables`` critique returns an incomplete answer
     ``heal_tables``          first reasoning attempt omits a column, retry is fine
+    ``truncate_over``        {purpose: n}: a request with more than n columns ends
+                             with ``finish_reason == "length"`` (the model thought too long)
     """
 
     def __init__(self) -> None:
@@ -340,6 +342,7 @@ class FakeLLM:
         self.fail_tables: set[str] = set()
         self.critique_fail_tables: set[str] = set()
         self.heal_tables: set[str] = set()
+        self.truncate_over: dict[str, int] = {}
         self._lock = threading.Lock()
 
     def complete(
@@ -355,6 +358,17 @@ class FakeLLM:
             self.tables[(purpose, table)] += 1
             self.requests.append(list(messages))
             attempt = self.tables[(purpose, table)]
+
+        limit = self.truncate_over.get(purpose)
+        if limit is not None and len(bundle["columns"]) > limit:
+            return LLMResponse(
+                content='{"table": {"business_name": "cut off', model="fake",
+                finish_reason="length",
+                usage=Usage(prompt_tokens=1000, completion_tokens=max_tokens or 16000,
+                            total_tokens=1000 + (max_tokens or 16000),
+                            reasoning_tokens=(max_tokens or 16000) - 500),
+                latency_ms=5,
+            )
 
         if critique:
             cols = bundle["columns"]
@@ -489,9 +503,9 @@ async def pg_session_factory():
 
     engine = create_async_engine(url)
     async with engine.begin() as conn:
-        for schema in ("audit", "profiling", "semantics", "catalog"):
+        for schema in ("chat", "audit", "profiling", "semantics", "catalog"):
             await conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
-        for schema in ("catalog", "semantics", "profiling", "audit"):
+        for schema in ("catalog", "semantics", "profiling", "audit", "chat"):
             await conn.execute(sa.text(f"CREATE SCHEMA {schema}"))
         await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         has_trgm = await conn.scalar(

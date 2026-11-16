@@ -12,6 +12,13 @@ order, so they are deterministic.
 
 Token counts are estimates (characters / 3.5). They only have to be good enough
 to stay under a budget; the budget itself carries the safety margin.
+
+The plan does not reserve room for the model's chain of thought: how long a
+model thinks is not predictable from the bundle (3C: 414 to 12,437 thinking
+tokens per call on tables of 3 to 18 columns). Instead the reasoner reacts to
+a truncated answer by planning again with a column cap (``max_columns``) —
+half the columns of the chunk that truncated — so a table only costs more
+calls when it actually needed them.
 """
 
 from __future__ import annotations
@@ -59,11 +66,13 @@ def plan_chunks(
     fixed_tokens: int,
     context_budget: int,
     max_output_tokens: int | None,
+    max_columns: int | None = None,
 ) -> list[list[str]]:
     """Column groups, in column order; one group when nothing needs splitting.
 
     ``fixed_tokens`` is the part of the prompt every chunk repeats (system
-    prompt, object list, evidence header).
+    prompt, object list, evidence header). ``max_columns`` caps the columns per
+    chunk (the reasoner's answer to a truncated answer); ``None`` = no cap.
     """
     names = bundle.column_names
     costs = {n: _column_cost(bundle, evidence, n) for n in names}
@@ -74,6 +83,8 @@ def plan_chunks(
     max_cols_by_output = max(
         1, int((output_limit * 0.8 - OUTPUT_TOKENS_TABLE) // OUTPUT_TOKENS_PER_COLUMN)
     )
+    if max_columns is not None:
+        max_cols_by_output = max(1, min(max_cols_by_output, max_columns))
     total = fixed_tokens + shared + sum(costs.values())
     if total <= context_budget and len(names) <= max_cols_by_output:
         return [names]
@@ -98,14 +109,17 @@ def plan_chunks(
 
 
 def chunk_bundle(bundle: TableBundle, columns: list[str], part: int, of: int) -> TableBundle:
-    """A bundle restricted to ``columns``, with the rest of the table as context."""
+    """A bundle restricted to ``columns``, with the rest of the table as context.
+
+    ``bundle`` may itself be a chunk (a critique re-asked in halves): its
+    ``other_columns`` stay listed after the newly excluded ones."""
     wanted = set(columns)
     doc = copy.deepcopy(bundle.document)
     doc["chunk"] = {"part": part, "of": of, "note": "answer only the columns under 'columns'"}
     doc["columns"] = [c for c in doc["columns"] if c["name"] in wanted]
     doc["other_columns"] = [
         f"{c['name']} {c['type']}" for c in bundle.document["columns"] if c["name"] not in wanted
-    ]
+    ] + list(bundle.document.get("other_columns", []))
 
     def involves(entry: dict) -> bool:
         cols = set(entry.get("columns", [])) | set(entry.get("included", []))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 
 import pytest
@@ -160,3 +161,66 @@ def test_claim_tests_run_in_memory(sample_snapshot):
     assert tests["inc:dbo.products.product_code"].origin == "claim"
     (topk,) = out["dbo.order_lines"]["line_no"]
     assert topk.test_id == "topk:line_no" and topk.passed and not notes
+
+
+def test_report_compares_conditions_on_the_columns_both_answered(tmp_path):
+    """B-P lost a table (truncated) while B-C answered it: criterion 1 must compare
+    the two on the same columns, and say how many were left out."""
+    from gaia.evaluation.report import build_report
+
+    def write(code, rows, verdicts):
+        d = tmp_path / code
+        d.mkdir()
+        summary = {"description": code, "calls": [], "second_round": [],
+                   "failed": [], "notes": []}
+        (d / "results.json").write_text(json.dumps({"summary": summary, "columns": rows}))
+        (d / "judgements.json").write_text(json.dumps({"verdicts": verdicts, "errors": []}))
+
+    def row(table, column, score=0.5):
+        return {"table": table, "column": column, "score": score}
+
+    both = [row("s.a", f"c{i}") for i in range(4)]
+    extra = [row("s.lost", f"x{i}") for i in range(6)]
+    write("B-C", both + extra,
+          {f"s.a.c{i}": {"meaning": "no", "reference": "names"} for i in range(4)}
+          | {f"s.lost.x{i}": {"meaning": "yes", "reference": "names"} for i in range(6)})
+    write("B-P", both, {f"s.a.c{i}": {"meaning": "yes", "reference": "names"}
+                        for i in range(4)})
+    text, doc = build_report(tmp_path, "ds", {}, 0.8)
+    crit = doc["criteria"][0]
+    # unpaired, B-C would score 60 % and B-P 100 %: a 40-point gap for the wrong reason
+    assert crit["met"] is True
+    assert crit["value"] == ("B-P 100.0 % vs B-C 0.0 % on 4 paired column(s); "
+                             "6 column(s) answered or judged in one condition only, left out")
+
+
+def test_evaluation_inputs_are_frozen_and_read_back(tmp_path, sample_snapshot):
+    """A run directory keeps its snapshot and evidence (2026-11-16): later conditions read
+    them from there, so re-profiling the target between conditions changes nothing."""
+    import argparse
+
+    from gaia.profiling.summary import (
+        ColumnProfileSummary,
+        StaticEvidence,
+        TableEvidenceInput,
+        VerificationResult,
+    )
+    from gaia.tools.evaluate_semantics import INPUTS, _freeze, _frozen
+
+    ev = StaticEvidence({"dbo.orders": TableEvidenceInput(
+        table="dbo.orders", profiling_available=True,
+        columns={"status": ColumnProfileSummary("status", distinct=3,
+                                                top_values=[("paid", 10)])},
+        tests={"customer_id": [VerificationResult("inc:dbo.customers.customer_id",
+                                                  "inclusion", True, 1.0, "100%", "candidate")]},
+    )})
+    path = _freeze(tmp_path, "demo", sample_snapshot.to_dict(), ev)
+    assert path.name == INPUTS
+    args = argparse.Namespace(schema=None, table=["dbo.orders"], with_neighbours=False,
+                              limit=None)
+    label, snapshot, scope, evidence = _frozen(tmp_path, args)
+    assert label == "demo" and [t.qualified_name for t in scope] == ["dbo.orders"]
+    assert snapshot.structure_hash == sample_snapshot.structure_hash
+    back = evidence.table_evidence("dbo.orders")
+    assert back.to_dict() == ev.table_evidence("dbo.orders").to_dict()
+    assert _frozen(tmp_path / "other", args) is None

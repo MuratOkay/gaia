@@ -97,3 +97,101 @@ def test_merges():
         TableCritique(table_verdict="doubtful", table_notes=["n2"], columns=[]),
     ])
     assert crit.table_verdict == "doubtful" and crit.table_notes == ["n1", "n2"]
+
+
+# -- truncated answers (3C, 2026-11-16: 12,437 of 16,000 tokens were thinking) ----------
+
+
+def _narrow_reasoner(fake_llm, n=14, major=2):
+    from gaia.introspect.snapshot import Snapshot
+
+    table = _wide(n)
+    index = build_catalog_index(Snapshot(data_source="x", dialect="mssql", database="d",
+                                         server_version="1", tables=[table]))
+    settings = ReasonerSettings(model="fake", thinking=True, critique_thinking=True,
+                                max_tokens=16_000, temperature=None, prompt_major=major,
+                                context_budget_tokens=32_000)
+    bundle = build_bundle(table)
+    evidence = render_evidence(bundle, None, Exposure("masked")) if major >= 2 else None
+    return TableReasoner(fake_llm, settings, index), bundle, evidence, index
+
+
+def _columns_of(request) -> list[str]:
+    user = request[1].content
+    raw = user.split("Table bundle (json):\n", 1)[1].split("\n}\n")[0] + "\n}"
+    return [c["name"] for c in json.loads(raw)["columns"]]
+
+
+def test_plan_respects_a_column_cap():
+    bundle = build_bundle(_wide(14))
+    assert plan_chunks(bundle, None, fixed_tokens=100, context_budget=32_000,
+                       max_output_tokens=16_000, max_columns=7) == [
+        bundle.column_names[:7], bundle.column_names[7:]]
+    assert plan_chunks(bundle, None, fixed_tokens=100, context_budget=32_000,
+                       max_output_tokens=16_000, max_columns=None) == [bundle.column_names]
+
+
+def test_a_table_that_fits_is_asked_exactly_as_before(fake_llm):
+    """Recorded and cached answers must keep matching: no truncation, no change."""
+    from gaia.semantics.reasoner import reasoning_messages
+
+    reasoner, bundle, evidence, index = _narrow_reasoner(fake_llm)
+    outcome = reasoner.run(bundle, evidence)
+    assert outcome.ok and outcome.chunks == 1 and outcome.truncated_columns is None
+    assert fake_llm.requests[0] == reasoning_messages(bundle, index, evidence, 2)
+    assert fake_llm.calls == {"semantics": 1, "critique": 1}
+
+
+def test_truncated_answer_is_asked_again_in_smaller_chunks(fake_llm):
+    fake_llm.truncate_over = {"semantics": 8}
+    reasoner, bundle, evidence, _ = _narrow_reasoner(fake_llm)
+    outcome = reasoner.run(bundle, evidence)
+
+    assert outcome.ok, outcome.error
+    assert outcome.chunks == 2 and outcome.error is None
+    assert [c.name for c in outcome.reasoning.columns] == bundle.column_names
+    assert outcome.critique is not None and len(outcome.critique.columns) == 14
+    assert [len(_columns_of(r)) for r in fake_llm.requests
+            if not r[0].content.startswith("You are a sceptical")] == [14, 7, 7]
+    # the truncated call is kept: it was paid for
+    assert [c.purpose for c in outcome.calls].count("semantics") == 3
+    assert "truncated" in outcome.calls[0].error
+    assert any("asking again with at most 7 column(s)" in n for n in outcome.notes)
+
+
+def test_truncation_gives_up_after_the_last_split(fake_llm):
+    from gaia.semantics.reasoner import MAX_TRUNCATION_SPLITS
+
+    fake_llm.truncate_over = {"semantics": 1}
+    reasoner, bundle, evidence, _ = _narrow_reasoner(fake_llm)
+    outcome = reasoner.run(bundle, evidence)
+    assert not outcome.ok and "truncated" in outcome.error
+    # 14 -> 7 -> 4 -> 2 columns, each attempt stopping at its first chunk
+    assert fake_llm.calls["semantics"] == MAX_TRUNCATION_SPLITS + 1 == 4
+    assert [len(_columns_of(r)) for r in fake_llm.requests] == [14, 7, 4, 2]
+
+
+def test_generation_1_prompts_are_never_split(fake_llm):
+    fake_llm.truncate_over = {"semantics": 8}
+    reasoner, bundle, evidence, _ = _narrow_reasoner(fake_llm, major=1)
+    outcome = reasoner.run(bundle, evidence)
+    assert not outcome.ok and fake_llm.calls["semantics"] == 1
+
+
+def test_truncated_critique_is_asked_again_in_halves(fake_llm):
+    fake_llm.truncate_over = {"critique": 5}
+    reasoner, bundle, evidence, _ = _narrow_reasoner(fake_llm)
+    outcome = reasoner.run(bundle, evidence)
+
+    assert outcome.ok and outcome.critique is not None, outcome.critique_error
+    assert [c.name for c in outcome.critique.columns] == bundle.column_names
+    critiques = [r for r in fake_llm.requests if r[0].content.startswith("You are a sceptical")]
+    assert [len(_columns_of(r)) for r in critiques] == [14, 7, 4, 3, 7, 4, 3]
+    for request in critiques[1:]:  # halves (and their halves) list every other column
+        user = request[1].content
+        raw = user.split("Table bundle (json):\n", 1)[1].split("\n}\n")[0] + "\n}"
+        doc = json.loads(raw)
+        assert len(doc["columns"]) + len(doc["other_columns"]) == 14
+        claims = json.loads(user.split("Proposed interpretation to review (json):\n", 1)[1])
+        assert [c["name"] for c in claims["columns"]] == [c["name"] for c in doc["columns"]]
+    assert any("critique truncated on 14" in n for n in outcome.notes)

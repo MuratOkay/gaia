@@ -132,3 +132,47 @@ async def test_evaluation_harness_end_to_end(pg_session_factory, fake_llm, tmp_p
     assert doc["conditions"]["N-P"]["labelled"]["n"] == 24  # ground truth for every column
     audit = next(c for c in doc["criteria"] if c["name"].startswith("owner audit"))
     assert "audited" in audit["value"]
+
+
+@pytest.mark.asyncio
+async def test_truncated_answers_and_failed_critiques(pg_session_factory, fake_llm, tmp_path):
+    """Owner's run of 2026-11-15 (OWNER_VERIFICATION §13b): a 14-column table
+    truncated in B-P (thinking took 12,437 of 16,000 tokens) and a critique failed
+    in B-C without a word in the summary. Now: the table is asked again in smaller
+    chunks, a failed critique is reported, and a re-run replays everything."""
+    from test_profiling_pg import _introspect, _settings, _target
+
+    factory = pg_session_factory
+    snapshot = await _introspect(factory)
+    settings = _settings()
+    async with factory() as s:
+        await run_profiling(settings, s, ProfileOptions(target="demo_pg", tables=SCOPE))
+        ds = await s.scalar(sa.text("SELECT id FROM catalog.data_sources LIMIT 1"))
+        evidence = await ProfileStore(s).load_evidence(ds, snapshot, enabled=True)
+
+    fake_llm.truncate_over = {"semantics": 4}  # every table wider than 4 columns truncates
+    fake_llm.critique_fail_tables = {"legacy.tb_prm03"}
+    llm = RecordingLLMClient(EvalFake(fake_llm), tmp_path / "llm")
+    ctx = EvalContext(
+        settings=settings, data_source="demo_pg", snapshot=snapshot, scope=SCOPE,
+        evidence=evidence, llm=llm, out=tmp_path,
+        profiler_factory=lambda: PostgresProfiler(_target(), settings.profiling.budget),
+    )
+    blind = run_condition(ctx, "B-P")
+    assert blind["columns"] == 24 and not blind["failed"], blind
+    assert any("truncated" in n for n in blind["notes"]), blind["notes"]
+    assert any("error" in c and "truncated" in c["error"] for c in blind["calls"])
+
+    named = run_condition(ctx, "N-C")
+    assert named["columns"] == 24 and not named["failed"]
+    assert [c.split(":")[0] for c in named["critique_failed"]] == ["legacy.tb_prm03"]
+    rows = json.loads((tmp_path / "N-C" / "results.json").read_text())["columns"]
+    assert {r["critique"] for r in rows if r["table"] == "legacy.tb_prm03"} == {None}
+
+    # the truncated answers were recorded: a re-run asks nothing
+    live = llm.live_calls
+    again = run_condition(ctx, "B-P")
+    assert llm.live_calls == live and again["columns"] == 24
+
+    text, _doc = build_report(tmp_path, "demo_pg", {}, 0.8)
+    assert "critique failed (scored as not assessed): legacy.tb_prm03" in text
