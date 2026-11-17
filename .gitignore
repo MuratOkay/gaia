@@ -39,3 +39,4 @@ verification/
 
 # Phase 3C evaluation runs (every model answer; copy report.md to docs/ to keep it)
 evaluations/
+infra/auth/corp.json
