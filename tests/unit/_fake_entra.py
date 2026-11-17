@@ -5,8 +5,10 @@ endpoint (authorization code with PKCE; client credentials) and the Graph calls 
     users   ayse  (GAIA-Finance, department Finance)
             berk  (Team-HR, which is in GAIA-HR: nested)
             cem   (disabled, GAIA-Finance)
-            deniz (GAIA-Admins, GAIA-Finance, GAIA-Mail)
-    groups  GAIA-Finance, GAIA-HR, GAIA-Admins (security); GAIA-Mail (not security);
+            deniz (GAIA-Admins, GAIA-Finance, GAIA-Mail, GAIA-List)
+    groups  GAIA-Finance, GAIA-HR, GAIA-Admins (security); GAIA-Mail (a Microsoft 365 group —
+            security-enabled, as the Entra admin center makes them: only ``groupTypes``
+            "Unified" tells it apart, D79); GAIA-List (mail-enabled, not security);
             Team-HR (security, no GAIA- prefix)
 
 A sign-in: ``authorize(url)`` plays the user at Microsoft — it checks the request and
@@ -62,7 +64,11 @@ GROUPS = {
                "description": None, "members": ["b2"]},
     "g-adm": {"id": "g-adm", "displayName": "GAIA-Admins", "securityEnabled": True,
               "description": "Gaia administrators", "members": ["d4"]},
-    "g-mail": {"id": "g-mail", "displayName": "GAIA-Mail", "securityEnabled": False,
+    "g-mail": {"id": "g-mail", "displayName": "GAIA-Mail", "securityEnabled": True,
+               "groupTypes": ["Unified"], "mailEnabled": True,
+               "description": "a Microsoft 365 group", "members": ["d4"]},
+    "g-list": {"id": "g-list", "displayName": "GAIA-List", "securityEnabled": False,
+               "groupTypes": [], "mailEnabled": True,
                "description": "a distribution list", "members": ["d4"]},
 }
 

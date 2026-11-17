@@ -240,7 +240,7 @@ class CategoryService:
         neighbours."""
         from gaia.access.policy import _tables_read
         from gaia.access.proposal import ObjectFacts, propose_all
-        from gaia.db.models.catalog import RelationRecord
+        from gaia.db.models.catalog import ConstraintRecord, RelationRecord
         from gaia.db.models.profiling import ModuleDefinition
         from gaia.db.models.semantics import JoinHint
         from gaia.profiling.lineage import sqlglot_dialect
@@ -268,15 +268,26 @@ class CategoryService:
                            for d in (await s.scalars(select(ModuleDefinition).where(
                                ModuleDefinition.data_source_id == ds.id,
                                ModuleDefinition.is_current.is_(True)))).all()}
-            # what each table points at: declared foreign keys, and joins an SME confirmed
+            # what each table points at: declared foreign keys, and joins an SME confirmed;
+            # a foreign key inside the primary key makes the table a part of the other (D79)
+            pks = {t_id: {c.lower() for c in cols} for t_id, cols in (await s.execute(
+                select(ConstraintRecord.table_id, ConstraintRecord.column_names).join(
+                    TableRecord, TableRecord.id == ConstraintRecord.table_id).where(
+                    TableRecord.data_source_id == ds.id,
+                    ConstraintRecord.kind == "primary_key"))).all()}
             refs: dict[str, set[str]] = {}
+            owners: dict[str, set[str]] = {}
             for rel, t in (await s.execute(
                     select(RelationRecord, TableRecord).join(
                         TableRecord, TableRecord.id == RelationRecord.table_id).where(
                         TableRecord.data_source_id == ds.id,
                         TableRecord.is_tombstoned.is_(False)))).all():
-                refs.setdefault(f"{t.schema_name}.{t.object_name}".lower(), set()).add(
-                    f"{rel.to_schema}.{rel.to_table}".lower())
+                key = f"{t.schema_name}.{t.object_name}".lower()
+                target = f"{rel.to_schema}.{rel.to_table}".lower()
+                refs.setdefault(key, set()).add(target)
+                fk = {c.lower() for c in rel.from_columns or []}
+                if fk and fk <= pks.get(t.id, set()):
+                    owners.setdefault(key, set()).add(target)
             for h in (await s.scalars(select(JoinHint).where(
                     JoinHint.data_source_id == ds.id, JoinHint.status == "confirmed",
                     JoinHint.source.in_(("fk", "sme"))))).all():
@@ -295,11 +306,24 @@ class CategoryService:
                     kind="view" if t.kind == "view" else "table",
                     business_name=sem.business_name if sem else None,
                     entity=sem.entity if sem else None, purpose=sem.purpose if sem else None,
-                    references=refs.get(key, set()), reads=reads,
+                    references=refs.get(key, set()), identifying=owners.get(key, set()),
+                    reads=reads,
                     confirmed=cur.category_id if cur is not None and cur.status == "confirmed"
                     else None))
+            # what people confirmed in the other data sources: evidence for objects named
+            # like them (D79)
+            elsewhere = [ObjectFacts(key=f"{dsn}:{sch}.{obj}".lower(), schema=sch, name=obj,
+                                     confirmed=cat_id)
+                         for dsn, sch, obj, cat_id in (await s.execute(
+                             select(DataSource.name, TableRecord.schema_name,
+                                    TableRecord.object_name, ObjectCategory.category_id)
+                             .join(TableRecord, TableRecord.id == ObjectCategory.table_id)
+                             .join(DataSource, DataSource.id == ObjectCategory.data_source_id)
+                             .where(ObjectCategory.is_current.is_(True),
+                                    ObjectCategory.status == "confirmed",
+                                    ObjectCategory.data_source_id != ds.id))).all()]
             terms = [_terms(c) for c in cats]
-            proposals = propose_all(facts, terms)
+            proposals = propose_all(facts, terms, elsewhere)
             result: dict[str, Any] = {"proposed": 0, "unchanged": 0, "confirmed_kept": 0,
                                       "none": 0, "by_basis": {}, "why_none": {}}
             for t, _sem in sorted(rows, key=lambda r: (r[0].schema_name, r[0].object_name)):
@@ -311,6 +335,12 @@ class CategoryService:
                 if p.category is None:
                     result["none"] += 1
                     result["why_none"][f"{t.schema_name}.{t.object_name}"] = p.why
+                    if cur is not None and cur.source == "gaia":
+                        # an earlier proposal stays (taking it away would take away access
+                        # without anyone deciding), but says what it is now (D79)
+                        kept = f"an earlier proposal, kept; now {p.why}"
+                        if (cur.reason, cur.basis) != (kept, "weak"):
+                            cur.reason, cur.basis = kept, "weak"
                     continue
                 result["by_basis"][p.basis] = result["by_basis"].get(p.basis, 0) + 1
                 if cur is not None and cur.category_id == p.category.id:

@@ -20,16 +20,17 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D77 (triage of the D75 run)` — the D75 run triaged (§26): the
-  directory's TLS explained and a failed test no longer empties the sign-in page (D76),
-  need-to-know refusals decided before repairs (D76), category proposals v2 (D77), the runs
-  filter, the chat of someone with nothing to ask, profiling of data sources added at runtime.
-  **The next run: §26e** (it replaces §25, whose steps it reuses).*
+  there. *Latest build: `2026-11-17 · D80 (6A; D78, D79)` — the D77 run triaged (§27): the chat's crash
+  in newer browsers, Entra's Microsoft 365 groups, category proposals v2.1 (D79); D78 built (an
+  account is the directory's object); Phase 6 approved and **6A built** — every golden run recorded,
+  `make quality` (D80); `make share` for sending outputs without personal data.
+  **The next run: §27d.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
-  items (§22e, §23c). §25 was run on D75 up to the directory — **its outputs are triaged in
-  §26**, and **§26e is the next run** (build D77).
+  items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
+  D77 — **triaged in §27**, and **§27d is the next run** (build D80). **Send outputs only through
+  `make share`** (§27, 27d step 6).
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -125,7 +126,8 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 23 | Build D71: 5A.2 — sign-in with Microsoft Entra ID; the golden run's spread | an Entra tenant you can register an app in; the LLM gateway (23b, ~4 min) | ~45 min |
 | 24 | Build D73: 5B — you as SME on `demo_pg`; the golden run with D65's prompt (D72); g07 — *run inside §25* | the LLM gateway (~8 min), a directory account with the `sme` grant (§22e or §23c) | ~1 h |
 | 25 | Build D75: Phase 5 complete — one combined run (*ran up to the directory; triaged in §26, replaced by §26e*) | an AD/LDAP server, an Entra tenant, the LLM gateway, a browser | ~2–3 h |
-| 26 | **Triage of the D75 run; build D77 — the next run (§26e)**: tests, the directory back (the CA), Entra's secret, categories on both databases, you as SME and g07, need-to-know and the chat, the golden run as a person, 3C's missing judgement | the Samba AD (or your AD), an Entra tenant, the LLM gateway, a browser | ~2–3 h |
+| 26 | Triage of the D75 run; build D77 (*run — triaged in §27*): tests, the directory back (the CA), Entra's secret, categories on both databases, you as SME and g07, need-to-know and the chat, the golden run as a person, 3C's missing judgement | the Samba AD (or your AD), an Entra tenant, the LLM gateway, a browser | ~2–3 h |
+| 27 | **Triage of the D77 run; build D80 — the next run (§27d)**: tests, the chat in your browser, Entra's roles, D78 on the Samba AD, categories and g07, three fresh golden runs and `make quality`, `make share` | the Samba AD, the Entra tenant, the LLM gateway, a browser | ~1½–2 h |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -2200,6 +2202,8 @@ wrong (a screenshot is fine). Then I triage, and Phase 5's gate is yours.
 
 ## 26 · Triage of the D75 run, and build D77 — the next run (2026-11-17)
 
+*Run on D77 (the `26_*` outputs); triaged in §27, whose §27d is the next run.*
+
 I read every file in `verification/`. All of them are stamped `2026-11-17 · D75 (5C–5E)`, git
 `315beee` — the build of §25 — although most carry the names of §22–§24 (their commands were
 run again on D75; the stamp, not the name, says which code produced them). No `25_*` file exists:
@@ -2540,6 +2544,190 @@ the Phase 5 gate is yours.
 
 ---
 
+## 27 · Triage of the D77 run, and build D80 — the next run (2026-11-17)
+
+I read the sixteen `26_*` outputs (build D77, git `5936fd1`) and your notes. **Before anything
+else — sending outputs:** your uploads were refused by a platform's PII check, and rightly so in
+part: the outputs carry your own Microsoft guest account, your tenant's name and ids, your OS user
+name (in paths and in `cli:<user>`), the test directory's e-mail addresses, and D75's
+`22_5a_cli.out` even a one-time setup code. From this build on, **send only what `make share`
+writes** (27d): it replaces all of these consistently — the same address is always `<email-3>` —
+so I can still triage, and the key to map them back stays on your machine.
+
+### 27a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `26_migrate.out`, `26e_curl.out` | `0015 -> 0016`; `/health`: `"schema": {"ok": true, "current": "0016"}` | ✅ migrate first, as asked |
+| `26_tests.out`, `26_web.out` | **724 passed, 0 skipped**; 42 web tests, the build | ✅ exactly the expectation |
+| `26_5a_cli.out` | `status`: Samba running, the CA file matches, `Verify return code: 0`; probe: transport names the certificate and the CA (SHA-256), bind, 6 users, 3 groups; sync `users 6, roles 3`; GAIA-Finance 4 members; grants (two existed already, from the web UI); accounts as expected, the conflict of dyilmaz included | ✅ **5A against a real AD, complete** |
+| `26_5a_after.out` | 9 grants; audit chain intact (146) | ✅ |
+| `26_entra_cli.out` | all six checks pass with the new secret; roles **GAIA-Admins, GAIA-HR, GAIA-Mail**; `grant user --role corp/GAIA-Finance` refused: no such role | secret ✅ (F5 closed); roles ✗ — 27b-2 |
+| `26_entra_after.out` | 5 Entra accounts read; chain intact (151); you: Sign in with Microsoft worked | ✅ **5A.2 against a real tenant** |
+| `26_access_cli.out` | keywords completed from the schemas; you had confirmed all 28 `demo_pg` objects (`v_customer_overview` in Crm, `sales.payments` in Finance — your choices), so finn reads 21 of 28; on `nge_small` 24 confirmed by you, the rest proposed: 30 direct, 4 related, 1 view, 7 weak, 5 none | ✅ works; what your confirmations show: 27b-3 |
+| `26_review_after.out` | six items decided by akaya (the top of the queue); `finance.invoices.status` still open | review ✅ in the browser; **g07 untested** |
+| `26_golden_sme.out` | fresh (73 calls): **90 %**; g07 now *asks back* — its options name the status codes 0/1/2 the model saw in the data, none with a meaning — and is wrong; o02, o06 wrong after their clarification | as expected without the SME's meanings |
+| `26_carry.out` | `finance.invoices` re-reasoned, `failed=0` | ✅ (nothing of it was decided, so no carry-forward to see) |
+| `26_golden_as.out` | `as dyilmaz: 28 object(s) readable` (no "masked": PII granted), 72 fresh calls, **87 %** — g07, o02, o05, o06 | ✅ need-to-know gives the operator's answers; the spread is the model's |
+| `26_after.out` | chain intact (182) | ✅ |
+
+**The golden spread, now over five fresh runs of the D72 prompt: 97, 90, 93, 90, 87 %** (mean
+91 %). What misses is telling: g07 in every run (no SME meaning yet), and **answers after a
+clarification**: o02 in three of the five, o06 in two, o03/o05/c01 once. That is no longer a
+question for single runs — it is what 6A now measures (27d step 6) and what 6E will watch.
+
+### 27b · Your notes
+
+1. **"Clicking Chat shows *This page could not be shown — destroy is not a function*."** A real
+   bug of the chat page, visible since D77's error boundary (before it, the page went blank): an
+   effect scrolled to the newest message with `useEffect(() => bottom.scrollIntoView())`, which
+   *returns* what `scrollIntoView()` returns. Older browsers return nothing; newer ones a
+   Promise — and React takes an effect's return value for its clean-up function, so in
+   development (React unmounts once right after mounting) it called the Promise. Reproduced
+   exactly by giving the sandbox's Chromium that newer behaviour; fixed (the effect returns
+   nothing; five other effects written the same way too); a test renders the chat with a
+   Promise-returning `scrollIntoView`, and another rejects any effect written that way.
+2. **Entra: GAIA-Mail counted, GAIA-Finance missing.** Gaia's "security groups only" checked
+   Graph's `securityEnabled` — but Microsoft 365 groups made in the Entra admin center are
+   security-enabled too; what tells them apart is `groupTypes: ["Unified"]`. Fixed: they no longer
+   count, and the probe's roles line now names the groups it took and **every one it left out,
+   with why** — `left out: GAIA-Finance (not a security group), GAIA-Mail (a Microsoft 365
+   group)` or similar. GAIA-Finance was left out by the security check, so in your tenant it is
+   probably not a *Security* group (a Microsoft 365 one, or mail-only); the new probe line will
+   say which (27d step 2).
+3. **"akaya also has Queries."** By design (P5-7, D70): SMEs see the SQL of the answers about the
+   data sources they review — akaya those of `demo_pg`, nothing else; people who only chat
+   (finn) never see SQL. Say if you want SMEs without it; it is one line.
+4. **"Everything worked as expected in the web UI. … Sign in with Microsoft in the login box."**
+   Noted: with 1 and 2, the remaining Phase 5 host items are g07 and the chat in your browser.
+
+Your categories work (`26_access_cli.out`) — your confirmations showed where v2 still erred, and
+**proposals v2.1** (D79) answer each: `hr.staff_addresses` proposed Crm because "addresses"
+outweighed its schema `hr` — a schema that names a category now decides unless a person says
+otherwise; `dw.dim_shop` (weak: Finance) and `dw.dim_platform` (weak: Sales) beside your
+confirmed `dbo.shops` (Store) and `dbo.platforms` (Product) — a table named like an object of
+another schema, or of another data source you confirmed, is about the same thing; `transaction_lines`
+outvoted by its two product references — a table whose key holds its header's key belongs to it,
+and other references share one vote; `dbo.source_systems` pulled into Crm by everything
+referencing it — those votes are shared too; `dw.fact_tradein` kept D75's proposal — now marked
+weak, saying so. A unit test encodes these cases from your run.
+
+### 27c · Decided
+
+**P6-0 … P6-7 as recommended, D78 accepted** (your message). 3C is closed (P6-0), Phase 6 is
+approved, and this build is its first: **6.0** (this triage, D78 built) and **6A part 1** (the
+evaluation store and `make quality`). D78: an account follows its directory object; when another
+object carries the login, the sign-in is refused until an administrator re-links the account
+(the same person, e.g. a Samba domain provisioned again) or starts it anew (someone else: its own
+grants revoked) — *Accounts* shows a banner with both buttons.
+
+### 27d · The run (build D80) — the next run
+
+Outputs as before, `verification/27_*.out`, each starting with `make stamp`; **every golden run a
+new `--out`** (a directory with recorded answers is now refused, unless `--resume`). At the end,
+**`make share`** — send `verification/share/` only.
+
+**Step 0 — setup and tests.** Migrations `0017` (D78) and `0018` (the evaluation store).
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/27_migrate.out 2>&1
+(make stamp; make test) > verification/27_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/27_web.out 2>&1
+```
+
+- [ ] `27_migrate.out`: `0016 -> 0017 …` and `0017 -> 0018 …`
+- [ ] `27_tests.out`: `gaia build 2026-11-17 · D80 (6A; D78, D79)` and **735 passed, 0 skipped**
+      (sandbox: 725 passed, 10 skipped)
+- [ ] `27_web.out`: **46 passed**, then `✓ built`
+
+**Step 1 — the chat in your browser** (the one that failed), as finn and as akaya: *Chat* from
+the menu, from Home, from Review — the page opens; ask a question; open an older conversation.
+
+**Step 2 — Entra's roles.**
+
+```bash
+(make stamp; make auth ARGS="directory probe corp"; make auth ARGS="directory sync corp"
+ make auth ARGS="directory roles corp") > verification/27_entra_roles.out 2>&1
+```
+
+- [ ] the roles line names the groups taken and those left out, with why; **GAIA-Mail is not a
+      role any more** (`roles` shows it gone). If GAIA-Finance is "left out (not a security group)"
+      or "(a Microsoft 365 group)": in Entra, make a **Security** group GAIA-Finance (a group's type
+      cannot be changed), put the Finance test user in it, sync again, then
+      `make auth ARGS="grant user --role corp/GAIA-Finance"` and sign in as that user
+
+**Step 3 — D78 on the Samba AD** (optional, ~5 minutes): give finn a new directory object.
+
+```bash
+docker exec gaia-ad samba-tool user delete finn
+docker exec gaia-ad samba-tool user create finn 'Test-Passw0rd-1' --userou="OU=Finance,OU=People" \
+  --given-name=Finn --surname=Aksoy --mail-address=finn@acme.test --department=Finance
+docker exec gaia-ad samba-tool group addmembers GAIA-Finance finn
+```
+
+Sign in as finn: "Sign-in failed". As dyilmaz, *Accounts*: finn's banner, "another directory
+object has carried this login since …" — choose **The same person: re-link**; finn signs in again.
+(`make auth ARGS="accounts"` shows `IDENTITY CHANGED` while it waits.)
+
+**Step 4 — categories on `nge_small` again, and g07 at last.**
+
+```bash
+(make stamp; make access TARGET=demo_mssql ARGS="propose"; make access TARGET=demo_mssql ARGS="objects --why") \
+  > verification/27_access.out 2>&1
+```
+
+- [ ] `hr.staff_addresses` Hr; `dw.dim_shop` Store and `dw.dim_platform` Product ("named like
+      dbo.shops / dbo.platforms"); `transaction_lines` with `transactions`; tell me what is still wrong
+
+Then as **akaya**: *Review* → *Tables* → `finance.invoices` → `status` → **Correct**: role `code`,
+the meanings `0` open, `1` paid, `2` overdue, `9` void → Save; *Glossary*: `overdue invoice` =
+"an invoice of finance.invoices whose status is 2". Then:
+
+```bash
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d80sme") \
+  > verification/27_golden_sme.out 2>&1
+```
+
+- [ ] **g07 correct** — the 5B criterion: your decision alone, no change to code or prompts
+
+**Step 5 — 6A: the quality report.** Bring your earlier golden runs into the store, run three
+fresh ones on this build, and compare with D77's:
+
+```bash
+(make stamp; make quality ARGS="--import 'evaluations/golden_demo_pg*'") > verification/27_import.out 2>&1
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d80$run") \
+    > verification/27_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--list"; make quality TARGET=demo_pg ARGS="--last 3"
+ make quality TARGET=demo_pg ARGS="--compare-builds") > verification/27_quality.out 2>&1
+```
+
+- [ ] `27_import.out`: your older runs imported, once each (a second `--import` imports 0)
+- [ ] each `27_golden_*.out` says `**Answers:** … asked now — a new measurement` and `recorded as
+      evaluation run … (fresh)`
+- [ ] `27_quality.out`: the three runs pooled, with intervals; the flaky questions (o02, o06 …);
+      and D80's runs against the newest earlier build's (the imported D77 runs; they are the
+      operator's and dyilmaz's — the prompts are identical) — *passes*, *fails* or *cannot tell*
+
+(The `d80sme` run of step 4 is the same build with your g07 decision; `--compare-builds` counts it
+with D80's runs.)
+
+**Step 6 — send.**
+
+```bash
+make share                       # add --also 'Your Name' for any name of yours in the outputs
+```
+
+Send **`verification/share/`** only — not `verification/` itself, and never `verification/share-key.json`.
+
+### 27e · What is open after this run
+
+The Phase 5 gate (steps 1, 2 and 4 decide it); 6A part 2 (the *Evaluation* page); 6E, 6B.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -2566,6 +2754,11 @@ the Phase 5 gate is yours.
 | `FAILED: … does not exist` and `the metadata store is at 00NN; this build needs 00MM` | a migration of this build is not applied | `cd backend && ../gaia-env/bin/alembic upgrade head`, then the command again; `/health` shows `"schema"` |
 | `make profile`: `REFUSED: no target 'X' in config` for a data source added at runtime | builds before D77 profiled config targets only | D77 profiles them too |
 | Category proposals put related tables apart | builds before D77 matched words only | D77: `make access TARGET=… ARGS="propose"`, then `objects --why`; confirm a family's head and propose again |
+| "Sign-in failed" for someone who signed in before; `accounts` says `IDENTITY CHANGED` | another directory object carries the login (D78): someone else, or a test domain provisioned again | *Accounts* → *re-link* (the same person) or *start anew* (someone else); `make auth ARGS="account relink DIR/LOGIN"` or `… DIR --all` |
+| `make golden`: `… holds N recorded answer(s): a run into it replays them` | the `--out` directory has a run in it already (D80) | a new `--out`; `--resume` only to continue an interrupted run |
+| An Entra group is not a role | not named with the prefix, not a security group, or a Microsoft 365 group (D79) | `directory probe`: the roles line names every group left out, and why; make a *Security* group |
+| "This page could not be shown" | a page failed to render; the message says why (since D77) | send the message; D79 fixed "destroy is not a function" on the chat |
+| An upload of outputs is refused for personal data | outputs carry accounts, tenants, user names | `make share`, send `verification/share/` only |
 | `directory probe`: `the service account's bind was refused` | `bind_dn` or its password | `make auth ARGS="directory update NAME --password"` |
 | Every API call answers 401 | no session (sign in), or the session expired (30 min idle, 8 h at most) | sign in again; from scripts, log in with `POST /api/auth/login` and send the `X-CSRF-Token` header on changes |
 | `missing or wrong CSRF token` | a POST/PATCH/DELETE without the `X-CSRF-Token` header (the value of the `gaia_csrf` cookie) | the web UI sends it; a script must too |

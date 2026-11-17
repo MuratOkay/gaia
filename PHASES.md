@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-17 (**the D75 host run triaged; build `2026-11-17 · D77 (triage of the D75 run)`**; **Phase 6 designed**) · Status: Phases 0–2 complete · Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B done; **3C**: judged and reported on the host — criteria 1–3 met, the owner's audit 86 % (criterion 4 not met; P6-0) · **D52**, **D56** · **Phase 4 complete** (owner, 2026-11-17: golden run 100 % / 97 %, retrieval 95 % / 95 %) · **Phase 5**: every stage built; on the host 5A against a real Samba AD up to the grants, then the run stopped at the directory (a re-provisioned domain's new CA; OWNER_VERIFICATION §26) — D76/D77 fix what it found; **the next run is §26e** · **Phase 6 designed** (evaluation and calibration on human labels), awaiting approval · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
+> Last updated: 2026-11-17 (**the D77 host run triaged; build `2026-11-17 · D80 (6A; D78, D79)`**) · Status: Phases 0–4 complete (3C accepted, P6-0) · **D52**, **D56** · **Phase 5**: every stage built; on the host 5A against a real Samba AD and 5A.2 against a real Entra tenant pass, need-to-know and the chat work in the browser; the chat's crash in newer browsers, Entra's Microsoft 365 groups and category proposals fixed (D79); g07 and the chat in the owner's browser remain — **OWNER_VERIFICATION §27d** · **Phase 6 approved** (P6-0 … P6-7 as recommended): 6.0 done (D78 built), **6A** built — the evaluation store and `make quality` (D80) · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -38,10 +38,10 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 0 | Infrastructure, config, health, target verification | **DONE** | ✅ approved |
 | 1 | Catalog introspection, hashing, incremental diff | **DONE** | ✅ approved |
 | 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
-| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P, 3.0, 3A (PostgreSQL), 3B done; 3C: all five conditions answered and judged on the host; the report and the owner's audit remain (OWNER_VERIFICATION §22d); SQL Server residue S2/S3 closed (D56) | ✅ approved 2026-11-14 · 3.0 ✅ 3A ✅ (PostgreSQL) 3B ✅ · 3C open |
+| 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
-| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **IN PROGRESS** — every stage built (5.0 … 5E, D68–D75); the D75 host run proved 5A against a real AD up to the grants and stopped at the directory; triaged, build D77 (D76, D77); next: OWNER_VERIFICATION §26e | ✅ approved 2026-11-17 |
-| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **designed** (2026-11-17), awaiting approval (P6-0 … P6-7) | ⬜ |
+| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **IN PROGRESS — host-verified except two items**: 5A (real AD), 5A.2 (real tenant), need-to-know and the chat in the browser pass (D77 run); remaining: g07 after an SME's decision, and the chat in the owner's newer browser after D79's fix — OWNER_VERIFICATION §27d | ✅ approved 2026-11-17 |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **IN PROGRESS** — 6.0 done (D78), 6A part 1 built (D80): the evaluation store, `make quality`; next 6A part 2 (the page), 6E, 6B | ✅ approved 2026-11-17 |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence | **backlog** | ⬜ |
 
 ### Environment as it stands
@@ -60,10 +60,10 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | host, 2026-11-16: `nge_small` all 71 objects / 607 columns (231 accepted; queue 289); `demo_pg` all 28 objects / 213 columns (108 accepted) |
-| Tests | build D77: **714 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — 724 expected on the host (D75 on the host: **708 passed, 0 skipped**); the web UI: 42 (vitest). The sandbox's metadata store is PostgreSQL 16.15 with pgvector 0.6.0 (every extension) — migrations checked down and up
+| Tests | build D80: **725 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — 735 expected on the host (D77 on the host: **724 passed, 0 skipped**); the web UI: 46 (vitest)
 | Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
 | Sandbox (2026-11-17, D76) | Also a **real LDAPS directory** with the Samba script's people and groups and a Samba-shaped certificate chain (`ldaptor`), a **headless Chromium** driving the web UI, and an OpenAI-compatible **scripted model** and embedding stub: sign-in, review, chat, refusals and the admin pages run through uvicorn and Vite as on the host. Still no SQL Server, no LLM gateway, no Docker
-| Migrations | `0001`–`0016` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal) |
+| Migrations | `0001`–`0018` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store) |
 | Web UI (Phase 5) | `frontend/`: Vite 8 + React 19 + TypeScript 5.9 + i18next, pnpm; `make web-install`, `make dev-web` (127.0.0.1:5173, proxies `/api`), `make web-test`, `make web-build` |
 
 ---
@@ -1609,11 +1609,12 @@ references; R5 → decisions log; R6 → Phase 7 backlog.
       D54 on the counts and `dw.sales_wide` (OWNER_VERIFICATION, SQL Server track S2, S3)
 - [x] 3B complete (with the configured model, above) → together with 3A, approval to start 3C
       *(owner, 2026-11-16; 3C was started on 2026-11-15)*
-- [ ] 3C complete → **Phase 3 done** *(runs resuming on `nge_small`, §14b — the LLM-bound
-      part; Phase 4 did not wait, P4-9)* *(2026-11-17: all five conditions answered and judged
-      on the host; B-C, B-P, N-C, N-P by one model id, B-P-nt's last answers by its new name
-      (the same model, §21f); the report and the owner's audit remain — OWNER_VERIFICATION §22d;
-      Phase 5 need not wait, P5-11)*
+- [x] 3C complete → **Phase 3 done** *(owner, 2026-11-17, P6-0: accepted with criteria 1–3 met —
+      B-P 78.8 % vs B-C 61.2 % (+17.6), N-P = N-C, AUROC 0.802 — and criterion 4 recorded as
+      **not met**: the owner's audit agrees with the LLM judge on 86.2 % of 94 columns, the judge
+      the more lenient in 9 of 13 disagreements. Consequence: the judge is triage only, and Phase
+      6 calibrates on people's labels (6B). B-P's 14 unjudged columns stay noted;
+      OWNER_VERIFICATION §26c F7)*
 
 ---
 
@@ -2701,6 +2702,38 @@ first, a clarification, e-mails masked, refusals now *Not allowed* and in the au
 questions*), the runs filter, the categories page on a `dbo`-shaped database. Tests: **714
 passed, 10 skipped** (+16), web **42** (+8); migration `0016` down and up.
 
+### Owner runs on D77 (2026-11-17) — triage, and build D80
+
+OWNER_VERIFICATION §27. The run of §26e went through (after its migration first, as asked):
+**724 passed, 0 skipped**; the web UI's 42 tests; `/health` with the schema revision. **5A on a
+real AD is complete**: the CA file matched the running domain, the test's transport line named
+the certificate and the CA, six users and three roles were read, the grants were made, and every
+role worked in the browser ("everything worked as expected in the web UI"). **5A.2 on a real
+tenant works** with the client secret's Value: all six checks, *Sign in with Microsoft* in the
+browser. On a real tenant, though, **GAIA-Mail — a Microsoft 365 group — counted as a role**
+(the Entra admin center makes those security-enabled too; only `groupTypes` "Unified" tells them
+apart), and **GAIA-Finance was left out** as not a security group, without the probe saying so.
+Categories on both databases: the owner confirmed every `demo_pg` object and 24 of `nge_small`'s,
+which shows where v2 still erred (a schema outweighed by a name, a dimension not recognised as
+its base table's subject, a line outvoted by its references, a lookup table pulled by everything
+referencing it). akaya decided six review items — not `finance.invoices.status`, so g07 is still
+untested. Two fresh golden runs — 90 % and, as dyilmaz, 87 % — join the D72 prompt's spread.
+**The chat broke in the owner's browser**: "destroy is not a function" — an effect returned
+`scrollIntoView()`'s value, which newer browsers make a Promise, and React took it for a clean-up
+(reproduced exactly by giving the sandbox's Chromium that behaviour). And the owner's uploads were
+refused by a platform's PII check: the outputs carry his Microsoft account, tenant, OS user name
+and the test directory's e-mail addresses.
+
+**Build D80** (D78, D79, D80): the chat's effects return nothing (and a test keeps it so); Entra's
+"security groups only" excludes Microsoft 365 groups and the probe names every group it left out,
+with why; **D78 built** (an account is the directory's object: a changed stable id refuses the
+sign-in until an administrator re-links or starts the account anew; migration `0017`); proposals
+v2.1; `make share` (outputs with personal data replaced consistently, the key kept by the owner);
+and **Phase 6A** — the evaluation store and `make quality` (D80; migration `0018`). Verified in
+the sandbox with the real processes: the chat opened in a browser whose `scrollIntoView` returns
+a Promise; finn's directory object changed on the LDAPS server — sign-in refused, the Accounts
+banner, re-linked in the browser, signed in again.
+
 ### Decisions needed
 
 *P5-1 and P5-2 of the former plan are superseded: the owner's directive settles identity (the
@@ -2753,25 +2786,23 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
       closed, T5 and T6 seen working; the golden run's dip to 90 %: T6's prompt sentence withdrawn
       (D72); three fresh runs of the D72 prompt since — 97, 90, 93 % — so the model's spread is
       ±4 points and D72 stands (§26c F6))*
-- [ ] 5A verified against a real directory on the host *(D75 run: LDAPS with a private CA, the
-      service bind, users, groups and nesting proven on a Samba AD by the CLI — `22_5a_cli.out`;
-      the grants, the browser and the re-check did not run (the migration order, then a stale CA):
-      §26e)*
-- [ ] 5A.2 (Entra ID) verified against a real tenant *(built; tests pass on the host, D71; D75 run:
-      discovery and keys of your tenant pass, the stored client secret is refused — its ID, not its
-      Value: §26e step 2)* → 5B
-- [ ] 5B verified by the owner as SME on `demo_pg` (g07 included) → 5C *(built, D73; no SME could
-      sign in on D75; §26e step 4)*
-- [ ] 5C adversarial suite passing → 5D offered to the `user` role *(built, D74: passing in the
-      sandbox — 0 executed; since D76 a forbidden reference beside any other mistake is refused,
-      not repaired (+7 statements); `user` is in `auth.chat_roles`; §26e step 5 on the host)*
-- [ ] 5D and 5E (read-only) complete → **Phase 5 done** *(built, D75; the runs filter and the
-      chat of someone with nothing to ask fixed in D77; §26e)*
+- [x] 5A verified against a real directory on the host *(D77 run, §26e: the Samba AD — LDAPS with
+      its CA verified, users, roles, nesting, grants, every role in the browser; owner, 2026-11-17:
+      "everything worked as expected in the web UI")*
+- [x] 5A.2 (Entra ID) verified against a real tenant *(D77 run: all six checks with the secret's
+      Value, Sign in with Microsoft in the browser. Found: a Microsoft 365 group counted as a role,
+      fixed in D79; GAIA-Finance left out as not a security group — the probe now names it, §27d)* → 5B
+- [ ] 5B verified by the owner as SME on `demo_pg` (g07 included) → 5C *(D77 run: akaya decided six
+      items in the browser; g07 waits for `finance.invoices.status`'s meanings — §27d step 4)*
+- [x] 5C adversarial suite passing → 5D offered to the `user` role *(724 passed on the host, D77;
+      need-to-know in the browser as expected, owner 2026-11-17)*
+- [ ] 5D and 5E (read-only) complete → **Phase 5 done** *(the chat broke in the owner's newer
+      browser — "destroy is not a function" — fixed in D79; to confirm: §27d step 1)*
 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **designed 2026-11-17 — awaiting approval**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0 and 6A built (D78–D80)**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -2870,14 +2901,46 @@ overnight refresh stay in Phase 7 (P5-12); 6A makes a model switch *measurable*,
 
 | Step | What | Verifiable in the sandbox | Needs the host |
 |---|---|---|---|
-| 6.0 | §26e triaged; Phase 5 and 3C gates; D78 if accepted | D78 with the LDAPS directory | §26e's outputs |
-| 6A | `evaluation` schema; the tools write to it; fresh vs replay; `make quality`; the *Evaluation* page | fully, with the scripted model | a real report on both data sources |
+| 6.0 ✅ | §26e triaged (§27); 3C gate (P6-0 ✅); D78 built; the Phase 5 gate after §27d | D78 with the LDAPS directory | §27d |
+| 6A ✅ (part 1) | `evaluation` schema; golden runs write to it; fresh vs replay; `make quality`; older runs imported — *the Evaluation page is part 2* | fully, with the scripted model | a real report, three fresh runs, a comparison with D77 (§27d) |
 | 6B | labels from decisions, 3C labels and audit; κ of the judge; blind share of review items | fully | the owner's decisions of §26e (the first real labels) |
 | 6C | calibrators per model; ECE/Brier/reliability; bands as probabilities | with synthetic labels | a fit on real labels (P6-1's count) |
 | 6D | answer confidence; the feedback control; feedback → review item → label | fully | people's feedback over weeks |
 | 6E | the replayed net in `make test`; three fresh runs and the paired comparison; the deliberate regressions | fully (scripted model) | three fresh golden runs as the baseline (~6 min) |
 | 6F | `nge_small` golden set (drafted, corrected), T-SQL golden run, persona runs, D61 (b) | drafting only | the owner's corrections; SQL Server |
 | 6G | proposal accuracy per basis; weights fitted | with a synthetic record | the owner's confirmed placements |
+
+### 6.0 and 6A results (2026-11-17, sandbox)
+
+**6.0** — the D77 run triaged (Phase 5, "Owner runs on D77"; OWNER_VERIFICATION §27); the 3C gate
+closed (P6-0); **D78 built**: `auth.account.pending_external_id` / `identity_changed_at`
+(migration `0017`); when the directory's stable id behind a login (AD `objectGUID`, `entryUUID`,
+Entra's object id — never a DN, which moves) differs from the account's, the sign-in is refused
+and audited once (`identity_changed`), an open session ends at its re-check, sync leaves the
+account as it was and counts it; an administrator decides — **re-link** (the same person: the
+account and its grants follow the new object) or **start anew** (someone else: its own grants
+revoked, its sessions ended; grants to directory roles apply as the directory says) — on
+*Accounts*, by `make auth ARGS="account relink|renew DIR/LOGIN"` or `… DIR --all` for a test
+domain provisioned again. Verified with the LDAPS directory: finn's object changed → refused →
+the banner → re-linked in the browser → signed in.
+
+**6A, part 1** (D80) — `evaluation.run` and `evaluation.item` (migration `0018`). Every `make
+golden` is recorded with its build, commit, model, question set (by content), the person it
+answered as, and its **mode**: *fresh*, *replay*, *mixed* (resumed) or *imported*; its report
+says at the top how many answers were asked now. A directory holding recorded answers is refused
+unless `--resume` (a replay reproduces a run — the D75 misreading). `make quality`: the last N
+measured runs pooled — correct and executable answers with 95 % Wilson intervals, the spread per
+run, questions right always / sometimes (flaky, with counts) / never (with the reason), the
+clarification measurements with intervals (D61's lower bound against 90 %), calls, tokens and
+time — and a comparison of two sets of runs question by question (paired bootstrap, P6-2's −3
+points: passes / fails / cannot tell), by run ids or `--compare-builds`. `--import` brings older
+run directories in (`imported`, once per directory). Verified: the statistics against known
+values, the selection (replays never counted, one question set at a time), a comparison that
+finds the one question a worse model gets wrong; golden runs through the real tool with the
+scripted model — fresh, refused, `--resume` recorded as a replay — and the report.
+
+Not yet: the *Evaluation* page (6A part 2), retrieval and 3C runs in the store, and everything
+from 6B on. Tests: **725 passed, 10 skipped** in the sandbox (+11 since D77), web **46** (+4); migrations `0017`, `0018` down and up.
 
 ### Deliverables
 
@@ -2915,7 +2978,9 @@ overnight refresh stay in Phase 7 (P5-12); 6A makes a model switch *measurable*,
 
 ### Decisions needed
 
-| # | Decision | Needed by | Recommendation |
+*All eight decided by the owner on 2026-11-17: "P6-0..P6-7. Agreed with your recommendation."*
+
+| # | Decision | Needed by | Recommendation (= the decision) |
 |---|---|---|---|
 | P6-0 | The 3C gate: criteria 1–3 met, criterion 4 (owner audit ≥ 90 %) at 86.2 % | now | **Accept 3C** with criterion 4 recorded as not met; the judge becomes triage only (6B) |
 | P6-1 | How many labels before a calibrator is used (per model) | 6C | **150 labelled columns with at least 30 wrong or partly wrong**; Platt from 75; identity below |
@@ -2945,9 +3010,11 @@ today's speed) per prompt change; calibration and the replayed net make none.
 
 ### Gate
 
-- [ ] Phase 5 gate ticked (after §26e)
-- [ ] P6-0 … P6-7 answered
-- [ ] **Approved to start Phase 6**
+- [ ] Phase 5 gate ticked (after §27d: the chat in the owner's browser, Entra's Finance role, g07)
+- [x] P6-0 … P6-7 answered *(owner, 2026-11-17: as recommended)*
+- [x] **Approved to start Phase 6** *(owner, 2026-11-17, with the decisions; 6.0 and 6A built
+      the same day, D78–D80)*
+- [ ] 6A → 6B (a real quality report on the host: §27d)
 
 ---
 
@@ -3082,7 +3149,9 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D75 | new (2026-11-17, Phase 5D, 5E; P4-2, P5-7, P5-12) | **Chat screen, the SQL, runs.** The chat streams each turn (stages, the table as soon as it exists, then the narrative), shows the confidence as a level with its reasons — never a number before Phase 6 — and clarifications as choices. The SQL of answers is in an audit view: SMEs see the queries of the data sources they review, administrators and auditors all; a person with only the `user` role never sees SQL, not even of their own answers (P4-2). `chat.query_run.asked_by` records the asker. The runs view is read-only, for administrators and auditors; starting, stopping, scheduling and switching models stay in Phase 7 (P5-12). 5C and 5D were built together at the owner's request, to be verified on the host in one run with a real AD/LDAP and Entra ID |
 | D76 | new (2026-11-17, triage of the D75 run; P5-9, D68, D74) | **What the D75 run taught.** (a) *A directory's test proves its TLS*: the handshake the sign-in makes — LDAPS or StartTLS, with the trust the sign-in uses — is part of the test, and a refusal is explained from OpenSSL's verification code, the server's certificate and the CA Gaia trusts (`gaia.auth.tls`). (b) *A failing test of proven settings keeps the directory at sign-in*: `verified` means "these settings passed once" (any change resets it), so a later failure is shown (*last test failed*) and sign-ins fail for its cause, but one failed click no longer leaves only the local account. Settings never proven stay `failed`. (c) *A CA file is found the same way by every process* (relative to `backend/`, else the repository root) and the CA may live in the settings (`ca_pem`). (d) *Need-to-know before repair*: a statement that reaches for an existing object or column outside the person's categories is refused whatever else is wrong with it — never sent back for repair, audited. (e) *The schema's revision is checked*: `/health`, the API's start-up log and every command-line tool name a missing migration. (f) Profiling resolves data sources added at runtime like every other tool. (g) The local account has no Chat; a page that fails to render shows its error |
 | D77 | new (2026-11-17, triage of the D75 run; D74, P5-6) | **Category proposals v2** (`gaia.access.proposal`; migration `0016`: `auth.object_category.basis`). Still deterministic and shown to people. Direct evidence: the category's words in the object's schema (5), name (2) or business name (2); weak: only in its entity (1) or purpose (½). Related evidence: the table it is named after (2.5) and the tables it references — declared FKs, joins an SME confirmed (1 each) — and, a little, direct-evidence tables referencing it (½); weighted by the neighbour's certainty (a person's confirmation 1.5, direct 1, related 0.7, weak 0.4); three rounds. Views: one category read → that category. Ties and no evidence propose nothing. Each proposal keeps its basis and reasons; the admin screen shows *only those to check*. Category vocabularies are literal words ("HR" is not "hour"). "Categories from the schemas" adds the first literal word of each table's name that no other schema uses, and skips `dbo`/`public` |
-| D78 | **proposed** (2026-11-17; P5-3, D69) — *not built, the owner decides* | **An account is the directory's object, not its login.** Today an account is matched by directory and login; the directory's stable id (AD `objectGUID`, Entra object id) is stored and refreshed. Proposal: a sign-in whose stable id differs from the stored one is refused and audited (`identity_changed`) until an administrator re-links the account or starts a new one — so a reused login never inherits the previous holder's own grants (a PII-processor grant included) |
+| D78 | **accepted and built** (owner, 2026-11-17; P5-3, D69; migration `0017`) | **An account is the directory's object, not its login.** An account is matched by directory and login, and its stable id (AD `objectGUID`, OpenLDAP `entryUUID`, Entra's object id — a DN never counts) must stay the same: when another object carries the login, the sign-in is refused and audited (`identity_changed`, once), an open session ends at its re-check, and sync leaves the account untouched, until an administrator **re-links** it (the same person: the account and its own grants follow) or **starts it anew** (someone else: its own grants revoked, sessions ended) — *Accounts*, or `make auth ARGS="account relink|renew DIR/LOGIN"` (`DIR --all` for a test domain provisioned again). A reused login never inherits its previous holder's grants, a PII-processor grant included |
+| D79 | new (2026-11-17, triage of the D77 run) | **What the D77 run taught.** (a) An effect returns nothing but a clean-up function (newer browsers make `scrollIntoView()` return a Promise; the chat broke) — a test rejects any bare-expression effect. (b) Entra's "security groups only" excludes Microsoft 365 groups (`groupTypes` "Unified"), which the admin center makes security-enabled; the probe names every group it leaves out, and why. (c) Category proposals v2.1: a schema naming a category decides (8) unless a person says otherwise; a table whose primary key holds a foreign key belongs to that table (2.5); other references share one vote, as do the tables referencing one; a table named like an object of another schema or data source is about the same thing (2, from confirmed or direct objects only); an earlier proposal the rule no longer makes is kept but marked weak, with why. (d) `make share`: outputs with personal data replaced consistently, the key kept by the owner |
+| D80 | new (2026-11-17, Phase 6A; P6-2) | **The evaluation store and the quality report.** Every golden run is recorded (`evaluation.run`, `evaluation.item`, migration `0018`) with its build, model, question set (by content) and mode — fresh, replay, mixed, imported; replays are never measurements, and a directory with recorded answers is refused unless `--resume`. `make quality` pools measured runs with 95 % Wilson intervals, names flaky questions, and compares sets of runs question by question (seeded paired bootstrap; P6-2: passes when the lower bound is above −3 points, fails when the upper is below, else cannot tell) |
 
 ## Definition of done (per phase)
 
@@ -3104,17 +3173,16 @@ delivered builds). Gates 3.0, 3A (PostgreSQL), 3B ticked; Phase 4 approved, 4A b
 OWNER_VERIFICATION §21f. Phase 4 complete; Phase 5 approved (D68–D70); 5.0 and 5A built (build
 D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B built (D73).*
 
-*2026-11-17 (later): the D75 run triaged (Phase 5, "Owner runs on D75"; OWNER_VERIFICATION
-§26); build D77 (D76, D77); D78 proposed; Phase 6 designed.*
+*2026-11-17 (later): the D75 run triaged (§26), build D77; then the D77 run triaged (§27), Phase 6
+approved with P6-0 … P6-7 as recommended, D78 accepted; build D80 (D78 built, D79, 6A).*
 
-1. **Owner — the next run: OWNER_VERIFICATION §26e** (build D77): migrate (`0016`) and test
-   first; the directory back (`samba-ad-test.sh status`, then `ca` if it says so); Entra's client
-   secret (its Value); categories on both databases — tell me every proposal on `nge_small` you
-   find wrong; you as SME of `demo_pg` and g07; need-to-know and the chat in a browser; the golden
-   run as a person; optionally 3C's missing judgement.
-2. **Owner — decisions:** P6-0 (the 3C gate), P6-1 … P6-7 (Phase 6), D78 (an account is the
-   directory's object, not its login).
-3. **Assistant — next:** triage of §26e; then the Phase 5 gate, and Phase 6 once approved.
+1. **Owner — the next run: OWNER_VERIFICATION §27d** (build D80): migrate (`0017`, `0018`) and
+   test; the chat in your browser; Entra's Finance role; D78 on the Samba AD; categories on
+   `nge_small` again; you as SME on `finance.invoices.status`, then g07; three fresh golden runs
+   and `make quality` against D77; send everything through `make share`.
+2. **Owner:** tick the Phase 5 gate when §27d's first items pass.
+3. **Assistant — next:** triage of §27d; 6A part 2 (the *Evaluation* page), then 6E (regressions
+   caught before shipping) and 6B (labels from people).
 4. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
    evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
 5. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %

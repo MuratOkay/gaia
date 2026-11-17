@@ -20,6 +20,16 @@ counts, after the owner found related tables proposed apart (``dbo.inventory`` �
    chain (lines → orders → customers).
 3. **Views** that read objects of one category get it (as before), else as a table.
 
+**Version 2.1 (D79)**, from the owner's confirmations on ``nge_small``: a schema that
+names a category decides unless a person says otherwise (8 — more than every other word
+together: ``hr.staff_addresses`` is HR data, whatever "addresses" suggests); a table whose
+primary key holds its foreign key — a line of its header — belongs with that header like a
+table named after it (2.5); the other references share one vote (a fact table referencing
+products and customers is neither), and so do the tables referencing one (a lookup table
+referenced by everything is not everyone's); a table named like an object of another schema
+or data source — ``dw.dim_shop`` and ``dbo.shops`` — is about the same thing (2, from objects
+whose category is confirmed or direct only).
+
 The best category wins; a tie, or nothing, proposes nothing (the object stays readable by
 nobody until someone decides). Every proposal carries its **basis** — ``direct``,
 ``view``, ``related`` or ``weak`` — and its reasons in words, so the administrator can
@@ -41,9 +51,9 @@ from gaia.query.retrieval import tokens
 __all__ = ["BASES", "CategoryTerms", "ObjectFacts", "Proposal", "literal_stems",
            "propose_all", "schema_keywords", "word_stems"]
 
-FIELDS = (("schema", 5.0, True), ("name", 2.0, True), ("business_name", 2.0, True),
+FIELDS = (("schema", 8.0, True), ("name", 2.0, True), ("business_name", 2.0, True),
           ("entity", 1.0, False), ("purpose", 0.5, False))
-HEAD, PARENT, CHILD = 2.5, 1.0, 0.5
+HEAD, PARENT, CHILD, ALIAS = 2.5, 1.0, 0.5, 2.0
 TRUST = {"confirmed": 1.5, "direct": 1.0, "view": 1.0, "related": 0.7, "weak": 0.4}
 BASES = ("direct", "view", "related", "weak")
 ROUNDS = 3
@@ -75,6 +85,8 @@ class ObjectFacts:
     entity: str | None = None
     purpose: str | None = None
     references: set[str] = field(default_factory=set)  # keys this object points at
+    # references whose foreign key is part of this object's primary key (a line of a header)
+    identifying: set[str] = field(default_factory=set)
     reads: set[str] | None = None  # a view: the objects its definition reads
     confirmed: uuid.UUID | None = None  # a category confirmed by an SME or an administrator
 
@@ -161,9 +173,18 @@ def _pick(scores: Counter[uuid.UUID]) -> tuple[uuid.UUID | None, bool]:
     return ranked[0][0], False
 
 
-def propose_all(objects: Iterable[ObjectFacts], categories: Iterable[CategoryTerms]
-                ) -> dict[str, Proposal]:
+def _subject(name: str) -> tuple[str, ...]:
+    """What a name is about, without the words that say how data is kept
+    (``dim_shop`` and ``shops`` → ("shop",))."""
+    return tuple(_name_tokens(name))
+
+
+def propose_all(objects: Iterable[ObjectFacts], categories: Iterable[CategoryTerms],
+                elsewhere: Iterable[ObjectFacts] = ()) -> dict[str, Proposal]:
+    """``elsewhere``: objects of other data sources whose category a person confirmed —
+    evidence for objects named like them, never proposed themselves."""
     objs = {o.key: o for o in objects}
+    anchors = [o for o in elsewhere if o.confirmed is not None]
     cats = sorted(categories, key=lambda c: c.name.lower())
     by_id = {c.id: c for c in cats}
     if not cats:
@@ -175,6 +196,18 @@ def propose_all(objects: Iterable[ObjectFacts], categories: Iterable[CategoryTer
     for k, ps in parents.items():
         for p in ps:
             children[p].add(k)
+    # objects named like one of another schema (or data source): the same subject
+    by_subject: dict[tuple[str, ...], list[str]] = {}
+    for k, o in objs.items():
+        if _subject(o.name):
+            by_subject.setdefault(_subject(o.name), []).append(k)
+    alike = {k: sorted(other for other in by_subject.get(_subject(o.name), [])
+                       if objs[other].schema.lower() != o.schema.lower())
+             for k, o in objs.items()}
+    outside: dict[tuple[str, ...], list[ObjectFacts]] = {}
+    for a in anchors:
+        if _subject(a.name):
+            outside.setdefault(_subject(a.name), []).append(a)
 
     # round 0: the objects' own evidence (and what people confirmed)
     state: dict[str, tuple[uuid.UUID | None, str | None]] = {}
@@ -205,14 +238,25 @@ def propose_all(objects: Iterable[ObjectFacts], categories: Iterable[CategoryTer
         head = heads.get(k)
         if head is not None:
             vote(head, HEAD, "named after")
-        for p in sorted(parents[k]):
-            if p != head:
-                vote(p, PARENT, "references")
-            else:
-                vote(p, PARENT, "and references")
-        for c in sorted(children[k]):
-            if prev.get(c, (None, None))[1] in ("direct", "confirmed") and heads.get(c) != k:
-                vote(c, CHILD, "referenced by")
+        owners = {p for p in objs[k].identifying if p in parents[k] and p != head}
+        for p in sorted(owners):  # a line of its header: belongs with it
+            vote(p, HEAD, "belongs to (its key holds the reference)")
+        others = sorted(parents[k] - owners)
+        for p in others:  # the rest share one vote
+            vote(p, PARENT / len(others), "and references" if p == head else "references")
+        voters = sorted(c for c in children[k]
+                        if prev.get(c, (None, None))[1] in ("direct", "confirmed")
+                        and heads.get(c) != k and k not in objs[c].identifying)
+        for c in voters:  # the tables referencing it share one small vote
+            vote(c, CHILD / len(voters), "referenced by")
+        for other in alike[k]:  # the same subject in another schema
+            if prev.get(other, (None, None))[1] in ("direct", "confirmed"):
+                vote(other, ALIAS, "named like")
+        for a in outside.get(_subject(objs[k].name), []):  # … or in another data source
+            if a.confirmed in by_id:
+                votes[a.confirmed] += ALIAS * TRUST["confirmed"]
+                why.setdefault(a.confirmed, []).append(
+                    f"named like {a.key} (confirmed there)")
         return votes, why
 
     def decide(k: str, prev) -> tuple[uuid.UUID | None, str | None, str]:

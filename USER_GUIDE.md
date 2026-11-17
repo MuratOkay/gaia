@@ -495,6 +495,14 @@ Roles come from Entra groups (by a name prefix, nested groups included, security
 default) or from one user attribute (`department`, `jobTitle`, …). Open the web UI under the
 host name of the redirect URI (`localhost`, not `127.0.0.1`, in development).
 
+* **An account is the directory's object, not its login** (D78). If another object of the
+  directory carries a login that Gaia knows — a login given to someone else, or a test domain
+  provisioned again — that person cannot sign in until an administrator decides on *Accounts*:
+  **re-link** (the same person: the account keeps its grants) or **start anew** (someone else:
+  the account's own grants are revoked). From the command line: `make auth ARGS="account relink
+  acme/akaya"`, `… renew acme/akaya`, or `… relink acme --all` for a whole test domain.
+* **Entra groups as roles**: "security groups only" takes Security groups, not Microsoft 365
+  groups (D79); `directory probe` names every group it leaves out, and why.
 * **No role, no entry.** A person without any grant — directly or through a directory role —
   cannot sign in, and hears only "sign-in failed", as for a wrong password; the audit keeps the
   real reason.
@@ -636,8 +644,45 @@ the final answer by comparing its *result* with the reference's: columns by thei
 order. It prints one line per question and writes `report.md` and `results.json` to `--out`:
 executable and correct shares (the Phase 4 targets: 80 % and 70 %), how often Gaia asked back
 when it should and when it should not, how often its best guess was the user's answer, and
-the cost. Every model answer is kept in `--out/llm`: an interrupted run resumes and a repeated
-run makes no new call.
+the cost. Every model answer is kept in `--out/llm`. **Each run needs a new `--out`** (since
+D80): a directory that holds recorded answers is refused, because a run into it would replay
+them — it would reproduce that run, not measure anything new; `--resume` continues an
+interrupted run there. The report says at its top how many answers were asked now.
+
+### The quality report (`make quality`, Phase 6A)
+
+```bash
+make quality TARGET=demo_pg                              # the last 3 measured golden runs
+make quality TARGET=demo_pg ARGS="--last 5 | --list"
+make quality TARGET=demo_pg ARGS="--compare-builds"      # the newest build's runs vs the build before
+make quality TARGET=demo_pg ARGS="--baseline ID,ID,ID --candidate ID,ID,ID"
+make quality ARGS="--import 'evaluations/golden_demo_pg*'"   # older runs' directories, once each
+```
+
+Every golden run is recorded in the metadata store (`evaluation.run`, one item per question)
+with its build, model, question set and **mode** — *fresh*, *replay*, *mixed* (resumed) or
+*imported*. A single run of thirty questions varies by several points from one run to the
+next, so the report pools runs: correct and executable answers with a **95 % interval**, the
+spread per run, the questions right in every run, in some (**flaky**, with counts) or in none
+(with why), the clarification measurements with intervals, and cost and time. Replays are
+listed and never counted. A comparison takes two sets of runs of the same questions and
+compares them **question by question**; it **passes** when even the low end of the difference's
+interval costs less than 3 points, **fails** when even the high end costs more, and otherwise
+**cannot tell** — run more. The report is also written to `evaluations/quality_*.md`.
+
+### Sending verification outputs (`make share`)
+
+```bash
+make share                                   # verification/*.out → verification/share/
+make share ARGS="--also 'Your Name' verification/27_*.out"
+make share ARGS="--check"                    # what would be replaced; writes nothing
+```
+
+Outputs carry personal data: directory accounts and e-mail addresses, an Entra tenant and its
+ids, your OS user name in paths, once even a one-time setup code. `make share` replaces each
+**consistently** — the same address is always `<email-3>` — so the outputs stay readable, and
+writes the key to map them back to `verification/share-key.json`, which you keep. Send
+`verification/share/` only.
 
 ### Finding what a question needs (`make retrieve`, Phase 4B)
 

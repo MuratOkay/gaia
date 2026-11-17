@@ -29,6 +29,10 @@ cleanup:
 	find . -type f -name "*.pyc" -delete
 	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
 
+.PHONY: share
+share: ## Verification outputs safe to send: personal data replaced consistently (ARGS="[--check] [--also NAME] files")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.redact $(ARGS)
+
 .PHONY: strip-verification
 strip-verification: ## Delete the first line (captured local `cd` echo) of verification outputs
 	@bash $(ROOT)/scripts/strip_verification_first_line.sh $(ARGS)
@@ -266,6 +270,10 @@ ask: ## 4C: ask a business question (TARGET=...; ARGS="--question '...' [--clari
 .PHONY: golden
 golden: ## 4D: run a golden set (TARGET=...; ARGS="--file F --out DIR [--only ids] [--replay DIR]")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.golden $(TARGET_ARG) $(ARGS)
+
+.PHONY: quality
+quality: ## 6A: the quality report over golden runs (TARGET=...; ARGS="--last 5 | --compare-builds | --import 'evaluations/golden_*'")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.quality $(TARGET_ARG) $(ARGS)
 
 .PHONY: clarifications
 clarifications: ## D61: clarifications asked and how often Gaia's choice was the user's (TARGET=...)

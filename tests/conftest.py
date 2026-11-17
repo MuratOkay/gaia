@@ -3,7 +3,8 @@ LLM, a fake embedder, and an opt-in disposable PostgreSQL database.
 
 The database fixture runs only when ``GAIA_TEST_DATABASE_URL`` is set and the
 database name contains "test". It DROPS and recreates the ``catalog``,
-``semantics``, ``profiling``, ``audit`` and ``chat`` schemas in that database, so never point it at
+``semantics``, ``profiling``, ``audit``, ``chat``, ``auth`` and ``evaluation`` schemas in
+that database, so never point it at
 the real metadata store.
 """
 
@@ -503,9 +504,11 @@ async def pg_session_factory():
 
     engine = create_async_engine(url)
     async with engine.begin() as conn:
-        for schema in ("auth", "chat", "audit", "profiling", "semantics", "catalog"):
+        for schema in ("evaluation", "auth", "chat", "audit", "profiling", "semantics",
+                       "catalog"):
             await conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
-        for schema in ("catalog", "semantics", "profiling", "audit", "chat", "auth"):
+        for schema in ("catalog", "semantics", "profiling", "audit", "chat", "auth",
+                       "evaluation"):
             await conn.execute(sa.text(f"CREATE SCHEMA {schema}"))
         await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         has_trgm = await conn.scalar(

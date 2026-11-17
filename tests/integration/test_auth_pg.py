@@ -17,6 +17,7 @@ from ldap3 import MODIFY_DELETE, MODIFY_REPLACE, MOCK_SYNC, Connection
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "unit"))
 from _fake_directory import (  # noqa: E402
     DN,
+    guid,
     PASSWORDS,
     ROLE_BASE,
     SVC,
@@ -117,7 +118,7 @@ async def test_a_directory_from_connection_to_roles(world):
     assert (await svc.probe_directory("acme", actor="tester"))["status"] == "verified"
     synced = await svc.sync_directory("acme", actor="tester")
     assert synced["sync"] == {"users": 5, "roles": 5, "roles_gone": 0, "accounts_disabled": 0,
-                              "disabled_in_directory": 1}
+                              "disabled_in_directory": 1, "identity_changed": 0}
     roles = {r["name"]: r for r in await svc.roles("acme")}
     assert set(roles) == {"GAIA-Admins", "GAIA-Finance", "GAIA-HR", "GAIA-Loop1", "GAIA-Loop2"}
     assert roles["GAIA-Finance"]["members"] == 4 and roles["GAIA-HR"]["members"] == 1
@@ -159,6 +160,56 @@ async def test_a_failed_test_does_not_take_sign_in_away(world):
     net.down = True
     assert (await svc.probe_directory("beta", actor="tester"))["status"] == "failed"
     assert [d["name"] for d in (await svc.sign_in_options())["directories"]] == ["acme"]
+
+
+@pytest.mark.asyncio
+async def test_an_account_is_the_directory_object_not_its_login(world):
+    """D78: when another directory object carries a login — given to someone else, or a test
+    domain provisioned again — the account's own grants are not theirs: the sign-in is
+    refused until an administrator re-links the account (the same person) or starts it anew
+    (someone else: its own grants revoked)."""
+    svc, clock, net, factory = world
+    await _ready(svc, factory)
+    await svc.grant("user", actor="a", role=("acme", "GAIA-Finance"))
+    await svc.grant("pii_processor", actor="a", account=("acme", "akaya"), note="KVKK list")
+    principal, token, _csrf = await svc.sign_in("akaya", PASSWORDS["akaya"])
+    assert principal.effective.pii_processor
+
+    # another object now carries the login "akaya"
+    net.modify(DN["akaya"], {"objectGUID": [(MODIFY_REPLACE, [guid("akaya", 2)])]})
+    clock.advance(minutes=16)  # the open session's re-check sees it and ends the session
+    with pytest.raises(NotSignedIn, match="object behind this login changed"):
+        await svc.resolve(token)
+    with pytest.raises(SignInRefused):
+        await svc.sign_in("akaya", PASSWORDS["akaya"])
+    refused = [e for e in await _events(factory) if e.action == "sign_in_refused"][-1]
+    assert "re-links the account or starts it anew" in refused.detail["reason"]
+    changed = [e for e in await _events(factory) if e.action == "identity_changed"]
+    assert len(changed) == 1  # recorded once, not at every attempt
+    view = {a["login"]: a for a in await svc.accounts()}["akaya"]
+    assert view["identity_changed_at"] is not None and view["pii_processor"]  # nothing lost
+    synced = await svc.sync_directory("acme", actor="tester")
+    assert synced["sync"]["identity_changed"] == 1  # kept as it was, not overwritten
+
+    # the same person (a domain provisioned again): re-link — the account and its grants follow
+    done = await svc.resolve_identity("acme", "akaya", "relink", actor="admin1", note="test AD")
+    assert done == [{"login": "akaya", "directory": "acme", "action": "relink",
+                     "grants_revoked": 0}]
+    principal, _t, _c = await svc.sign_in("akaya", PASSWORDS["akaya"])
+    assert principal.effective.pii_processor
+    with pytest.raises(AuthError, match="waits for a decision"):
+        await svc.resolve_identity("acme", "akaya", "relink", actor="admin1")
+
+    # someone else: start anew — the account's own grants go, its roles' grants apply
+    net.modify(DN["akaya"], {"objectGUID": [(MODIFY_REPLACE, [guid("akaya", 3)])]})
+    with pytest.raises(SignInRefused):
+        await svc.sign_in("akaya", PASSWORDS["akaya"])
+    done = await svc.resolve_identity("acme", None, "renew", actor="admin1")
+    assert [(d["login"], d["grants_revoked"]) for d in done] == [("akaya", 1)]
+    principal, _t, _c = await svc.sign_in("akaya", PASSWORDS["akaya"])
+    assert principal.effective.roles == {"user"} and not principal.effective.pii_processor
+    actions = [e.action for e in await _events(factory)]
+    assert {"account_relinked", "account_renewed", "grant_revoked"} <= set(actions)
 
 
 @pytest.mark.asyncio

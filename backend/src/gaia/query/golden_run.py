@@ -241,7 +241,7 @@ def summarise(outcomes: list[GoldenOutcome]) -> dict[str, Any]:
 
 
 def report_markdown(golden: GoldenSet, outcomes: list[GoldenOutcome], summary: dict[str, Any],
-                    model: str, build: str) -> str:
+                    model: str, build: str, provenance: str | None = None) -> str:
     def pct(x: float | None) -> str:
         return "—" if x is None else f"{x:.0%}"
 
@@ -250,6 +250,7 @@ def report_markdown(golden: GoldenSet, outcomes: list[GoldenOutcome], summary: d
         f"# Golden run — {golden.data_source}", "",
         f"Model `{model}` · build `{build}` · as of {golden.as_of} · {s['questions']} "
         f"question(s), {s['with_reference']} with a reference.", "",
+        *([f"**Answers:** {provenance}.", ""] if provenance else []),
         "## Phase 4 acceptance", "",
         "| Criterion | Value | Target |", "|---|---|---|",
         f"| Executable SQL (the final answer ran) | {pct(s['executable'])} | ≥ 80 % |",

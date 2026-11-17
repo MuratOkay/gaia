@@ -36,7 +36,9 @@ def test_a_sign_in_gives_the_person_and_their_groups():
     assert ayse.login == "ayse@corp.example" and ayse.external_id == "a1" and ayse.enabled
     assert [r.name for r in ayse.roles] == ["GAIA-Finance"]
     deniz = _sign_in(fake, d, "d4")
-    # GAIA-Mail is not a security group; Team-HR has no GAIA- prefix
+    # GAIA-Mail is a Microsoft 365 group — security-enabled, as the Entra admin center makes
+    # them, yet not a security group (D79: it became a role on the owner's tenant); GAIA-List
+    # is a distribution list; Team-HR has no GAIA- prefix
     assert [r.name for r in deniz.roles] == ["GAIA-Admins", "GAIA-Finance"]
     berk = _sign_in(fake, d, "b2")
     assert [r.name for r in berk.roles] == ["GAIA-HR"]  # nested, through Team-HR
@@ -116,6 +118,10 @@ def test_the_probe():
     checks = {c["name"]: c for c in _entra(fake).probe()}
     assert all(c["ok"] for c in checks.values()), checks
     assert ISSUER in checks["discovery"]["detail"] and "3 group(s)" in checks["roles"]["detail"]
+    # the probe names the roles and what it left out, and why (D79)
+    assert "GAIA-Admins, GAIA-Finance, GAIA-HR" in checks["roles"]["detail"]
+    assert ("left out: GAIA-List (not a security group), GAIA-Mail (a Microsoft 365 group)"
+            in checks["roles"]["detail"])
     fake.graph_forbidden = True
     failed = [c for c in _entra(fake).probe() if not c["ok"]]
     assert [c["name"] for c in failed] == ["users"] and "User.Read.All" in failed[0]["detail"]

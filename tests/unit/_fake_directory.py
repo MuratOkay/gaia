@@ -19,6 +19,8 @@ searches — not AD's in-chain matching rule, so nesting is tested client-side h
 
 from __future__ import annotations
 
+import uuid
+
 from ldap3 import MOCK_SYNC, OFFLINE_AD_2012_R2, Connection, Server
 
 BASE = "dc=acme,dc=test"
@@ -31,12 +33,18 @@ PASSWORDS = {"akaya": "Ayse-Password-1", "bdemir": "Berk-Password-1",
              "e*star": "Star-Password-1"}
 
 
+def guid(login: str, generation: int = 1) -> bytes:
+    """The user's objectGUID — another one when the domain is provisioned again (D78)."""
+    return uuid.uuid5(uuid.NAMESPACE_DNS, f"{login}.{generation}").bytes_le
+
+
 def _user(cn: str, ou: str, login: str, dept: str, uac: int = 512) -> tuple[str, dict]:
     dn = f"cn={cn},ou={ou},{PEOPLE}"
     return dn, {"objectClass": ["top", "person", "user"], "cn": cn, "sAMAccountName": login,
                 "userPrincipalName": f"{login}@acme.test", "displayName": cn,
                 "mail": f"{login}@acme.test", "userAccountControl": uac,
-                "department": [dept], "userPassword": PASSWORDS[login]}
+                "department": [dept], "userPassword": PASSWORDS[login],
+                "objectGUID": guid(login)}
 
 
 USERS = dict([

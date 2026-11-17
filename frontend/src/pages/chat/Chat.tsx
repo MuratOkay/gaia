@@ -94,7 +94,11 @@ export function ChatPage({ me }: { me: Me }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
   useEffect(() => () => abort.current?.abort(), []);
-  useEffect(() => bottom.current?.scrollIntoView?.({ block: "end" }), [messages, pending]);
+  // a block body: newer browsers return a Promise from scrollIntoView, and an effect that
+  // returns anything but a function breaks React ("destroy is not a function", D78)
+  useEffect(() => {
+    bottom.current?.scrollIntoView?.({ block: "end" });
+  }, [messages, pending]);
 
   const last = messages[messages.length - 1];
   const clarifying = last?.role === "assistant" && last.kind === "clarification";

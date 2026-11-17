@@ -83,7 +83,9 @@ function DecisionPanel({ ds, item, onDone }: { ds: string; item: ColumnReview; o
   const [draft, setDraft] = useState<Draft>(initial);
   const [error, setError] = useState<Error | null>(null);
   const [busy, setBusy] = useState(false);
-  useEffect(() => setDraft(initial), [initial]);
+  useEffect(() => {
+    setDraft(initial);
+  }, [initial]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -291,7 +293,9 @@ export function ColumnPage() {
   const { ds = "", id = "" } = useParams();
   const { data: item, error, loading, reload } = useLoad(() => api<ColumnReview>(`/api/review/${enc(ds)}/columns/${id}`), [ds, id]);
   const [done, setDone] = useState<ColumnDecision | null>(null);
-  useEffect(() => setDone(null), [id]);
+  useEffect(() => {
+    setDone(null);
+  }, [id]);
 
   async function decided(d: ColumnDecision) {
     setDone(d);

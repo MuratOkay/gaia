@@ -9,20 +9,18 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status (2026-11-17): **Phases 0–2 and 4 complete.** Phase 3: 3.P, 3.0, 3A (PostgreSQL) and
-> 3B done; 3C judged and reported on the owner's host (criteria 1–3 met; the owner's audit 86 %,
-> P6-0). **Phase 5 — every stage built** (D68–D75): sign-in with the company's **Active Directory /
-> LDAP** and **Microsoft Entra ID**, four Gaia roles and the PII-processor permission, the SME
-> review, need-to-know by data category, the chat screen and a read-only runs view — the web UI is
-> `make dev-web`. The owner's D75 run proved sign-in against a real Samba AD up to the grants and
-> stopped at the directory (a re-provisioned domain's new CA); **build D77** fixes what it found
-> (D76: the directory's TLS explained, a failed test no longer empties the sign-in page,
-> need-to-know refusals decided before repairs, missing migrations named; D77: category proposals
-> that follow related tables) — tests **714 passed, 10 skipped** in the sandbox, web 42. **Phase 6
-> (evaluation and calibration) is designed**, awaiting approval.
+> Status (2026-11-17): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
+> built and verified on the owner's host**: sign-in with a real **Active Directory** (Samba AD) and a
+> real **Microsoft Entra ID** tenant, four Gaia roles and the PII-processor permission, the SME
+> review, need-to-know by data category, the chat screen, the runs view (`make dev-web`); two items
+> remain (g07 after an SME's decision, the chat in the owner's newer browser after D79's fix).
+> **Phase 6 (evaluation and calibration) is approved and started**: build **D80** adds the
+> evaluation store and `make quality` — every golden run recorded as fresh or replayed, pooled
+> with intervals, compared question by question (D80) — and D78 (an account is the directory's
+> object, not its login). Send verification outputs only through `make share`.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§26: the D75 run triaged,
-> and §26e, the next run on build D77). See [PHASES.md](PHASES.md).
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§27: the D77 run triaged,
+> and §27d, the next run on build D80). See [PHASES.md](PHASES.md).
 ---
 
 ## Layout
@@ -315,6 +313,8 @@ Key decisions already fixed:
 | `make access` | 5C: data categories — `from-schemas`, `propose`, `objects [--why]` (each proposal's basis and reasons, D77), `place OBJ CAT`, `suggestions`, `policy LOGIN` (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
+| `make quality` | 6A: the quality report over golden runs — pooled, with intervals, flaky questions, a comparison question by question (`--last N`, `--compare-builds`, `--baseline … --candidate …`, `--list`, `--import 'evaluations/golden_*'`) |
+| `make share` | verification outputs safe to send: accounts, tenants, user names, ids and codes replaced consistently; send `verification/share/` only |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
 | `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |

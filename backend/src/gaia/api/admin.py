@@ -21,6 +21,7 @@ in the hash-chained ``audit.auth_event`` (D70).
     GET    /api/admin/directories/{name}/roles
 
     GET    /api/admin/accounts                          who, their directory roles, what they may do
+    POST   /api/admin/accounts/identity                 D78: re-link an account, or start it anew
     GET    /api/admin/grants?include_revoked=true
     POST   /api/admin/grants                            {"privilege", "directory_role_id" | "login"
                                                          [+ "directory"], "data_source"?,
@@ -215,6 +216,23 @@ async def directory_roles(name: str, include_gone: bool = False,
 async def accounts(_who: Principal = Depends(ADMIN),  # noqa: B008
                    auth: AuthService = Depends(get_auth)) -> list[dict[str, Any]]:  # noqa: B008
     return await auth.accounts()
+
+
+class IdentityDecision(BaseModel):
+    """D78: an account whose login another directory object now carries."""
+
+    directory: str
+    login: str | None = None  # None: every account of the directory waiting for this
+    action: str  # relink | renew
+    note: str | None = None
+
+
+@router.post("/accounts/identity")
+async def resolve_identity(body: IdentityDecision, who: Principal = Depends(ADMIN),  # noqa: B008
+                           auth: AuthService = Depends(get_auth)  # noqa: B008
+                           ) -> list[dict[str, Any]]:
+    return await _auth(auth.resolve_identity(body.directory, body.login, body.action,
+                                             actor=who.login, note=body.note))
 
 
 @router.get("/grants")

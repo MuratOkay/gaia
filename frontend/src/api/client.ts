@@ -213,6 +213,8 @@ export interface AccountView {
   categories?: string[];
   conflicts: string[];
   via: Record<string, string[]>;
+  /** D78: another directory object carries this login since then; sign-ins are refused */
+  identity_changed_at?: string | null;
 }
 
 export interface AuditEvent {

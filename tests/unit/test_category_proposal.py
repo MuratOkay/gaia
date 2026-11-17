@@ -184,3 +184,64 @@ def test_keywords_from_the_schemas():
     assert words["store"] == ["inventory", "store"]
     assert words["legacy"] == []  # tb_trx02 is not evidence of "transactions"
     assert "price" in words["product"] and "history" not in words["product"]
+
+
+def test_the_owners_confirmations_on_nge_small():
+    """D79 — what the owner's D77 run showed (OWNER_VERIFICATION §27): his confirmations on
+    ``nge_small`` against what v2 proposed beside them. Each case failed under v2."""
+    cats = _categories()
+    store, product, crm = cats["Store"].id, cats["Product"].id, cats["Crm"].id
+    objs = [
+        _o("countries", "Countries", "Countries of addresses.", confirmed=crm),
+        _o("shops", "Shops", "The chain's stores.", confirmed=store),
+        _o("platforms", "Platforms", "Gaming platforms.", confirmed=product),
+        _o("releases", "Releases", "Game releases.", confirmed=product),
+        _o("hardware", "Hardware", "Consoles.", confirmed=product),
+        _o("customers", "Customers", "Customers.", confirmed=crm),
+        _o("customer_addresses", "Customer Addresses", "Addresses.", refs=["customers"],
+           confirmed=crm),
+        _o("source_systems", "Source Systems", "Where rows came from."),
+        # v2: Crm — "addresses" outweighed the schema hr
+        _o("staff_addresses", "Staff Addresses", "Postal addresses of staff members.",
+           entity="staff address", refs=["dbo.countries"], schema="hr"),
+        # v2: Finance and Sales (weak) — a word of their descriptions
+        _o("dim_shop", "Shop Dimension", "Shops with their reporting currency.", schema="dw"),
+        _o("dim_platform", "Platform Dimension", "Platforms for sales reporting.", schema="dw"),
+        # v2: Crm, and its lines Product — the lines' two product references outvoted it
+        _o("transactions", "Transactions", "Each purchase of a customer, with the address.",
+           refs=["customers", "customer_addresses", "source_systems"]),
+        _o("transaction_lines", "Transaction Lines", "Items of a transaction.",
+           refs=["transactions", "releases", "hardware"]),
+        # not named after its header, but its key holds the reference: a part of it
+        _o("basket_items", "Basket Items", "Items of a purchase.",
+           refs=["transactions", "releases", "hardware"]),
+    ]
+    for o in objs:
+        if o.name == "basket_items":
+            o.identifying = {"dbo.transactions"}  # its key is (transaction_id, item_no)
+    # confirmed Crm tables reference source_systems
+    for o in objs:
+        if o.name in ("customers", "customer_addresses"):
+            o.references.add("dbo.source_systems")
+    result = propose_all(objs, cats.values())
+    got = _names(result, result)
+    assert got["hr.staff_addresses"] == "Hr" and result["hr.staff_addresses"].basis == "direct"
+    assert got["dw.dim_shop"] == "Store" and "named like dbo.shops" in result["dw.dim_shop"].why
+    assert got["dw.dim_platform"] == "Product"
+    assert got["dbo.transaction_lines"] == got["dbo.transactions"]
+    assert got["dbo.basket_items"] == got["dbo.transactions"]
+    assert "belongs to (its key holds the reference) dbo.transactions" in \
+        result["dbo.basket_items"].why
+    # a lookup table referenced by many: one small shared vote, marked for a look
+    assert result["dbo.source_systems"].basis == "related"
+
+    # what people confirmed in another data source counts for objects named like it
+    elsewhere = [ObjectFacts(key="demo_pg:finance.gl_entries", schema="finance",
+                             name="gl_entries", confirmed=cats["Finance"].id)]
+    gl = _o("gl_entries", "General Ledger Entries", "Journal lines.")
+    alone = propose_all([gl], cats.values())
+    assert alone["dbo.gl_entries"].category is None
+    helped = propose_all([gl], cats.values(), elsewhere)
+    assert helped["dbo.gl_entries"].category.name == "Finance"
+    assert "named like demo_pg:finance.gl_entries (confirmed there)" in \
+        helped["dbo.gl_entries"].why

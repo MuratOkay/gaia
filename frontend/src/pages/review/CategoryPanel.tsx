@@ -12,7 +12,9 @@ export function CategoryPanel({ ds, table, onDone }: { ds: string; table: TableR
   const current = table.category ?? null;
   const [choice, setChoice] = useState(current?.name ?? table.categories?.[0]?.name ?? "");
   const [error, setError] = useState<Error | null>(null);
-  useEffect(() => setChoice(current?.name ?? table.categories?.[0]?.name ?? ""), [current, table.categories]);
+  useEffect(() => {
+    setChoice(current?.name ?? table.categories?.[0]?.name ?? "");
+  }, [current, table.categories]);
   if (!table.categories?.length) return <p className="muted">{t("review.noCategories")}</p>;
 
   async function confirm() {

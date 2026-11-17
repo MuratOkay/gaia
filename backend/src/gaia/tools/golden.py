@@ -4,13 +4,18 @@
          ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg"
     make golden TARGET=demo_pg ARGS="… --only g01,o03"        # some questions
     make golden TARGET=demo_pg ARGS="… --replay DIR"          # answers from files (tests)
+    make golden TARGET=demo_pg ARGS="… --resume"              # continue an interrupted run
 
 Every question goes through the whole pipeline (``gaia.query.golden_run``); the
 references run through the same guard and executor. Writes ``<out>/results.json``
 and ``<out>/report.md`` and prints the report. Every model answer is kept in
-``<out>/llm``: an interrupted run resumes, a repeated run costs nothing already
-asked. Runs and clarifications are recorded with ``origin = golden`` (kept out of
-the clarification agreement users produce, D61); ``--no-record`` skips that.
+``<out>/llm``. Since D80 a directory that holds recorded answers is refused unless
+``--resume`` says the run continues an interrupted one: a run into it would replay them,
+which reproduces a measurement and is not a new one (OWNER_VERIFICATION §26c F6). Each run
+is recorded in the evaluation store (fresh, replayed or mixed) for ``make quality``; the
+report says at its top how many answers were asked now. Runs and clarifications are also
+recorded with ``origin = golden`` (kept out of the clarification agreement users produce,
+D61); ``--no-record`` skips all recording.
 """
 
 from __future__ import annotations
@@ -19,16 +24,19 @@ import argparse
 import asyncio
 import json
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import gaia
 from gaia.access.policy import OPERATOR, build_access_guard, policy_for_login, restrict_index
+from gaia.auth.service import cli_actor
 from gaia.core.config import get_settings
 from gaia.db.engine import dispose_engine, get_engine
 from gaia.db.repositories.query_store import QueryStore
 from gaia.evaluation.recorder import RecordingLLMClient
+from gaia.evaluation.store import git_commit, question_set_key, record_golden, run_mode
 from gaia.query.golden import load_golden
 from gaia.query.golden_run import report_markdown, run_golden, summarise
 from gaia.query.retrieval_store import load_retrieval_index
@@ -51,7 +59,14 @@ async def _run(args: argparse.Namespace) -> int:
               "(--force to run it anyway)", file=sys.stderr)
         return 1
     out = _path(args.out)
+    recorded = list((out / "llm").glob("*.json")) if (out / "llm").is_dir() else []
+    if recorded and not (args.resume or args.replay):
+        print(f"{out} holds {len(recorded)} recorded answer(s): a run into it replays them — "
+              "it reproduces that run and measures nothing new. Give a new --out, or --resume "
+              "to continue an interrupted run.", file=sys.stderr)
+        return 1
     out.mkdir(parents=True, exist_ok=True)
+    started = datetime.now(UTC)
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     llm = RecordingLLMClient(llm_client(settings, args.replay), out / "llm")
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
@@ -108,11 +123,29 @@ async def _run(args: argparse.Namespace) -> int:
                             if q.clarified and len(o.answers) > 1:
                                 await store.answer_clarification(row, q.clarified, None)
                 await session.commit()
+            summary = summarise(outcomes)
+            model = getattr(llm.inner, "model", None) or settings.llm.model
+            run = None
+            if not args.no_record:  # the evaluation store (6A, D80)
+                run = await record_golden(
+                    session, data_source=label, outcomes=outcomes, summary=summary,
+                    question_set=args.file, out_dir=str(out), model=model, build=gaia.BUILD,
+                    set_key=question_set_key((o.id, o.question, o.expect) for o in outcomes),
+                    live_calls=llm.live_calls, replayed_calls=llm.replayed, started_at=started,
+                    as_login=policy.label if args.as_login else None,
+                    created_by=cli_actor(), commit=git_commit())
+                await session.commit()
     finally:
         await dispose_engine()
-    summary = summarise(outcomes)
-    model = getattr(llm.inner, "model", None) or settings.llm.model
-    text = report_markdown(golden, outcomes, summary, model, gaia.BUILD)
+    mode = run_mode(llm.live_calls, llm.replayed)
+    provenance = {
+        "fresh": f"{llm.live_calls} model answer(s) asked now — a new measurement",
+        "mixed": f"{llm.live_calls} model answer(s) asked now, {llm.replayed} replayed from "
+                 "this directory (a resumed run)",
+        "replay": f"REPLAYED: all {llm.replayed} model answers come from earlier recordings — "
+                  "this reproduces a run, it is not a new measurement",
+    }[mode]
+    text = report_markdown(golden, outcomes, summary, model, gaia.BUILD, provenance=provenance)
     (out / "report.md").write_text(text, encoding="utf-8")
     doc = {"summary": summary, "model": model, "build": gaia.BUILD,
            "as_of": golden.as_of.isoformat(), "data_source": golden.data_source,
@@ -123,6 +156,9 @@ async def _run(args: argparse.Namespace) -> int:
     print()
     print(text)
     print(f"model calls: {llm.live_calls} new, {llm.replayed} replayed from {out / 'llm'}")
+    if run is not None:
+        print(f"recorded as evaluation run {str(run.id)[:8]} ({run.mode}) — make quality "
+              f"TARGET={label}")
     return 0
 
 
@@ -133,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--out", required=True)
     p.add_argument("--only", help="question ids, comma separated")
     p.add_argument("--replay", metavar="DIR")
+    p.add_argument("--resume", action="store_true",
+                   help="continue an interrupted run in --out (its answers are replayed)")
     p.add_argument("--no-vectors", action="store_true")
     p.add_argument("--no-record", action="store_true")
     p.add_argument("--workers", type=int, help="questions at a time (default llm.concurrency)")

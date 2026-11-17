@@ -119,6 +119,11 @@ class Account(Base):
     synced_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
                                                  server_default=_now())
+    # D78: the directory's object behind this login is not the one this account belongs to —
+    # the id it has now, and since when; sign-ins are refused until an administrator re-links
+    # the account or starts it anew (migration 0017)
+    pending_external_id: Mapped[str | None] = mapped_column(sa.Text)
+    identity_changed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
 
 
 class DirectoryRole(Base):

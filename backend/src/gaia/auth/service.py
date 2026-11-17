@@ -88,6 +88,24 @@ class NotSignedIn(AuthError):  # noqa: N818
     """No session, an expired or revoked one, or a CSRF token that does not match."""
 
 
+class IdentityChanged(AuthError):  # noqa: N818
+    """D78: the directory's object behind a login is not the one the account belongs to."""
+
+    def __init__(self, account: Account) -> None:
+        super().__init__(f"the directory object behind {account.login} changed")
+        self.account = account
+
+
+IDENTITY_REFUSED = ("the directory object behind this login changed: an administrator re-links "
+                    "the account or starts it anew (D78)")
+
+
+def _stable_id(value: str | None) -> bool:
+    """A directory object's own id (objectGUID, entryUUID, Entra object id) — not a DN, which
+    an LDAP directory without those falls back to and which moves with the object."""
+    return bool(value) and "=" not in str(value)
+
+
 @dataclass
 class Principal:
     account_id: uuid.UUID
@@ -177,6 +195,17 @@ class AuthService:
         if account is None:
             account = Account(directory_id=row.id, login=user.login, is_local=False)
             s.add(account)
+        elif _stable_id(account.external_id) and _stable_id(user.external_id) \
+                and account.external_id != user.external_id:
+            # D78: another object of the directory now carries this login — a login given to
+            # someone else, or a test domain provisioned again. Its grants are not theirs.
+            if account.pending_external_id != user.external_id:
+                account.pending_external_id, account.identity_changed_at = user.external_id, now
+                await audit.record(s, "identity_changed", actor=account.login, subject=row.name,
+                                   detail={"login": account.login})
+            raise IdentityChanged(account)
+        elif account.pending_external_id is not None:  # the account's own object is back
+            account.pending_external_id = account.identity_changed_at = None
         account.external_id = user.external_id
         account.display_name = user.display_name
         account.email = user.email
@@ -379,7 +408,11 @@ class AuthService:
         """The same rules for every directory once it has vouched for the person."""
         # the account is kept even when the sign-in is refused below: the administrator
         # then sees who tried, with their directory roles, and can grant (or not)
-        account = await self._apply_directory_user(s, row, user)
+        try:
+            account = await self._apply_directory_user(s, row, user)
+        except IdentityChanged as exc:
+            await s.commit()  # the flag and its audit stay, the refusal is recorded after
+            raise SignInRefused(IDENTITY_REFUSED, exc.account.login) from None
         await s.commit()
         if not user.enabled:
             raise SignInRefused("disabled in the directory", account.login)
@@ -450,7 +483,11 @@ class AuthService:
             account.enabled = user is not None and user.enabled
             await self._end(s, row, "gone or disabled in the directory")
             raise NotSignedIn("the directory no longer allows this account")
-        await self._apply_directory_user(s, directory, user, account)
+        try:
+            await self._apply_directory_user(s, directory, user, account)
+        except IdentityChanged:
+            await self._end(s, row, "identity changed in the directory (D78)")
+            raise NotSignedIn("the directory object behind this login changed") from None
         eff = await self.effective_for(s, account)
         if not eff.can_sign_in:
             await self._end(s, row, "no Gaia role any more")
@@ -672,9 +709,12 @@ class AuthService:
                     DirectoryRole.directory_id == row.id, DirectoryRole.gone_at.is_(None)))).all():
                 if (role.source, role.ref) not in seen:
                     role.gone_at, gone = now, gone + 1
-            logins = set()
+            logins, changed = set(), 0
             for user in result.users:
-                await self._apply_directory_user(s, row, user)
+                try:
+                    await self._apply_directory_user(s, row, user)
+                except IdentityChanged:  # kept as it was, waiting for an administrator (D78)
+                    changed += 1
                 logins.add(user.login)
             missing = (await s.scalars(select(Account).where(
                 Account.directory_id == row.id, Account.enabled.is_(True),
@@ -685,7 +725,8 @@ class AuthService:
             row.synced_at = now
             row.sync = {"users": len(result.users), "roles": len(result.roles),
                         "roles_gone": gone, "accounts_disabled": len(missing),
-                        "disabled_in_directory": sum(1 for u in result.users if not u.enabled)}
+                        "disabled_in_directory": sum(1 for u in result.users if not u.enabled),
+                        "identity_changed": changed}
             await audit.record(s, "directory_synced", actor=actor, subject=name, detail=row.sync)
             await s.commit()
             return _directory_view(row)
@@ -834,6 +875,50 @@ class AuthService:
             await s.commit()
             return view
 
+    async def resolve_identity(self, directory: str, login: str | None, action: str, *,
+                               actor: str, note: str | None = None) -> list[dict[str, Any]]:
+        """D78: an account whose login another directory object now carries. ``relink`` —
+        the same person (a domain provisioned again, an account restored): the account follows
+        the new object, grants and all. ``renew`` — someone else: the account's own grants are
+        revoked and its sessions ended, then it follows the new object; grants to directory
+        roles apply as the directory says. ``login`` None: every account of the directory
+        that waits for this decision."""
+        if action not in ("relink", "renew"):
+            raise AuthError("relink or renew")
+        async with self.factory() as s:
+            row = await self._directory(s, directory)
+            q = select(Account).where(Account.directory_id == row.id,
+                                      Account.pending_external_id.is_not(None))
+            if login is not None:
+                q = q.where(Account.login == login.strip().lower())
+            accounts = list((await s.scalars(q.order_by(Account.login))).all())
+            if not accounts:
+                raise AuthError("no account of " + (f"{directory}/{login}" if login else directory)
+                                + " waits for a decision about its identity")
+            out = []
+            for a in accounts:
+                revoked = 0
+                if action == "renew":
+                    for g in (await s.scalars(select(Grant).where(
+                            Grant.account_id == a.id, Grant.revoked_at.is_(None)))).all():
+                        g.revoked_at, g.revoked_by = self.now(), actor
+                        revoked += 1
+                        await audit.record(s, "grant_revoked", actor=actor,
+                                           subject=f"{directory}/{a.login}",
+                                           detail={"privilege": g.privilege,
+                                                   "grant_id": str(g.id),
+                                                   "note": "identity changed: started anew"})
+                    await self._end_sessions(s, a.id, "account started anew (D78)")
+                a.external_id, a.pending_external_id, a.identity_changed_at = \
+                    a.pending_external_id, None, None
+                await audit.record(s, f"account_{action}ed", actor=actor,
+                                   subject=f"{directory}/{a.login}",
+                                   detail={"grants_revoked": revoked, "note": note})
+                out.append({"login": a.login, "directory": directory, "action": action,
+                            "grants_revoked": revoked})
+            await s.commit()
+            return out
+
     async def grants(self, *, include_revoked: bool = False) -> list[dict[str, Any]]:
         async with self.factory() as s:
             q = select(Grant).order_by(Grant.granted_at)
@@ -859,6 +944,7 @@ class AuthService:
                             "local": a.is_local, "display_name": a.display_name,
                             "email": a.email, "enabled": a.enabled,
                             "last_sign_in_at": a.last_sign_in_at, "synced_at": a.synced_at,
+                            "identity_changed_at": a.identity_changed_at,
                             "directory_roles": list(roles),
                             **eff.to_json(), "sme_sources": names,
                             "categories": cats, "category_ids": sorted(eff.categories)})

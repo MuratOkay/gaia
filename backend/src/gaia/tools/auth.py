@@ -18,6 +18,9 @@ Directories, roles and grants (the admin screen does the same):
     make auth ARGS="grant pii_processor --role acme/GAIA-Finance --note 'KVKK list 2026-11'"
     make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"   (5C)
     make auth ARGS="grants [--all] | revoke <grant id> | accounts"
+    make auth ARGS="account relink acme/akaya"     # D78: the same person behind a new object
+    make auth ARGS="account renew acme/akaya"      # D78: someone else — their own grants revoked
+    make auth ARGS="account relink acme --all"     # a test domain provisioned again
     make auth ARGS="audit-check"                     # is the audit chain intact; its head
 
 A password is never an argument (it would stay in the shell history): it is prompted
@@ -190,8 +193,25 @@ async def _run(args: argparse.Namespace) -> int:
                     flags += f" [reads: {', '.join(r['categories'])}]"
                 state = "" if r["enabled"] else "  DISABLED"
                 print(f"  {(r['directory'] or 'local') + '/' + r['login']:<32} {flags}{state}")
+                if r.get("identity_changed_at"):
+                    who = f"{r['directory']}/{r['login']}"
+                    print(f"      IDENTITY CHANGED since {r['identity_changed_at']:%Y-%m-%d %H:%M}:"
+                          " another directory object carries this login; sign-ins are refused"
+                          f" — make auth ARGS=\"account relink {who}\" (the same person) or"
+                          f" \"account renew {who}\" (someone else)")
                 for c in r["conflicts"]:
                     print(f"      conflict: {c}")
+            return 0
+        if args.command == "account":
+            directory, _, login = args.who.partition("/")
+            if not login and not args.all:
+                raise SystemExit("name the account: DIRECTORY/LOGIN (or DIRECTORY --all)")
+            done = await svc.resolve_identity(directory, login or None, args.action,
+                                              actor=actor, note=args.note)
+            for d in done:
+                print(f"{d['action']}ed {d['directory']}/{d['login']}"
+                      + (f"; {d['grants_revoked']} own grant(s) revoked"
+                         if d["action"] == "renew" else ""))
             return 0
         if args.command == "audit-check":
             async with svc.factory() as s:
@@ -246,6 +266,12 @@ def main(argv: list[str] | None = None) -> int:
     s = sub.add_parser("grants", help="current grants")
     s.add_argument("--all", action="store_true", help="revoked ones too")
     sub.add_parser("accounts", help="accounts and what they may do")
+    s = sub.add_parser("account", help="D78: decide about an account whose directory object "
+                                       "changed")
+    s.add_argument("action", choices=["relink", "renew"])
+    s.add_argument("who", help="DIRECTORY/LOGIN, or DIRECTORY with --all")
+    s.add_argument("--all", action="store_true", help="every account of the directory waiting")
+    s.add_argument("--note")
     sub.add_parser("audit-check", help="verify the hash-chained audit")
 
     args = parser.parse_args(argv)

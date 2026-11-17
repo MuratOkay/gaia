@@ -94,7 +94,7 @@ describe("a directory whose last test failed", () => {
     const acme: DirectoryView = {
       name: "acme", kind: "ldap", status: "verified", settings: {}, probed_at: "2026-11-17T18:00:00Z",
       probe: [{ name: "transport", ok: false, detail: "LDAPS to dc1.acme.test:6360: the server's certificate was signed by a CA named like the one in … but with a different key" }],
-      synced_at: null, sync: null, created_by: "cli:murat", last_test_failed: true,
+      synced_at: null, sync: null, created_by: "cli:operator", last_test_failed: true,
     };
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => json([acme]));
     render(<MemoryRouter><Directories /></MemoryRouter>);

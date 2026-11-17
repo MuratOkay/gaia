@@ -14,8 +14,12 @@ function GrantControl({ sources, categories, suggested, onGrant }: {
   const [privilege, setPrivilege] = useState<string>(suggested?.length ? "category" : "user");
   const [source, setSource] = useState<string>(sources[0] ?? "");
   const [category, setCategory] = useState<string>(suggested?.[0] ?? categories[0] ?? "");
-  useEffect(() => setSource((s) => s || sources[0] || ""), [sources]);
-  useEffect(() => setCategory((c) => c || suggested?.[0] || categories[0] || ""), [categories, suggested]);
+  useEffect(() => {
+    setSource((s) => s || sources[0] || "");
+  }, [sources]);
+  useEffect(() => {
+    setCategory((c) => c || suggested?.[0] || categories[0] || "");
+  }, [categories, suggested]);
   return (
     <span className="grant-control">
       <select aria-label={t("grants.privilege")} value={privilege} onChange={(e) => setPrivilege(e.target.value)}>

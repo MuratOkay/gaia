@@ -229,7 +229,14 @@
     "enabled": "enabled",
     "noRole": "no Gaia role",
     "smeOf": "SME of {{sources}}",
-    "reads": "reads: {{categories}}"
+    "reads": "reads: {{categories}}",
+    "identityChanged": "Another directory object has carried this login since {{when}} — someone else, or the same person in a directory provisioned again. Sign-ins are refused until you decide.",
+    "relink": "The same person: re-link",
+    "relinkHelp": "The account follows the new directory object and keeps its grants.",
+    "renew": "Someone else: start anew",
+    "renewHelp": "The account's own grants are revoked and its sessions ended; grants to its directory roles apply as the directory says.",
+    "confirmRelink": "Re-link {{who}}: the new directory object is the same person, and keeps this account's own grants?",
+    "confirmRenew": "Start {{who}} anew: revoke the account's own grants (a PII-processor permission included) and end its sessions?"
   },
   "audit": {
     "nav": "Audit",
@@ -297,7 +304,10 @@
       "category_retired": "data category retired",
       "object_category_set": "object's category set",
       "categories_proposed": "categories proposed by Gaia",
-      "access_refused": "question refused (need-to-know)"
+      "access_refused": "question refused (need-to-know)",
+      "identity_changed": "another directory object carries the login",
+      "account_relinked": "account re-linked to its directory object",
+      "account_renewed": "account started anew"
     },
     "categories": "Data categories",
     "categoriesTitle": "Data categories: what is in them, who may read them",

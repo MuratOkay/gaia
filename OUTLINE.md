@@ -13,7 +13,8 @@
 > and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39),
 > need-to-know, the chat screen and runs (§40) — built in the sandbox; the owner's D75 run
 > proved sign-in against a real Samba AD and stopped at the directory, and build D77 fixes what it
-> found (§41). Phase 6 (evaluation and calibration) is designed in PHASES.md.
+> found (§41); the D77 run verified sign-in against a real AD and a real Entra tenant, and build
+> D80 fixes what it found and starts Phase 6 — the evaluation store and the quality report (§42).
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -1929,3 +1930,27 @@ is missing; a report that leaves columns out says so; a filter's choices never c
 filtered result; profiling resolves data sources added at runtime like every other tool. Since
 D76 the sandbox has a real LDAPS directory, a browser and a scripted model behind the real
 processes, so the host run is no longer the first time the screens meet a directory.
+
+## 42. Identity, and measuring instead of reading single runs (D78–D80, build D80, 2026-11-17)
+
+* **An account is the directory's object, not its login (D78).** A login is a name, and names
+  are reused: a company gives a departed person's login to a newcomer, a test domain is
+  provisioned again with the same people. Matching by login alone would hand the newcomer the
+  previous holder's own grants — a PII-processor grant included. Directories give every object a
+  stable id that never changes and is never reused (AD `objectGUID`, OpenLDAP `entryUUID`, Entra's
+  object id); Gaia now holds an account to it and, when it changes, refuses rather than guesses:
+  only a person can tell "the same person in a rebuilt directory" (re-link) from "someone else"
+  (start anew). A DN is no stable id — it moves with the object — and never triggers the rule.
+* **The platform changes under the code (D79).** The chat broke when browsers began returning a
+  Promise from `scrollIntoView()`, because an effect returned that value; a Microsoft 365 group
+  counted as a security group because the admin center makes it security-enabled. Both were
+  assumptions about someone else's behaviour; each is now stated in code, and tested against the
+  newer behaviour.
+* **A run is one sample (D80).** The golden run was read as *the* number of a build, and a
+  replayed run was once read as a new one. Five fresh runs of one prompt gave 97, 90, 93, 90 and
+  87 %: with thirty questions a single run moves by several points on its own. Phase 6 therefore
+  records every run with what it ran on and whether it measured anything (fresh) or reproduced a
+  run (replay), pools runs with intervals, names the questions that flip between runs, and decides
+  a comparison question by question with the uncertainty shown — *passes*, *fails* or *cannot
+  tell* against the owner's 3-point rule (P6-2). Calibration (6C) and the regression nets (6E)
+  build on the same store.

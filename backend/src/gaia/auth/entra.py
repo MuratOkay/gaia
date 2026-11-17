@@ -245,12 +245,24 @@ class EntraDirectory:
                              display_name=doc.get("displayName"), email=doc.get("mail"),
                              enabled=bool(doc.get("accountEnabled", True)))
 
-    def _wanted(self, group: dict[str, Any]) -> bool:
+    def _left_out(self, group: dict[str, Any]) -> str | None:
+        """Why a group is not a role, or None when it is one. "Security groups only" means
+        security groups: a Microsoft 365 group is security-enabled too when the Entra admin
+        center makes it, and only ``groupTypes`` "Unified" tells it apart (D79: on the
+        owner's tenant GAIA-Mail became a role)."""
         rs = self.s.role_source
         name = str(group.get("displayName") or "")
         if rs.name_prefix and not name.lower().startswith(rs.name_prefix.lower()):
-            return False
-        return not (rs.security_only and not group.get("securityEnabled", False))
+            return f"not named {rs.name_prefix}…"
+        if rs.security_only:
+            if "Unified" in (group.get("groupTypes") or []):
+                return "a Microsoft 365 group"
+            if not group.get("securityEnabled", False):
+                return "not a security group"
+        return None
+
+    def _wanted(self, group: dict[str, Any]) -> bool:
+        return self._left_out(group) is None
 
     def _roles_of(self, doc: dict[str, Any]) -> list[RoleRef]:
         rs = self.s.role_source
@@ -258,7 +270,7 @@ class EntraDirectory:
             value = str(doc.get(rs.attribute or "") or "").strip()
             return [RoleRef("attribute", value.lower(), value)] if value else []
         groups = self._all(f"/users/{doc['id']}/transitiveMemberOf/microsoft.graph.group",
-                           {"$select": "id,displayName,description,securityEnabled",
+                           {"$select": "id,displayName,description,securityEnabled,groupTypes",
                             "$top": "999"})
         return sorted((RoleRef("group", str(g["id"]).lower(), g.get("displayName") or g["id"],
                                g.get("description")) for g in groups if self._wanted(g)),
@@ -292,7 +304,8 @@ class EntraDirectory:
             for d in docs:
                 users[str(d["id"]).lower()].roles = self._roles_of(d)
         else:
-            gparams = {"$select": "id,displayName,description,securityEnabled", "$top": "999"}
+            gparams = {"$select": "id,displayName,description,securityEnabled,groupTypes",
+                       "$top": "999"}
             if rs.name_prefix:
                 gparams["$filter"] = f"startswith(displayName,'{rs.name_prefix}')"
             for g in (g for g in self._all("/groups", gparams) if self._wanted(g)):
@@ -340,13 +353,19 @@ class EntraDirectory:
                   "first page)")
             rs = self.s.role_source
             if rs.kind == "group":
-                gparams = {"$select": "id,displayName,securityEnabled", "$top": "999"}
+                gparams = {"$select": "id,displayName,securityEnabled,groupTypes", "$top": "999"}
                 if rs.name_prefix:
                     gparams["$filter"] = f"startswith(displayName,'{rs.name_prefix}')"
-                groups = [g for g in self._all("/groups", gparams) if self._wanted(g)]
+                seen = self._all("/groups", gparams)
+                groups = [g for g in seen if self._wanted(g)]
+                left = [f"{g.get('displayName')} ({self._left_out(g)})" for g in seen
+                        if not self._wanted(g)]
+                names = ", ".join(sorted(str(g.get("displayName")) for g in groups))
                 check("roles", bool(groups), f"{len(groups)} group(s)"
                       + (f" named {rs.name_prefix}…" if rs.name_prefix else "")
-                      + (", security groups only" if rs.security_only else ""))
+                      + (", security groups only" if rs.security_only else "")
+                      + (f": {names}" if names else "")
+                      + (f"; left out: {', '.join(sorted(left))}" if left else ""))
             else:
                 sample = self._all("/users", {"$select": USER_FIELDS, "$top": "100"})[:100]
                 values = {str(d.get(rs.attribute or "") or "").strip() for d in sample} - {""}
