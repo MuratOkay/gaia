@@ -13,6 +13,7 @@ export const EMPTY = {
   start_tls: false,
   tls_verify: true,
   ca_file: "",
+  ca_pem: "",
   flavor: "ad",
   bind_dn: "",
   base_dn: "",
@@ -69,6 +70,7 @@ export function toSettings(f: typeof EMPTY): Record<string, unknown> {
     start_tls: f.start_tls,
     tls_verify: f.tls_verify,
     ca_file: blank(f.ca_file),
+    ca_pem: blank(f.ca_pem),
     flavor: f.flavor,
     bind_dn: f.bind_dn.trim(),
     base_dn: f.base_dn.trim(),
@@ -140,10 +142,12 @@ export function Directories() {
         <article key={d.name} className="card">
           <h2>
             {d.name} <Status value={d.status} />
+            {d.last_test_failed && <> <span className="status status-failed">{t("directories.lastTestFailedBadge")}</span></>}
           </h2>
           <p className="muted">
             {t("directories.probed")}: {when(d.probed_at, i18n.language)} · {t("directories.synced")}: {when(d.synced_at, i18n.language)}
           </p>
+          {d.last_test_failed && <p className="note warn" role="alert">{t("directories.lastTestFailed")}</p>}
           <Checks checks={d.probe} />
           {d.sync && (
             <p>{t("directories.syncResult", { users: d.sync.users, roles: d.sync.roles, gone: d.sync.roles_gone, disabled: d.sync.accounts_disabled })}</p>
@@ -217,7 +221,10 @@ export function Directories() {
         <label className="wide">{t("directories.urls")}<input {...text("urls")} required placeholder="ldaps://dc1.example.com" /></label>
         <label className="check"><input type="checkbox" {...flag("start_tls")} />{t("directories.startTls")}</label>
         <label className="check"><input type="checkbox" {...flag("tls_verify")} />{t("directories.tlsVerify")}</label>
-        <label>{t("directories.caFile")}<input {...text("ca_file")} /></label>
+        <label>{t("directories.caFile")}<input {...text("ca_file")} placeholder="../infra/auth/acme-ca.pem" /></label>
+        <label className="wide">{t("directories.caPem")}
+          <textarea rows={3} {...text("ca_pem")} placeholder="-----BEGIN CERTIFICATE-----" spellCheck={false} />
+        </label>
         <label className="wide">{t("directories.bindDn")}<input {...text("bind_dn")} required /></label>
         <label>{t("directories.password")}<input type="password" autoComplete="new-password" {...text("password")} required /></label>
         <label className="wide">{t("directories.baseDn")}<input {...text("base_dn")} required placeholder="dc=example,dc=com" /></label>

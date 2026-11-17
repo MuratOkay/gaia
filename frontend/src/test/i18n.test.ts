@@ -55,6 +55,8 @@ const DYNAMIC: Record<string, string[]> = {
   "chat.kinds.": ["cannot_answer", "failed", "refused"],
   "queries.statuses.": ["ok", "rejected", "refused", "error", "timeout", "lock_timeout"],
   "audit.refusalCodes.": ["forbidden", "personal_data"],
+  "categories.basis.": ["direct", "view", "related", "weak"],
+  "categories.basisHelp.": ["direct", "view", "related", "weak"],
 };
 
 describe("locale keys", () => {

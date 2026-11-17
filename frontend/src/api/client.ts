@@ -155,6 +155,7 @@ export interface DataSourceView {
   username?: string;
   probed_at?: string | null;
   probe?: Check[] | null;
+  introspected?: boolean;
 }
 
 export interface DirectoryView {
@@ -167,6 +168,8 @@ export interface DirectoryView {
   synced_at: string | null;
   sync: Record<string, number> | null;
   created_by: string | null;
+  /** verified settings whose last test failed: still offered at sign-in (D76) */
+  last_test_failed?: boolean;
 }
 
 export interface DirectoryRoleView {
@@ -494,6 +497,8 @@ export interface Placement {
   decided_by: string | null;
   decided_at: string;
   reason: string | null;
+  /** what Gaia's proposal rests on (D77) */
+  basis?: "direct" | "view" | "related" | "weak" | null;
 }
 
 export interface ObjectView {
@@ -602,6 +607,8 @@ export interface QueryView {
 }
 
 export interface RunsView {
+  /** every data source, whatever the filter (D76) */
+  data_sources?: string[];
   totals: { data_source: string; llm_calls: number; prompt_tokens: number; completion_tokens: number; cost: number | null; queries: number }[];
   reasoning: Record<string, unknown>[];
   profiling: Record<string, unknown>[];

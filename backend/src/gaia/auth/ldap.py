@@ -7,8 +7,11 @@ is refused before anything is sent: a simple bind with an empty password is an
 *anonymous* bind, which AD accepts.
 
 **Transport.** ``ldaps://`` or ``ldap://`` with StartTLS, nothing else: a clear-text URL is
-refused when the settings are validated. The certificate is verified (``ca_file`` for a
-private CA); ``tls_verify: false`` exists for test directories and the probe says so.
+refused when the settings are validated. The certificate is verified against a private CA
+— ``ca_pem`` (the certificate itself, kept in the settings) or ``ca_file`` (a file; a
+relative path is read from ``backend/`` or the repository root, never from the process's
+working directory) — or the system's CAs; ``tls_verify: false`` exists for test
+directories and the probe says so.
 
 **Roles — the administrator chooses how they are read (P5-3):**
 
@@ -24,8 +27,9 @@ private CA); ``tls_verify: false`` exists for test directories and the probe say
 screens (the distinct list of roles, who has which). For groups it reads the group graph
 once and resolves nesting in memory rather than per user.
 
-**Probe** — the "test connection" of the admin screen, like the data-source probe: TLS,
-service bind, users found, roles found.
+**Probe** — the "test connection" of the admin screen, like the data-source probe: the
+TLS handshake of every URL, with the certificate explained when it is refused
+(``gaia.auth.tls``, D76), then the service bind, users found, roles found.
 """
 
 from __future__ import annotations
@@ -81,6 +85,7 @@ class LdapSettings(BaseModel):
     start_tls: bool = False
     tls_verify: bool = True
     ca_file: str | None = None
+    ca_pem: str | None = None  # the CA certificate(s) themselves, PEM; wins over ca_file
     flavor: Literal["ad", "openldap"] = "ad"
     bind_dn: str
     base_dn: str
@@ -191,17 +196,23 @@ def _norm(dn: str) -> str:
 
 class LdapDirectory:
     def __init__(self, settings: LdapSettings, service_password: str, *,
-                 connect: Connector | None = None) -> None:
+                 connect: Connector | None = None,
+                 transport: Callable[[], list[Any]] | None = None) -> None:
         self.s = settings
         self._password = service_password
         self._connect = connect or _tls_connector(settings)
+        # the probe's TLS check: real unless a test gives its own connector (which has no
+        # network behind it) — then only what is configured is described, as before D76
+        self._transport = transport or (None if connect else self._check_transport)
 
     # -- connections ---------------------------------------------------------------------
     def _service(self):
         try:
             conn = self._connect(self.s.bind_dn, self._password)
         except Exception as exc:  # network, TLS, timeouts
-            raise DirectoryError(f"directory unreachable: {type(exc).__name__}: {exc}") from None
+            from gaia.auth.tls import describe_tls_error
+
+            raise DirectoryError(f"directory unreachable: {describe_tls_error(exc)}") from None
         if conn is None:
             raise DirectoryError("the service account's bind was refused (bind_dn or password)")
         return conn
@@ -395,12 +406,20 @@ class LdapDirectory:
             checks.append({"name": name, "ok": ok, "detail": detail})
             return ok
 
-        transport = ("LDAPS" if all(u.lower().startswith("ldaps://") for u in s.urls)
-                     else "StartTLS")
-        # what is configured; whether the handshake works is the bind below
-        check("transport", True, f"{transport}; the certificate will be "
-              + ("verified" + (f" against {s.ca_file}" if s.ca_file else " (system CAs)")
-                 if s.tls_verify else "NOT verified (tls_verify: false — test directories only)"))
+        if self._transport is not None:
+            reports = self._transport()
+            failed = [r for r in reports if not r.ok]
+            check("transport", not failed, " | ".join(r.detail for r in failed or reports))
+            if failed:  # the bind would fail the same way, less clearly
+                return checks
+        else:
+            transport = ("LDAPS" if all(u.lower().startswith("ldaps://") for u in s.urls)
+                         else "StartTLS")
+            trust = ("the CA certificate in the settings" if s.ca_pem else s.ca_file)
+            check("transport", True, f"{transport}; the certificate will be "
+                  + ("verified" + (f" against {trust}" if trust else " (system CAs)")
+                     if s.tls_verify
+                     else "NOT verified (tls_verify: false — test directories only)"))
         try:
             conn = self._service()
         except DirectoryError as exc:
@@ -428,6 +447,15 @@ class LdapDirectory:
         return checks
 
 
+    def _check_transport(self) -> list[Any]:
+        from gaia.auth.tls import check_tls, load_ca
+
+        ca = load_ca(self.s.ca_file, self.s.ca_pem)
+        return [check_tls(u, start_tls=not u.lower().startswith("ldaps://"),
+                          verify=self.s.tls_verify, ca=ca, timeout_s=self.s.timeout_s)
+                for u in self.s.urls]
+
+
 def _ous(dn: str, base: str) -> list[RoleRef]:
     """The OUs a user sits in *below* ``base``, named relative to it: a user in
     ``ou=Team,ou=Finance,ou=People,dc=ex`` with base ``ou=People,dc=ex`` has the roles
@@ -450,8 +478,13 @@ def _tls_connector(s: LdapSettings) -> Connector:
     def connect(dn: str, password: str):
         from ldap3 import FIRST, NONE, Connection, Server, ServerPool, Tls
 
+        from gaia.auth.tls import resolve_ca_file
+
+        use_pem = bool(s.ca_pem and s.ca_pem.strip())
         tls = Tls(validate=ssl.CERT_REQUIRED if s.tls_verify else ssl.CERT_NONE,
-                  ca_certs_file=s.ca_file)
+                  ca_certs_file=None if use_pem or not s.ca_file
+                  else str(resolve_ca_file(s.ca_file)),
+                  ca_certs_data=s.ca_pem if use_pem else None)
         servers = [Server(u, use_ssl=u.lower().startswith("ldaps://"), tls=tls,
                           connect_timeout=s.timeout_s, get_info=NONE) for u in s.urls]
         conn = Connection(ServerPool(servers, FIRST, active=1, exhaust=True), user=dn,

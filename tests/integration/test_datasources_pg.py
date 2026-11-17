@@ -122,6 +122,13 @@ async def test_a_data_source_from_onboarding_to_removal(pg_session_factory, env,
     result = execute(settings.target("shop_ro"),
                      guard.check("SELECT count(*) AS n FROM sales.orders"), row_limit=5)
     assert result.ok and result.rows[0][0] == 250_000
+    # … and profiling (D76: it looked in the config only and refused "no target in config")
+    from gaia.profiling.service import ProfileOptions, run_profiling
+
+    async with factory() as s:
+        report = await run_profiling(settings, s, ProfileOptions(target="shop_ro",
+                                                                 tables=["store.stores"]))
+    assert [r.action for r in report.results] == ["profiled"]
 
     # a superuser is not read-only: the probe fails, the data source stays unusable
     async with factory() as s:

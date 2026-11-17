@@ -136,11 +136,17 @@ export function ChatPage({ me }: { me: Me }) {
     void send(text, clarifying && newQuestion ? false : undefined);
   }
 
-  if (sources.data && sources.data.length === 0) {
+  if (me.local || (sources.data && sources.data.length === 0)) {
+    // Nothing to ask about — say why, and what would change it (D76: for the only account
+    // the owner could use, this page looked empty)
     return (
       <section>
         <h1>{t("chat.title")}</h1>
-        <p className="note">{t("chat.nothingToRead")}</p>
+        {me.local
+          ? <p className="note">{t("chat.localAccount")}</p>
+          : me.roles.includes("admin")
+            ? <p className="note">{t("chat.nothingToReadAdmin")} <Link to="/admin/grants">{t("chat.toGrants")}</Link></p>
+            : <p className="note">{t("chat.nothingToRead")}</p>}
       </section>
     );
   }

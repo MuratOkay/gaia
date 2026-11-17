@@ -30,6 +30,7 @@ from gaia.api.review import router as review_router
 from gaia.auth.deps import require
 from gaia.core.config import get_settings
 from gaia.db.engine import asyncpg_dsn, dispose_engine
+from gaia.db.revision import expected_revision, explain, store_revision
 
 logger = logging.getLogger("gaia")
 
@@ -45,6 +46,9 @@ async def lifespan(app: FastAPI):
     logger.info("gaia %s starting (target=%s)", __version__, settings.app.default_target)
     if settings.unresolved_env:
         logger.warning("unresolved env placeholders: %s", ", ".join(settings.unresolved_env))
+    schema = await _check_schema()
+    if not schema.get("ok", True) and schema.get("advice"):
+        logger.error("%s", schema["advice"])  # D76: say it before the first request fails
     yield
     await dispose_engine()
 
@@ -94,6 +98,22 @@ async def _check_metadata_db() -> dict[str, Any]:
         return {"ok": False, "error": f"{type(exc).__name__}: {exc}"}
 
 
+async def _check_schema() -> dict[str, Any]:
+    """The store's migration against this build's (D76)."""
+    try:
+        conn = await asyncpg.connect(dsn=asyncpg_dsn(), timeout=5)
+        try:
+            current = await store_revision(conn)
+        finally:
+            await conn.close()
+    except Exception as exc:  # the metadata_db check reports the connection itself
+        return {"ok": False, "error": f"{type(exc).__name__}"}
+    expected = expected_revision()
+    advice = explain(current, expected)
+    return {"ok": advice is None, "current": current, "expected": expected,
+            **({"advice": advice} if advice else {})}
+
+
 async def _check_redis() -> dict[str, Any]:
     client = None
     try:
@@ -111,6 +131,7 @@ async def _check_redis() -> dict[str, Any]:
 async def health() -> dict[str, Any]:
     checks = {
         "metadata_db": await _check_metadata_db(),
+        "schema": await _check_schema(),
         "redis": await _check_redis(),
     }
     healthy = all(c.get("ok") for c in checks.values())

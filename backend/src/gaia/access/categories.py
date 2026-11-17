@@ -2,12 +2,14 @@
 object by Gaia, confirmed by an SME (what the data *is*), granted by the administrator
 (who may *see* it).
 
-**Gaia's proposal is deterministic** — no model decides anything about access. An object
-is matched against each category's name and keywords: its schema (the strongest signal in
-most databases), its name, and what Gaia understood it to be (business name, entity,
-purpose). A view whose definition reads objects of one category only gets that category.
-A tie, or no match, proposes nothing: the object stays readable by nobody until someone
-decides. Proposals never replace a confirmed category.
+**Gaia's proposal is deterministic** — no model decides anything about access. Since D77
+(``gaia.access.proposal``) an object is matched against each category's name and keywords
+in its schema, name and business name (*direct*) or only in what Gaia wrote about it
+(*weak*), and it follows the table it is named after and the tables it references
+(*related*); a view whose definition reads objects of one category gets that category. A
+tie, or no match, proposes nothing: the object stays readable by nobody until someone
+decides. Each proposal keeps its basis and reasons; proposals never replace a confirmed
+category.
 
 **Suggestions for directory roles** work the same way over a role's name and description
 ("GAIA-Finance" → Finance). A suggestion grants nothing.
@@ -19,56 +21,44 @@ from __future__ import annotations
 
 import re
 import uuid
-from collections import Counter
 from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from gaia.access.proposal import word_stems
 from gaia.auth import audit
 from gaia.db.models.auth import Category, Directory, DirectoryRole, Grant, ObjectCategory
 from gaia.db.models.catalog import DataSource, TableRecord
 from gaia.db.models.semantics import TableSemantic
-from gaia.query.retrieval import tokens
 
-__all__ = ["CategoryError", "CategoryService", "propose_for"]
+__all__ = ["GENERIC_SCHEMAS", "CategoryError", "CategoryService"]
 
 
 class CategoryError(RuntimeError):
     """A request that cannot be done as asked (400)."""
 
 
+# schemas that say nothing about the data they hold: no category is made from them
+GENERIC_SCHEMAS = frozenset({"dbo", "public", "guest", "main", "default", "sys", "app"})
+
+
+def _terms(c: Category):
+    from gaia.access.proposal import CategoryTerms
+
+    return CategoryTerms(c.id, c.name, frozenset(_vocabulary(c)))
+
+
 def _vocabulary(c: Category) -> set[str]:
-    words = set(tokens(c.name))
+    """The literal stems of its name and keywords (D77: "HR" is "hr" — retrieval's
+    tokenizer would read it as the abbreviation of "hour")."""
+    from gaia.access.proposal import literal_stems
+
+    words = literal_stems(c.name)
     for k in c.keywords or []:
-        words |= set(tokens(k))
+        words |= literal_stems(k)
     return words
-
-
-def propose_for(signals: list[tuple[str | None, float]], categories: list[Category]
-                ) -> tuple[Category | None, str]:
-    """The best category for weighted texts, and why; None on no match or a tie."""
-    scores: Counter[uuid.UUID] = Counter()
-    why: dict[uuid.UUID, list[str]] = {}
-    vocab = {c.id: _vocabulary(c) for c in categories}
-    for text, weight in signals:
-        seen: set[tuple[uuid.UUID, str]] = set()
-        for word in re.findall(r"[A-Za-z0-9]+", text or ""):  # the words as written
-            for stem in tokens(word):
-                for c in categories:
-                    if stem in vocab[c.id] and (c.id, stem) not in seen:
-                        seen.add((c.id, stem))
-                        scores[c.id] += weight
-                        why.setdefault(c.id, []).append(word.lower())
-    if not scores:
-        return None, "no category's name or keywords match"
-    ranked = scores.most_common()
-    if len(ranked) > 1 and ranked[0][1] == ranked[1][1]:
-        names = sorted(c.name for c in categories if c.id in (ranked[0][0], ranked[1][0]))
-        return None, f"a tie between {' and '.join(names)}"
-    best = next(c for c in categories if c.id == ranked[0][0])
-    return best, "matches " + ", ".join(sorted(set(why[best.id])))
 
 
 class CategoryService:
@@ -156,21 +146,47 @@ class CategoryService:
             return _category_view(c, 0, 0)
 
     async def from_schemas(self, data_source: str, *, actor: str) -> list[dict[str, Any]]:
-        """A starting point: one category per schema of the data source (its name the
-        keyword), where none of that name exists yet."""
+        """A starting point: one category per schema of the data source, named after it;
+        its keywords are the schema's name and the words its tables are named with
+        (``sales`` → order, payment, return …), so the category also recognises that kind of
+        data in another data source (D77). Schemas that say nothing about the data —
+        ``dbo``, ``public`` — get none: define those categories by hand. A category of that
+        name made from this schema before gets the words it lacks."""
+        from gaia.access.proposal import schema_keywords
+
         async with self.factory() as s:
             ds = await _source(s, data_source)
-            schemas = sorted(set((await s.scalars(select(TableRecord.schema_name).where(
+            rows = (await s.execute(select(TableRecord.schema_name, TableRecord.object_name,
+                                           TableRecord.kind).where(
                 TableRecord.data_source_id == ds.id,
-                TableRecord.is_tombstoned.is_(False)))).all()))
+                TableRecord.is_tombstoned.is_(False)))).all()
+        schemas = sorted({r[0] for r in rows})
+        tables: dict[str, list[str]] = {}
+        for schema, name, kind in rows:
+            if kind != "view" and schema.lower() not in GENERIC_SCHEMAS:
+                tables.setdefault(schema, []).append(name)
+        words = schema_keywords(tables)
         out = []
         for schema in schemas:
-            name = schema.replace("_", " ").strip().title() if schema.islower() else schema
-            try:
-                out.append(await self.add(name, actor=actor, keywords=[schema],
-                                          description=f"the {schema} schema of {data_source}"))
-            except CategoryError:
+            if schema.lower() in GENERIC_SCHEMAS:
                 continue
+            name = schema.replace("_", " ").strip().title() if schema.islower() else schema
+            keywords = [schema, *words.get(schema, [])]
+            description = f"the {schema} schema of {data_source}"
+            try:
+                out.append({**await self.add(name, actor=actor, keywords=keywords,
+                                             description=description), "action": "added"})
+            except CategoryError:
+                async with self.factory() as s:
+                    c = await s.scalar(select(Category).where(
+                        func.lower(Category.name) == name.lower()))
+                    missing = sorted(set(keywords) - set(c.keywords or [])) if c else []
+                    if c is None or c.description != description or not missing:
+                        continue
+                before = list(c.keywords or [])
+                out.append({**await self.change(str(c.id), actor=actor,
+                                                keywords=[*before, *missing]),
+                            "action": "completed", "added_keywords": missing})
         return out
 
     # -- objects ----------------------------------------------------------------------------
@@ -218,10 +234,15 @@ class CategoryService:
 
     async def propose(self, data_source: str, *, actor: str = "gaia",
                       replace_proposals: bool = True) -> dict[str, Any]:
-        """Gaia's proposal for every object without a confirmed category (tables first,
-        then views from what they read)."""
+        """Gaia's proposal for every object without a confirmed category — from its own
+        words, the tables it is named after or references, and for a view what it reads
+        (``gaia.access.proposal``, D77). Confirmed categories are kept, and steer their
+        neighbours."""
         from gaia.access.policy import _tables_read
+        from gaia.access.proposal import ObjectFacts, propose_all
+        from gaia.db.models.catalog import RelationRecord
         from gaia.db.models.profiling import ModuleDefinition
+        from gaia.db.models.semantics import JoinHint
         from gaia.profiling.lineage import sqlglot_dialect
 
         async with self.factory() as s:
@@ -247,48 +268,61 @@ class CategoryService:
                            for d in (await s.scalars(select(ModuleDefinition).where(
                                ModuleDefinition.data_source_id == ds.id,
                                ModuleDefinition.is_current.is_(True)))).all()}
-            result = {"proposed": 0, "unchanged": 0, "confirmed_kept": 0, "none": 0,
-                      "why_none": {}}
-            decided: dict[str, uuid.UUID] = {}
-            ordered = sorted(rows, key=lambda r: (r[0].kind == "view", r[0].schema_name,
-                                                  r[0].object_name))
-            for t, sem in ordered:
+            # what each table points at: declared foreign keys, and joins an SME confirmed
+            refs: dict[str, set[str]] = {}
+            for rel, t in (await s.execute(
+                    select(RelationRecord, TableRecord).join(
+                        TableRecord, TableRecord.id == RelationRecord.table_id).where(
+                        TableRecord.data_source_id == ds.id,
+                        TableRecord.is_tombstoned.is_(False)))).all():
+                refs.setdefault(f"{t.schema_name}.{t.object_name}".lower(), set()).add(
+                    f"{rel.to_schema}.{rel.to_table}".lower())
+            for h in (await s.scalars(select(JoinHint).where(
+                    JoinHint.data_source_id == ds.id, JoinHint.status == "confirmed",
+                    JoinHint.source.in_(("fk", "sme"))))).all():
+                refs.setdefault(f"{h.from_schema}.{h.from_table}".lower(), set()).add(
+                    f"{h.to_schema}.{h.to_table}".lower())
+            facts = []
+            for t, sem in rows:
                 key = f"{t.schema_name}.{t.object_name}".lower()
                 cur = current.get(t.id)
+                reads = None
+                if t.kind == "view" and definitions.get(key):
+                    reads = _tables_read(definitions[key], sqlglot_dialect(ds.dialect),
+                                         by_name, t.schema_name) or set()
+                facts.append(ObjectFacts(
+                    key=key, schema=t.schema_name, name=t.object_name,
+                    kind="view" if t.kind == "view" else "table",
+                    business_name=sem.business_name if sem else None,
+                    entity=sem.entity if sem else None, purpose=sem.purpose if sem else None,
+                    references=refs.get(key, set()), reads=reads,
+                    confirmed=cur.category_id if cur is not None and cur.status == "confirmed"
+                    else None))
+            terms = [_terms(c) for c in cats]
+            proposals = propose_all(facts, terms)
+            result: dict[str, Any] = {"proposed": 0, "unchanged": 0, "confirmed_kept": 0,
+                                      "none": 0, "by_basis": {}, "why_none": {}}
+            for t, _sem in sorted(rows, key=lambda r: (r[0].schema_name, r[0].object_name)):
+                key = f"{t.schema_name}.{t.object_name}".lower()
+                cur, p = current.get(t.id), proposals[key]
                 if cur is not None and cur.status == "confirmed":
                     result["confirmed_kept"] += 1
-                    decided[key] = cur.category_id
                     continue
-                best, why = None, ""
-                if t.kind == "view" and definitions.get(key):
-                    read = _tables_read(definitions[key], sqlglot_dialect(ds.dialect), by_name,
-                                        t.schema_name) or set()
-                    found = {decided.get(r) for r in read if r != key}
-                    if len(found) == 1 and None not in found:
-                        cat_id = found.pop()
-                        best = next((c for c in cats if c.id == cat_id), None)
-                        why = "reads only objects of this category"
-                if best is None:
-                    best, why = propose_for([
-                        (t.schema_name, 3.0), (t.object_name, 2.0),
-                        (sem.business_name if sem else None, 2.0),
-                        (sem.entity if sem else None, 1.0),
-                        (sem.purpose if sem else None, 0.5)], cats)
-                if best is None:
+                if p.category is None:
                     result["none"] += 1
-                    result["why_none"][f"{t.schema_name}.{t.object_name}"] = why
-                    if cur is not None:
-                        decided[key] = cur.category_id
+                    result["why_none"][f"{t.schema_name}.{t.object_name}"] = p.why
                     continue
-                decided[key] = best.id
-                if cur is not None and cur.category_id == best.id:
+                result["by_basis"][p.basis] = result["by_basis"].get(p.basis, 0) + 1
+                if cur is not None and cur.category_id == p.category.id:
+                    if (cur.reason, cur.basis) != (p.why, p.basis):  # same category, newer why
+                        cur.reason, cur.basis = p.why, p.basis
                     result["unchanged"] += 1
                     continue
                 if cur is not None and not replace_proposals:
                     result["unchanged"] += 1
                     continue
-                await _replace(s, ds.id, t.id, best.id, status="proposed", source="gaia",
-                               actor=None, reason=why, at=self.now())
+                await _replace(s, ds.id, t.id, p.category.id, status="proposed", source="gaia",
+                               actor=None, reason=p.why, at=self.now(), basis=p.basis)
                 result["proposed"] += 1
             await audit.record(s, "categories_proposed", actor=actor, subject=ds.name,
                                detail={k: v for k, v in result.items() if k != "why_none"})
@@ -307,7 +341,8 @@ class CategoryService:
                 DirectoryRole.gone_at.is_(None)))).all()
         out = []
         for r, directory in roles:
-            words = set(tokens(r.name)) | set(tokens(r.description))
+            words = {w for text in re.findall(r"[A-Za-z0-9]+", f"{r.name} {r.description or ''}")
+                     for w in word_stems(text)}
             hits = [c.name for c in cats if words & _vocabulary(c)]
             if hits:
                 out.append({"directory_role_id": str(r.id), "directory": directory,
@@ -357,13 +392,13 @@ async def _current(s: AsyncSession, table_id: uuid.UUID) -> ObjectCategory | Non
 
 async def _replace(s: AsyncSession, ds_id: uuid.UUID, table_id: uuid.UUID,
                    category_id: uuid.UUID, *, status: str, source: str, actor: str | None,
-                   reason: str | None, at: datetime) -> None:
+                   reason: str | None, at: datetime, basis: str | None = None) -> None:
     await s.execute(update(ObjectCategory).where(
         ObjectCategory.table_id == table_id, ObjectCategory.is_current.is_(True))
         .values(is_current=False).execution_options(synchronize_session=False))
     s.add(ObjectCategory(data_source_id=ds_id, table_id=table_id, category_id=category_id,
                          status=status, source=source, decided_by=actor, decided_at=at,
-                         reason=reason, is_current=True))
+                         reason=reason, is_current=True, basis=basis))
     await s.flush()
 
 
@@ -381,4 +416,4 @@ def _object_view(t: TableRecord, sem: TableSemantic | None, oc: ObjectCategory |
             "category": None if oc is None or c is None else {
                 "id": str(c.id), "name": c.name, "status": oc.status, "source": oc.source,
                 "decided_by": oc.decided_by, "decided_at": oc.decided_at,
-                "reason": oc.reason}}
+                "reason": oc.reason, "basis": oc.basis}}

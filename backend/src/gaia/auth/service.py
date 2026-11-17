@@ -621,10 +621,18 @@ class AuthService:
             except (AuthError, DirectoryError) as exc:
                 checks = [{"name": "provider", "ok": False, "detail": str(exc)}]
             row.probe, row.probed_at = checks, self.now()
+            passed = bool(checks) and all(c["ok"] for c in checks)
+            kept = False
             if row.status != "disabled":
-                row.status = "verified" if checks and all(c["ok"] for c in checks) else "failed"
+                # A test that fails on settings proven before (any change of them sets
+                # "unverified") does not take sign-in away from everyone (D76): the
+                # directory stays offered, sign-ins fail for the reason the test shows, and
+                # the failure is on the admin screen. Settings never proven stay "failed".
+                kept = not passed and row.status == "verified"
+                row.status = "verified" if passed or kept else "failed"
             await audit.record(s, "directory_probed", actor=actor, subject=name,
-                               detail={"status": row.status,
+                               detail={"status": row.status, "ok": passed,
+                                       **({"kept_for_sign_in": True} if kept else {}),
                                        "failed": [c["name"] for c in checks if not c["ok"]]})
             await s.commit()
             return _directory_view(row)
@@ -880,9 +888,12 @@ async def effective_of(s: AsyncSession, account: Account) -> Effective:
 
 
 def _directory_view(row: Directory) -> dict[str, Any]:
+    last_failed = bool(row.probe) and not all(c.get("ok") for c in row.probe or [])
     return {"name": row.name, "kind": row.kind, "status": row.status, "settings": row.settings,
             "probed_at": row.probed_at, "probe": row.probe, "synced_at": row.synced_at,
-            "sync": row.sync, "created_by": row.created_by}
+            "sync": row.sync, "created_by": row.created_by,
+            # verified settings whose last test failed: still offered at sign-in (D76)
+            "last_test_failed": last_failed and row.status == "verified"}
 
 
 def _role_view(r: DirectoryRole, directory: str) -> dict[str, Any]:

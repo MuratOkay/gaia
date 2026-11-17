@@ -1,8 +1,7 @@
 {
   "urls": ["ldaps://dc1.acme.test:6360"],
-  "flavor": "ad",
-  "tls_verify": true,
   "ca_file": "../infra/auth/acme-ca.pem",
+  "flavor": "ad",
   "bind_dn": "CN=svc-gaia,OU=Service,DC=acme,DC=test",
   "base_dn": "DC=acme,DC=test",
   "user_base": "OU=People,DC=acme,DC=test",

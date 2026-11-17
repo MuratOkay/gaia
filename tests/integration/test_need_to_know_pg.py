@@ -52,6 +52,20 @@ CASES = [
     ("SELECT x.s FROM (SELECT salary AS s FROM hr.employees) x", "forbidden"),
     ("SELECT o.order_id FROM sales.orders o, LATERAL (SELECT salary FROM hr.employees e "
      "WHERE e.employee_id = o.order_id) z", "forbidden"),
+    # reaching for forbidden data decides the turn even when the statement is wrong
+    # otherwise (D76): the model never sees those tables' columns, so it guesses them — the
+    # "mistake" must not be sent back for repair ("not in the catalog") nor end unaudited
+    ("SELECT d.name, avg(e.salary) AS s FROM hr.employees e JOIN hr.departments d ON "
+     "d.department_id = e.department_id GROUP BY d.name", "forbidden"),
+    ("SELECT e.salary, e.bonus_guess FROM hr.employees e", "forbidden"),
+    ("SELECT o.order_id, i.amount_due FROM sales.orders o JOIN finance.invoices i ON "
+     "i.order_id = o.order_id", "forbidden"),
+    ("SELECT o.order_id FROM sales.orders o WHERE o.customer_id IN (SELECT x.emp_guess "
+     "FROM hr.employees x)", "forbidden"),
+    ("SELECT count(*) FROM hr.employees WHERE no_such_column = 1", "forbidden"),
+    # a genuine mistake on data the person may read is still repaired like any mistake
+    ("SELECT o.total_guess FROM sales.orders o", "unknown_column"),
+    ("SELECT count(*) FROM sales.orderz", "unknown_object"),
     # a view is no way around a category: its bases count
     ("SELECT amount FROM rpt.v_legacy_transactions", "forbidden"),
     ("SELECT lifetime_value FROM rpt.v_customer_overview", "forbidden"),  # Rpt not held
@@ -130,6 +144,24 @@ async def test_the_guard_and_the_context(pg_session_factory, fake_llm, fake_embe
     _i, _f, rpolicy, _r = await policy_of(factory, settings, rita)
     assert rpolicy.can_read("rpt.v_customer_overview", "lifetime_value")
     assert not rpolicy.can_read("rpt.v_legacy_transactions")  # its base is Legacy
+
+    # a view read in part (Rpt, Crm and Store, not Sales): its Sales-computed columns are
+    # forbidden — also beside a guessed column, where the statement cannot resolve (D76)
+    cora = person("cora", [cats[n] for n in ("Rpt", "Crm", "Store")])
+    ci, _f, cpolicy, crestricted = await policy_of(factory, settings, cora)
+    assert cpolicy.can_read("rpt.v_customer_overview", "customer_code")
+    assert not cpolicy.can_read("rpt.v_customer_overview", "lifetime_value")
+    cguard = build_access_guard(settings, "demo_pg", crestricted, ci.catalog, cpolicy)
+    assert cguard.check("SELECT v.customer_code FROM rpt.v_customer_overview v").ok
+    for sql in ("SELECT v.customer_code, v.lifetime_value FROM rpt.v_customer_overview v",
+                "SELECT v.customer_code, v.lifetime_value, v.guess FROM "
+                "rpt.v_customer_overview v"):
+        got = cguard.check(sql)
+        assert [e.code for e in got.errors] == ["forbidden"], (sql, got.errors)
+        assert got.forbidden in (["rpt.v_customer_overview.lifetime_value"],
+                                 ["a column outside the role"]), got.forbidden
+    assert cguard.check("SELECT v.customer_code, v.guess FROM rpt.v_customer_overview v"
+                        ).errors[0].code == "unknown_column"  # a mistake, not a refusal
     # a view column computed from personal data is personal data: an SME states that the
     # customers' first names are (no detector finds names), and full_name follows
     assert "rpt.v_customer_overview.full_name" not in rpolicy.personal
@@ -349,16 +381,26 @@ async def test_the_sme_confirms_and_the_administrator_decides(pg_session_factory
     made = await svc.from_schemas("demo_pg", actor="admin")
     assert {c["name"] for c in made} == {"Crm", "Finance", "Hr", "Legacy", "Product", "Rpt",
                                          "Sales", "Store"}
-    await svc.add("People", actor="admin", keywords=["hr", "employee"],
+    # D77: the schema's name and the first words of its tables' names, literal ones only
+    keywords = {c["name"]: c["keywords"] for c in made}
+    assert keywords["Sales"] == ["order", "payment", "return", "sales"]
+    assert keywords["Hr"] == ["department", "employee", "hr"]
+    assert keywords["Legacy"] == ["legacy"]  # tb_trx02 says nothing about "transactions"
+    assert keywords["Rpt"] == ["rpt"]  # views only
+    await svc.add("People", actor="admin", keywords=["hr", "employee", "department"],
                   description="employees")
     first = await svc.propose("demo_pg")
     objs = {o["name"]: o for o in await svc.objects("demo_pg")}
-    # "hr" now matches two categories: the employees are People by their name too; the
-    # departments are a tie, and a tie proposes nothing (readable by nobody yet)
-    assert objs["hr.employees"]["category"]["name"] == "People"
+    # HR's words now belong to two categories: a tie, which proposes nothing (readable by
+    # nobody yet) — for the employees and their departments alike
+    assert objs["hr.employees"]["category"] is None
     assert objs["hr.departments"]["category"] is None
+    assert first["why_none"]["hr.employees"] == "a tie between Hr and People"
     assert objs["finance.invoices"]["category"]["status"] == "proposed"
-    assert first["proposed"] > 20
+    assert objs["sales.order_lines"]["category"]["basis"] == "direct"
+    assert "named after sales.orders" in objs["sales.order_lines"]["category"]["reason"]
+    assert first["proposed"] > 20 and set(first["by_basis"]) <= {"direct", "view", "related",
+                                                                 "weak"}
     # the SME says what the data is; Gaia's next proposal keeps it
     inv = objs["finance.invoices"]["id"]
     await svc.assign("demo_pg", uuid.UUID(inv), "Sales", actor="ayse", source="sme")

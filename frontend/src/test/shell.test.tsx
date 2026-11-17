@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
 import type { Me, Role } from "../api/client";
@@ -11,7 +11,7 @@ function me(roles: Role[]): Me {
 }
 
 function links(): string[] {
-  return screen.getAllByRole("link").map((a) => a.textContent ?? "");
+  return within(screen.getByRole("navigation")).getAllByRole("link").map((a) => a.textContent ?? "");
 }
 
 describe("navigation follows the roles", () => {
@@ -47,7 +47,7 @@ describe("the directory form", () => {
     });
     expect(settings).toEqual({
       urls: ["ldaps://dc1", "ldaps://dc2"], start_tls: false, tls_verify: true, ca_file: undefined,
-      flavor: "ad", bind_dn: "cn=svc,dc=acme", base_dn: "dc=acme", user_base: undefined,
+      ca_pem: undefined, flavor: "ad", bind_dn: "cn=svc,dc=acme", base_dn: "dc=acme", user_base: undefined,
       user_filter: undefined, login_attribute: undefined,
       role_source: { kind: "attribute", attribute: "department" },
     });

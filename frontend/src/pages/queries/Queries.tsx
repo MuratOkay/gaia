@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 
@@ -6,6 +6,13 @@ import { api, type QueryView, type RunsView } from "../../api/client";
 import { Busy, ErrorNote, useLoad, when } from "../../components/util";
 
 const PAGE = 100;
+
+/** The data sources to choose from: all that are known, and the chosen one in any case. */
+export function sourceOptions(known: string[] | undefined, chosen: string): string[] {
+  const all = new Set(known ?? []);
+  if (chosen) all.add(chosen);
+  return [...all].sort();
+}
 const STATUSES = ["", "ok", "rejected", "refused", "error", "timeout"] as const;
 
 export function QueryStatus({ q }: { q: QueryView }) {
@@ -25,7 +32,7 @@ export function Queries() {
   const ds = params.get("data_source") ?? "";
   const offset = Number(params.get("offset") ?? 0) || 0;
   const { data, error, loading } = useLoad(
-    () => api<{ total: number; items: QueryView[] }>("/api/queries", {
+    () => api<{ total: number; items: QueryView[]; data_sources?: string[] }>("/api/queries", {
       query: { status: status || undefined, asked_by: asked || undefined, data_source: ds || undefined, limit: PAGE, offset },
     }),
     [status, asked, ds, offset],
@@ -50,7 +57,12 @@ export function Queries() {
           </select>
         </label>
         <label>{t("queries.askedBy")}<input defaultValue={asked} onBlur={(e) => set("asked_by", e.target.value.trim())} /></label>
-        <label>{t("queries.dataSource")}<input defaultValue={ds} onBlur={(e) => set("data_source", e.target.value.trim())} /></label>
+        <label>{t("queries.dataSource")}
+          <select value={ds} onChange={(e) => set("data_source", e.target.value)}>
+            <option value="">{t("queries.any")}</option>
+            {sourceOptions(data?.data_sources, ds).map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </label>
       </form>
       <Busy loading={loading} />
       <ErrorNote error={error} />
@@ -132,6 +144,12 @@ export function Runs() {
   const { t, i18n } = useTranslation();
   const [ds, setDs] = useState("");
   const { data, error, loading } = useLoad(() => api<RunsView>("/api/runs", { query: { data_source: ds || undefined } }), [ds]);
+  // the choice comes from every data source, not from the filtered totals (D76: choosing one
+  // used to leave only that one and "any" to choose from)
+  const [known, setKnown] = useState<string[]>([]);
+  useEffect(() => {
+    if (data) setKnown((k) => [...new Set([...k, ...(data.data_sources ?? data.totals.map((x) => x.data_source))])].sort());
+  }, [data]);
   const cell = (v: unknown) => (v === null || v === undefined ? "—" : String(v));
   return (
     <section>
@@ -140,7 +158,7 @@ export function Runs() {
       <label>{t("queries.dataSource")}
         <select value={ds} onChange={(e) => setDs(e.target.value)}>
           <option value="">{t("queries.any")}</option>
-          {data?.totals.map((x) => <option key={x.data_source} value={x.data_source}>{x.data_source}</option>)}
+          {sourceOptions(known, ds).map((n) => <option key={n} value={n}>{n}</option>)}
         </select>
       </label>
       <Busy loading={loading} />

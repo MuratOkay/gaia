@@ -20,15 +20,16 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D75 (5C–5E)` — Phase 5 complete: need-to-know, the chat
-  screen, the runs view, on top of 5B (the SME review) and D72 (the SQL prompt as in D65).
-  **One combined run: §25** (it includes §22e, §23c and §24).*
+  there. *Latest build: `2026-11-17 · D77 (triage of the D75 run)` — the D75 run triaged (§26): the
+  directory's TLS explained and a failed test no longer empties the sign-in page (D76),
+  need-to-know refusals decided before repairs (D76), category proposals v2 (D77), the runs
+  filter, the chat of someone with nothing to ask, profiling of data sources added at runtime.
+  **The next run: §26e** (it replaces §25, whose steps it reuses).*
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
-  items (§22e, §23c). **§25 is the next run** — on D75, everything of Phase 5 at once, with your
-  AD/LDAP and Entra ID (2026-11-17: 5C and 5D were built together at your request, and §24's
-  verification moved into §25).
+  items (§22e, §23c). §25 was run on D75 up to the directory — **its outputs are triaged in
+  §26**, and **§26e is the next run** (build D77).
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -123,7 +124,8 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 22 | Build D68: 5.0 (triage fixes) and 5A (sign-in, roles, administration, audit); the 3C report; a real directory | metadata DB, `demo_pg`, Docker (a test AD), the LLM gateway (22b, 2 min) | ~1 h |
 | 23 | Build D71: 5A.2 — sign-in with Microsoft Entra ID; the golden run's spread | an Entra tenant you can register an app in; the LLM gateway (23b, ~4 min) | ~45 min |
 | 24 | Build D73: 5B — you as SME on `demo_pg`; the golden run with D65's prompt (D72); g07 — *run inside §25* | the LLM gateway (~8 min), a directory account with the `sme` grant (§22e or §23c) | ~1 h |
-| 25 | **Build D75: Phase 5 complete — one combined run**: tests, golden (D72), AD/LDAP and Entra ID, SME review and g07, need-to-know and the chat in a browser, the golden run as a person | an AD/LDAP server, an Entra tenant, the LLM gateway, a browser | ~2–3 h |
+| 25 | Build D75: Phase 5 complete — one combined run (*ran up to the directory; triaged in §26, replaced by §26e*) | an AD/LDAP server, an Entra tenant, the LLM gateway, a browser | ~2–3 h |
+| 26 | **Triage of the D75 run; build D77 — the next run (§26e)**: tests, the directory back (the CA), Entra's secret, categories on both databases, you as SME and g07, need-to-know and the chat, the golden run as a person, 3C's missing judgement | the Samba AD (or your AD), an Entra tenant, the LLM gateway, a browser | ~2–3 h |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -2013,6 +2015,9 @@ Then re-reason the table with fresh model answers (~1 minute), and look again:
 
 ## 25 · Build D75: Phase 5 complete — one combined run
 
+*2026-11-17: run on D75 up to the directory; its outputs are triaged in §26, and **§26e replaces
+this section as the next run** (it reuses 25c–25g with the changes it names).*
+
 What is new since §24 (PHASES, Phase 5, "5C–5E results"; D74, D75):
 
 * **5C — need-to-know.** Every table and view belongs to one **data category** (Sales, Finance,
@@ -2193,6 +2198,348 @@ wrong (a screenshot is fine). Then I triage, and Phase 5's gate is yours.
 
 ---
 
+## 26 · Triage of the D75 run, and build D77 — the next run (2026-11-17)
+
+I read every file in `verification/`. All of them are stamped `2026-11-17 · D75 (5C–5E)`, git
+`315beee` — the build of §25 — although most carry the names of §22–§24 (their commands were
+run again on D75; the stamp, not the name, says which code produced them). No `25_*` file exists:
+the run stopped at the directory. Your four observations are explained in 26b; each was
+reproduced in the sandbox before it was fixed. The sandbox now has what it lacked before: a real
+**LDAPS directory** with the people and groups of the Samba script, a **real browser** (headless
+Chromium) driving the web UI, and an OpenAI-compatible **scripted model**, so sign-in, review,
+chat, refusals and the admin pages were exercised through the real processes (uvicorn, Vite).
+
+### 26a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `23_tests.out`, `24_tests.out` | **708 passed, 0 skipped** (6:31) | ✅ the §25a expectation |
+| `23_web.out`, `24_web.out` | 34 passed; the bundle `index--BWB4uHW.js` — byte for byte the sandbox's | ✅ |
+| `23_migrate.out`, `24_migrate.out` | `0014 -> 0015`, then nothing to do | ✅ — but *after* the directory block (F1) |
+| `21_datasource_tests.out` | 2 passed with your real passwords | ✅ T1 closed (again) |
+| `21_q2_mssql.out` | `nge_small` from 1986-08-06 to 2016-09-30 | ✅ as §21f |
+| `22_5a_cli.out` | probe: `[PASS]` transport, bind, 5 users, 3 groups; sync `users 5, roles 3, disabled_in_directory 1`; GAIA-Admins 1, GAIA-Finance 3, GAIA-HR 1 (bdemir through Team-HR) | ✅ **5A against a real AD**: LDAPS with the CA file, the service bind, nesting — every §22e expectation of the CLI. Then **every grant failed**: `column access_grant.category_id does not exist` (F1) |
+| `22_5a_after.out` | the same error; audit chain intact, 22 events | — |
+| `23_entra_cli.out` | `corp` existed (from D71); transport, discovery (your tenant's issuer), 4 signing keys `[PASS]`; credentials `[FAIL] AADSTS7000215: Invalid client secret` | the tenant and the app are right; the stored secret is not the secret's **Value** (F5) |
+| `23_entra_after.out` | every acme account "no Gaia role"; chain intact, 29 events | F1: the grants never happened |
+| `24_golden_a.out`, `24_golden_b.out` | **71 of 72 and 72 of 72 calls replayed** from `golden_demo_pg_d73a`/`d73b`: 97 % and 90 % | not fresh runs: the D72 prompt's two runs of D73, re-read (F6) |
+| `24_golden_sme.out` | 73 new calls, **93 %** (g07, c01 wrong); `finance.invoices.status` still in the queue | no SME decision existed: a third fresh D72 run, not §24d's (F6) |
+| `24_review_after.out` | the first 15 open items; chain head = `23_entra_after`'s | no review happened — no SME could sign in (F2) |
+| `22_evaluate_nge.out` | 0 new calls, 110 replayed | ✅ §22d |
+| `22_report_nge.out`, `22_report2_nge.out` | criteria 1–3 met (B-P 78.8 % vs B-C 61.2 %; N-P = N-C; AUROC 0.802); owner audit **89.4 % of 85**, then **86.2 % of 94** — below 90 %; B-P judged on 85 of its 99 columns | F7 |
+| `20_datasource.out` | §20b by hand: the typed password refused (the reason cut after `FATAL:`), then a traceback from `make query` | optional (L10 is closed by the test); both messages fixed (F8) |
+
+### 26b · Your observations
+
+1. **"The Samba server ran, then the app stopped connecting"** — `FAIL bind — directory
+   unreachable: … certificate verify failed: certificate signature failure`. **Cause: the domain
+   was provisioned again** (a `down` and an `up`). Samba then makes a new self-signed CA under
+   the *same name* (`O=Samba Administration, CN=DC1.acme.test`) with a new key, and
+   `infra/auth/acme-ca.pem` still held the first one. OpenSSL finds "the" issuer by its name,
+   the signature does not verify with the old key: error 7, *certificate signature failure*
+   (another CA would have given error 20). Reproduced character for character in the sandbox
+   (a CA re-created under the same name, a server certificate without an authority key id, as
+   Samba's). Two things made it worse, both Gaia's: the test said `[PASS] transport` without
+   doing any handshake (it only described the settings), and the failed test turned the
+   directory `failed` — which removed it from the sign-in page.
+   *Fixed (D76):* the test makes the TLS handshake itself, exactly as a sign-in does, and
+   explains a refusal in words — here "signed by a CA named like the one in … but with a
+   different key … the directory's CA was created anew … copy the directory's current CA over
+   the old one — for the test directory `infra/auth/samba-ad-test.sh ca` — and test again", with
+   the SHA-256 of the CA Gaia trusts; other causes have their own words (another issuer,
+   self-signed, expired, not yet valid, a host name the certificate does not carry, a name that
+   does not resolve, nothing listening, not TLS, no StartTLS). A failing test of settings that
+   passed before **keeps the directory at sign-in** (the admin screen shows *last test failed*;
+   sign-ins fail for the same cause until it passes). The script: `up` writes the CA file itself
+   and refuses to replace an existing domain silently; **`start`** brings Samba back after a
+   reboot (it is not the container's main process); **`check`** and **`status`** compare the CA
+   file with the running domain's. `infra/auth/acme-samba.json` — which the guide named but the
+   repository did not have — is delivered. A relative `ca_file` no longer depends on the
+   directory the API runs in, and the CA certificate itself may be kept in the settings
+   (`ca_pem`, or the new field in *Directories*).
+2. **"I could not verify review, only gaia-admin could sign in"** — the consequence of 1: the
+   directory had left the sign-in page, and the local account is an administrator and nothing
+   else (D68). In the sandbox, with the directory working, akaya signed in, worked through the
+   queue and corrected `finance.invoices.status` with its codes' meanings in the browser — the
+   path of §24c works; it is yours to judge (26e, step 6).
+3. **Categories: `inventory` → Product, `inventory_movements` → Sales.** The categories are
+   global — those made from `demo_pg`'s schemas, whose only keyword was the schema's name —
+   and `nge_small` keeps everything in `dbo`. So a proposal rested on loose words in what Gaia
+   wrote about each table (a purpose that mentions "sales"), and nothing tied a table to the table
+   it is named after or references. *Fixed (D77), proposals v2:* a table follows the table it is
+   **named after** and those it **references** (foreign keys, joins an SME confirmed); words in
+   the schema, name or business name are *direct* evidence, words only in what Gaia wrote are
+   *weak*; each proposal carries its **basis** (*its names*, *its tables* for a view, *related
+   tables*, *weak*) and its reasons, and the Data categories page can show **only those to check**;
+   a category a person confirmed steers its neighbours at the next proposal. "Create categories
+   from the schemas" also gives each category the words its tables are named with (`sales` →
+   order, payment, return), so it recognises the same data in `dbo` — literal words only: a legacy
+   `tb_trx02` is no evidence of "transactions". And a bug on the way: the HR category's vocabulary
+   was "hour" (the retrieval tokenizer reads `hr` as that abbreviation).
+4. **Runs: after choosing a data source only that one and "any" were offered.** The choices were
+   built from the filtered totals. *Fixed:* the API sends every data source; *Queries* got the same
+   select instead of a free-text box.
+5. **Chat shows an empty page.** As `gaia-admin` the Chat page held one sentence — "Your role
+   covers no data yet … ask your administrator" — and the local account cannot be granted a
+   category (it is an administrator and nothing else), so it was a dead end that looked empty.
+   *Fixed:* the local account has no *Chat* in its navigation, and its Chat and Home pages say why
+   and what to do; an administrator without categories is pointed to *Roles & grants*; a page that
+   fails while rendering now shows its error (the navigation stays) instead of a blank window, and
+   the first load shows "Loading…" instead of nothing. If you saw a *truly* blank window — not
+   even the header — that was such a failure: its message now shows; send it.
+
+### 26c · Found on the way
+
+* **F1 — the order of the run.** §22e's command block ran before `0015`; nine commands printed
+  900 lines of tracebacks, and the grants never happened. *Fixed (D76):* `/health` reports the
+  schema revision (`"schema": {"current": "0015", "expected": "0016"}`), the API logs the missing
+  migration at start-up, and a command that dies on a missing table or column says in one line
+  `the metadata store is at 0015; this build needs 0016: run cd backend && ../gaia-env/bin/alembic upgrade head`.
+* **F10 — need-to-know, found while reproducing your chat.** A query that reached for data outside
+  the person's categories **and** had any other mistake — likely in practice, since the model never
+  sees those tables' columns and guesses them — was treated as a mistake: sent back for repair with
+  "hr.employees is not in the catalog" (an invitation to try again), ended as *failed* instead of
+  *refused*, and was not audited, so the auditor's *Refused questions* stayed empty. Nothing
+  forbidden ever ran (the guard refused every attempt), but the refusal and its audit were wrong.
+  *Fixed (D76):* reaching for an existing object or column outside the role decides the turn,
+  whatever else is wrong; the adversarial suite gained seven statements of that kind and a view
+  read in part (a forbidden column beside a guessed one), each failing on D75's code.
+* **F11 — profiling refused data sources added at runtime** ("no target in config"); reasoning,
+  queries and chat accepted them, so such a data source could only ever be reasoned about without
+  evidence. *Fixed*, with the step in the 4F lifecycle test.
+* **F5 — Entra ID:** `AADSTS7000215` is Microsoft's answer when the secret's **ID** is given
+  instead of its **Value** (or the secret expired). The `directory update --password` prompt now
+  says "the client secret's Value, not its ID".
+* **F6 — the golden runs.** Re-running into an existing `--out` directory replays every recorded
+  answer, so `24_golden_a/b` are D73's runs read again. With `24_golden_sme` (fresh, no SME decision
+  yet) the D72 prompt has now three fresh runs: **97 %, 90 %, 93 %** — executable 100 % in all.
+  The model varies by about ±4 points from run to run; D72 stands (the prompt is D65's), and the
+  baseline for g07's test is 90–97 %. New directory names below for every run.
+* **F7 — 3C.** Criteria 1–3 are met; criterion 1's margin (17.6 points) is larger than any doubt
+  below. Criterion 4 is not: you and the judge agree on 86.2 % of 94 audited columns. Of the 13
+  disagreements the judge was **more lenient in 9** (it said yes or partial where you said no or
+  partial): the LLM judge inflates accuracy a little. B-P was judged on 85 of 99 columns — one
+  table's judge call failed, and the report did not say so; it now lists unjudged columns with the
+  judge's error. My reading: 3C has shown what it was for (evidence helps: +17.6; the score ranks
+  meaning: AUROC 0.80); the judge is not trustworthy enough to calibrate on, which is exactly why
+  Phase 6 calibrates on **your and the SMEs' decisions**, not on the judge (PHASES, Phase 6).
+  Decision P6-0 below.
+* **F8 — smaller:** `make datasource` cut every detail at 100 characters (your `FATAL:` lost its
+  reason); `make query` on a data source never introspected printed a traceback; the Categories
+  page chose the default target even when it was never introspected. All fixed.
+
+### 26d · Decisions for you
+
+* **P6-0 — the 3C gate:** accept 3C with criterion 4 recorded as not met (86 %, a lenient judge),
+  or first re-judge B-P's missing table and extend the audit. I recommend accepting: Phase 6
+  replaces the judge by human labels for everything that matters.
+* **P6-1 … P6-6** — Phase 6 as designed in PHASES (evaluation and calibration); approve, change or
+  cut. Nothing of Phase 6 is built.
+* **D78 (proposed, not built) — who an account is.** Gaia matches a directory account by its
+  login; the directory's stable id (AD's `objectGUID`, Entra's object id) is stored but only
+  refreshed. If a login is ever given to another person (or a test domain is provisioned again),
+  that person inherits the account's own grants — a PII-processor grant included. Recommendation:
+  refuse the sign-in when the stable id changed, audit it, and let an administrator re-link or
+  start a new account. It would make a re-provisioned test domain need one re-link per person;
+  say if you want it in Phase 6's first step.
+
+### 26e · The run (build D77) — replaces §25
+
+**One line of order first**, because F1 cost the last run: *migrate, then test, then anything
+else*. Every step writes `verification/26_*.out` starting with `make stamp`; **every golden run
+gets a new `--out` directory** (F6).
+
+**Step 0 — setup and tests.** No new dependencies; migration `0016` (the basis of category
+proposals).
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/26_migrate.out 2>&1
+(make stamp; make test) > verification/26_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/26_web.out 2>&1
+curl -s 127.0.0.1:8000/health        # with make dev-api running: "schema": {"ok": true, …}
+```
+
+- [ ] `26_migrate.out`: `0015 -> 0016, What a category proposal rests on (D77) …`
+- [ ] `26_tests.out`: `gaia build 2026-11-17 · D77 (triage of the D75 run)` and **724 passed, 0
+      skipped** (sandbox: 714 passed, 10 skipped)
+- [ ] `26_web.out`: **42 passed**, then `✓ built`
+
+**Step 1 — the directory back.** The script is new (26b-1); it works with the container you have.
+
+```bash
+infra/auth/samba-ad-test.sh status     # the container, Samba, and whether acme-ca.pem matches
+```
+
+* "Samba: NOT running" → `infra/auth/samba-ad-test.sh start`.
+* "CA file does NOT match" → **first** see what Gaia says now — `make auth ARGS="directory probe
+  acme"`: the transport line should name the cause as in 26b-1 (on a real Samba; send that line) —
+  **then** `infra/auth/samba-ad-test.sh ca`.
+* finn, the person who only chats, is new in the script. In the container you have:
+
+```bash
+docker exec gaia-ad samba-tool user create finn 'Test-Passw0rd-1' --userou="OU=Finance,OU=People" \
+  --given-name=Finn --surname=Aksoy --mail-address=finn@acme.test --department=Finance
+docker exec gaia-ad samba-tool group addmembers GAIA-Finance finn
+```
+
+  (or `down` and `up`: a new domain; `up` writes its CA file itself, and the probe says if Gaia
+  still trusted the old one.)
+
+Then, with `make dev-api` (`GAIA_AUTH_RECHECK_MINUTES=1` exported) and `make dev-web` running:
+
+```bash
+(make stamp
+ infra/auth/samba-ad-test.sh status
+ make auth ARGS="directory probe acme"
+ make auth ARGS="directory sync acme"
+ make auth ARGS="directory roles acme"
+ make auth ARGS="grant admin --role acme/GAIA-Admins"
+ make auth ARGS="grant user --role acme/GAIA-Finance"
+ make auth ARGS="grant pii_processor --user acme/akaya --note 'test list'"
+ make auth ARGS="grant sme --user acme/akaya --data-source demo_pg"
+ make auth ARGS="grant auditor --role acme/GAIA-HR"
+ make auth ARGS="grant sme --user acme/dyilmaz --data-source demo_pg"   # a conflict, on purpose
+ make auth ARGS="accounts"
+) > verification/26_5a_cli.out 2>&1
+```
+
+- [ ] `status`: Samba running, the CA file matches, `Verify return code: 0 (ok)`
+- [ ] `probe`: four `[PASS]`; **transport** now names the certificate, its issuer and the CA it was
+      verified against, with its SHA-256 — the one `status` printed
+- [ ] `sync`: `users 6, roles 3`, `disabled_in_directory 1`; `roles`: GAIA-Admins 1, **GAIA-Finance
+      4**, GAIA-HR 1
+- [ ] `accounts`: dyilmaz `user, admin` and a conflict line; akaya `user, sme + PII (sme:
+      demo_pg)`; finn `user`; bdemir `auditor`; enorole `no Gaia role`; cpasif `DISABLED`
+
+In the browser (http://127.0.0.1:5173, a private window per person; password `Test-Passw0rd-1`):
+§22e's steps 1–7 as written, with two differences — the local account (step 1) now has no *Chat*
+and its Home page says it cannot chat or review; akaya (step 3) has *Chat* and *Review*.
+
+```bash
+(make stamp; make auth ARGS="grants --all"; make auth ARGS="accounts"; make auth ARGS="audit-check") \
+  > verification/26_5a_after.out 2>&1
+```
+
+**Step 2 — Entra ID.** In the Entra admin center: *Certificates & secrets → New client secret*,
+copy its **Value** (not the Secret ID). Then:
+
+```bash
+make auth ARGS="directory update corp --password"     # paste the Value; the directory must be tested again
+(make stamp
+ make auth ARGS="directory probe corp"
+ make auth ARGS="directory sync corp"
+ make auth ARGS="directory roles corp"
+ make auth ARGS="grant admin --role corp/GAIA-Admins"
+ make auth ARGS="grant user --role corp/GAIA-Finance"
+ make auth ARGS="grant auditor --role corp/GAIA-HR"
+ make auth ARGS="accounts"
+) > verification/26_entra_cli.out 2>&1
+```
+
+§23c's expectations and browser steps 1–4 as written (http://localhost:5173), then
+`(make stamp; make auth ARGS="accounts"; make auth ARGS="audit-check") > verification/26_entra_after.out 2>&1`.
+
+**Step 3 — categories, on both databases.** As §25d, with the new proposals, and `demo_mssql`
+(`nge_small`) added — the database of your observation:
+
+```bash
+(make stamp
+ make access TARGET=demo_pg ARGS="from-schemas"      # existing ones are completed with their tables' words
+ make access ARGS="categories"
+ make access TARGET=demo_pg ARGS="propose"
+ make access TARGET=demo_pg ARGS="objects --why"
+ make access TARGET=demo_mssql ARGS="propose"
+ make access TARGET=demo_mssql ARGS="objects --why"
+ make access ARGS="suggestions"
+ make auth ARGS="grant category --role acme/GAIA-Finance --category Sales"
+ make auth ARGS="grant category --role acme/GAIA-Finance --category Store"
+ make auth ARGS="grant category --role acme/GAIA-Finance --category Product"
+ make auth ARGS="grant category --role acme/GAIA-Finance --category Crm"
+ make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"
+ for c in Crm Finance Hr Legacy Product Rpt Sales Store; do
+   make auth ARGS="grant category --role acme/GAIA-Admins --category $c"
+ done
+ make auth ARGS="accounts"
+ make access TARGET=demo_pg ARGS="policy finn"
+ make access TARGET=demo_pg ARGS="policy dyilmaz"
+) > verification/26_access_cli.out 2>&1
+```
+
+- [ ] `categories`: Sales `order, payment, return, sales`; Hr `department, employee, hr`; Legacy
+      `legacy` only; Rpt `rpt`
+- [ ] `demo_pg`: every object proposed, resting on `25 direct, 3 view` (`v_daily_sales` Sales,
+      `v_legacy_transactions` Legacy, `mv_product_margin` Product from what they read;
+      `v_customer_overview` Rpt)
+- [ ] `demo_mssql`: **`inventory` and `inventory_movements` in one category**; the families together
+      (`transactions` with `transaction_lines` and `payments`; `customers` with their addresses and
+      e-mails …); each with its reasons. **Tell me every proposal you find wrong** — with its
+      reason line, that is exactly what I need to tune the weights
+- [ ] `policy finn`: `20 of 28 object(s) readable; personal data masked`; `policy dyilmaz`: 28 of 28
+
+In the browser as dyilmaz: *Data categories* → `demo_mssql` → **only those to check**: what rests
+on related tables or only on Gaia's words, and what has nothing. Confirm one family head (e.g.
+`dbo.inventory` → the category you want) and press *Let Gaia propose* again: its family follows.
+The auditor's *Events* show both changes.
+
+**Step 4 — you as SME of `demo_pg` (and g07).** §24c as written, as akaya, then §24d with new names:
+
+```bash
+(make stamp; make review TARGET=demo_pg ARGS="--limit 15"; make auth ARGS="audit-check") \
+  > verification/26_review_after.out 2>&1
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d77sme") \
+  > verification/26_golden_sme.out 2>&1
+(make stamp; make reason TARGET=demo_pg ARGS="--table finance.invoices --force --no-cache") \
+  > verification/26_carry.out 2>&1
+```
+
+- [ ] `26_golden_sme.out`: `model calls: N new` (not replayed); **g07 correct**
+- [ ] §25e's two additions (the category of `finance.invoices`, `crm.customers.first_name` as
+      personal data)
+
+**Step 5 — need-to-know and the chat, in a browser.** §25f as written, with finn. New: after
+finn's steps 5–7, his refusals are in the auditor's *Refused questions* with what they reached
+for (F10), and in *Queries* as "refused (need-to-know)".
+
+```bash
+(make stamp; make auth ARGS="audit-check") > verification/26_after.out 2>&1
+```
+
+**Step 6 — the golden run as a person.** dyilmaz holds every category; in this run the
+PII-processor permission went to akaya alone, so give it to dyilmaz too — without it his prompts
+mask personal data and differ from the operator's (§25g):
+
+```bash
+make auth ARGS="grant pii_processor --user acme/dyilmaz --note 'the golden run as a person'"
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d77_as_admin --as dyilmaz") \
+  > verification/26_golden_as.out 2>&1
+```
+
+- [ ] `as dyilmaz: 28 object(s) readable`; the numbers within the 90–97 % of F6 (plus g07 if step
+      4 fixed it)
+
+**Step 7 — 3C, the missing judgement (optional, P6-0).**
+
+```bash
+(make stamp; make evaluate-judge ARGS="--out evaluations/nge_small --labels verification/labels_nge_small.csv --condition B-P"
+ make evaluate-report ARGS="--out evaluations/nge_small --labels verification/labels_nge_small.csv") \
+  > verification/26_report_nge.out 2>&1
+```
+
+- [ ] the report's B-P line no longer says "N answered column(s) not judged" — or says why (the
+      judge's error): send it
+
+### 26f · What to send
+
+`26_migrate.out`, `26_tests.out`, `26_web.out`, `26_5a_cli.out`, `26_5a_after.out`,
+`26_entra_cli.out`, `26_entra_after.out`, `26_access_cli.out`, `26_review_after.out`,
+`26_golden_sme.out`, `26_carry.out`, `26_after.out`, `26_golden_as.out`, `26_report_nge.out`
+(optional), the probe line of step 1 if the CA did not match, the wrong category proposals
+(step 3), and anything on the screens that was unclear (a screenshot is fine). Then I triage, and
+the Phase 5 gate is yours.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -2212,7 +2559,13 @@ wrong (a screenshot is fine). Then I triage, and Phase 5's gate is yours.
 | `make measure` takes long | large tables, cold cache | it stops starting new work at `--max-minutes` (90); partial reports are still useful |
 | `REFUSED: another reasoning or re-scoring run holds '…'` | a second `make reason` / `make rescore` on the same data source (D67) | wait for the first; a crashed run releases the lock when its connection closes |
 | Sign-in: "Sign-in failed" for a right password | no Gaia role (no grant to the person or their directory roles), disabled in the directory, or locked after 5 failures (15 min) | the auditor's Events, or `audit.auth_event`, show the real reason (`sign_in_refused`) |
-| `directory probe`: `bind … directory unreachable` | address, port or TLS: the certificate's name must match the URL's host | `ca_file` for a private CA; a hosts entry for the certificate's name; `tls_verify: false` only for a test directory |
+| `directory probe`: `transport … signed by a CA named like the one in … but with a different key` (before D77: `bind … certificate signature failure`) | the directory's CA was created anew under the same name — for the Samba test AD: the domain was provisioned again (`down` + `up`) | `infra/auth/samba-ad-test.sh ca` (or your AD's current CA into `ca_file`), then `directory probe` |
+| `directory probe`: `transport …` another cause (another issuer, a host name the certificate does not carry, does not resolve, connection refused, not TLS) | address, port or TLS | what the line says: `ca_file` (relative paths start in `backend/`) or the CA itself (`ca_pem`); a hosts entry for the certificate's name; `tls_verify: false` only for a test directory |
+| The sign-in page offers only the local account | no directory is `verified`: never tested, changed since, or (before D77) its last test failed | *Directories* → *Test connection* (or `make auth ARGS="directory probe NAME"`); since D77 a failed test of settings that passed before keeps the directory offered |
+| The Samba test AD stopped answering after a reboot | Samba is not the container's main process | `infra/auth/samba-ad-test.sh start`; `status` says whether the CA file still matches |
+| `FAILED: … does not exist` and `the metadata store is at 00NN; this build needs 00MM` | a migration of this build is not applied | `cd backend && ../gaia-env/bin/alembic upgrade head`, then the command again; `/health` shows `"schema"` |
+| `make profile`: `REFUSED: no target 'X' in config` for a data source added at runtime | builds before D77 profiled config targets only | D77 profiles them too |
+| Category proposals put related tables apart | builds before D77 matched words only | D77: `make access TARGET=… ARGS="propose"`, then `objects --why`; confirm a family's head and propose again |
 | `directory probe`: `the service account's bind was refused` | `bind_dn` or its password | `make auth ARGS="directory update NAME --password"` |
 | Every API call answers 401 | no session (sign in), or the session expired (30 min idle, 8 h at most) | sign in again; from scripts, log in with `POST /api/auth/login` and send the `X-CSRF-Token` header on changes |
 | `missing or wrong CSRF token` | a POST/PATCH/DELETE without the `X-CSRF-Token` header (the value of the `gaia_csrf` cookie) | the web UI sends it; a script must too |

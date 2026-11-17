@@ -132,6 +132,36 @@ async def test_a_directory_from_connection_to_roles(world):
 
 
 @pytest.mark.asyncio
+async def test_a_failed_test_does_not_take_sign_in_away(world):
+    """D76: on the owner's host a stale CA made the test fail, the directory turned
+    "failed" and left the sign-in page — only the local account was left. A failing test of
+    settings that passed before keeps the directory offered and says so; settings that
+    never passed are still "failed"."""
+    svc, _clock, net, factory = world
+    await _ready(svc, factory)
+    await svc.grant("user", actor="a", role=("acme", "GAIA-Finance"))
+    net.down = True
+    view = await svc.probe_directory("acme", actor="tester")
+    assert view["status"] == "verified" and view["last_test_failed"] is True
+    assert [d["name"] for d in (await svc.sign_in_options())["directories"]] == ["acme"]
+    with pytest.raises(SignInRefused):  # the sign-in itself fails while the cause lasts
+        await svc.sign_in("akaya", PASSWORDS["akaya"])
+    probed = [e for e in await _events(factory) if e.action == "directory_probed"][-1]
+    assert probed.detail["kept_for_sign_in"] is True and probed.detail["ok"] is False
+    refused = [e for e in await _events(factory) if e.action == "sign_in_refused"][-1]
+    assert "unreachable" in refused.detail["reason"]
+    net.down = False
+    view = await svc.probe_directory("acme", actor="tester")
+    assert view["status"] == "verified" and view["last_test_failed"] is False
+    assert (await svc.sign_in("akaya", PASSWORDS["akaya"]))[0].login == "akaya"
+    # settings never proven: a failing test leaves them out of the sign-in page
+    await svc.add_directory("beta", "ldap", settings(), SVC_PW, actor="tester")
+    net.down = True
+    assert (await svc.probe_directory("beta", actor="tester"))["status"] == "failed"
+    assert [d["name"] for d in (await svc.sign_in_options())["directories"]] == ["acme"]
+
+
+@pytest.mark.asyncio
 async def test_sign_in_needs_a_gaia_role_and_says_nothing_more(world):
     svc, _clock, _net, factory = world
     await _ready(svc, factory)

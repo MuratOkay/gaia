@@ -5,7 +5,7 @@
     make access ARGS="change Finance --keywords finance,invoice,ledger | retire Finance"
     make access TARGET=demo_pg ARGS="from-schemas"          # one category per schema
     make access TARGET=demo_pg ARGS="propose"               # Gaia's proposals
-    make access TARGET=demo_pg ARGS="objects"               # every object, its category
+    make access TARGET=demo_pg ARGS="objects [--why]"       # every object, its category (and why)
     make access TARGET=demo_pg ARGS="place finance.invoices Finance --note 'SME said so'"
     make access ARGS="suggestions"                          # directory roles -> categories
     make access TARGET=demo_pg ARGS="policy akaya [--directory acme]"   # what they may read
@@ -61,12 +61,23 @@ async def _run(args: argparse.Namespace) -> int:
             print(f"retired {r['name']}")
         elif c == "from-schemas":
             made = await svc.from_schemas(target, actor=actor)
-            print(f"{len(made)} categor{'y' if len(made) == 1 else 'ies'} added: "
-                  + ", ".join(m["name"] for m in made))
+            added = [m for m in made if m.get("action") == "added"]
+            completed = [m for m in made if m.get("action") == "completed"]
+            print(f"{len(added)} categor{'y' if len(added) == 1 else 'ies'} added: "
+                  + (", ".join(f"{m['name']} ({', '.join(m['keywords'])})" for m in added)
+                     or "—"))
+            for m in completed:
+                print(f"  {m['name']}: keywords added {', '.join(m['added_keywords'])}")
         elif c == "propose":
             r = await svc.propose(target, actor=actor)
             print(f"{target}: {r['proposed']} proposed, {r['unchanged']} unchanged, "
                   f"{r['confirmed_kept']} confirmed kept, {r['none']} without a proposal")
+            bases = r.get("by_basis") or {}
+            if bases:
+                print("  proposals rest on: " + ", ".join(
+                    f"{n} {b}" for b, n in sorted(bases.items()))
+                      + ("  — `objects` lists them; check the weak and related ones"
+                         if bases.get("weak") or bases.get("related") else ""))
             for name, why in sorted(r["why_none"].items()):
                 print(f"  no proposal for {name}: {why}")
         elif c == "objects":
@@ -77,8 +88,11 @@ async def _run(args: argparse.Namespace) -> int:
             for r in rows:
                 cat = r["category"]
                 place = "—" if cat is None else (
-                    f"{cat['name']} ({cat['status']} by {cat['decided_by'] or 'gaia'})")
+                    f"{cat['name']} ({cat['status']} by {cat['decided_by'] or 'gaia'}"
+                    + (f", {cat['basis']}" if cat.get("basis") else "") + ")")
                 print(f"  {r['name']:<40} {r['kind']:<6} {place}")
+                if args.why and cat and cat["status"] == "proposed" and cat.get("reason"):
+                    print(f"  {'':<40}        {cat['reason']}")
         elif c == "place":
             from gaia.db.models.catalog import DataSource, TableRecord
 
@@ -138,7 +152,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("name")
     sub.add_parser("from-schemas")
     sub.add_parser("propose")
-    sub.add_parser("objects")
+    o = sub.add_parser("objects")
+    o.add_argument("--why", action="store_true", help="the reasons of Gaia's proposals")
     s = sub.add_parser("place")
     s.add_argument("object", help="schema.object")
     s.add_argument("category")

@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-17 (**5C, 5D, 5E built — Phase 5 complete in the sandbox**, build `2026-11-17 · D75 (5C–5E)`) · Status: Phases 0–2 complete · Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B done; **3C**: every condition answered and judged on the host, the report and the owner's audit remain · **D52**, **D56** · **Phase 4 complete** (owner, 2026-11-17: golden run 100 % / 97 %, retrieval 95 % / 95 %) · **Phase 5 in progress** (approved 2026-11-17, D68–D71): **5.0**, **5A** and **5A.2** built and passing on the host (698 tests, D71; a real directory and a real Entra tenant still to run, OWNER_VERIFICATION §22e, §23c); **5B** SME review, the SQL prompt back to D65's wording (D72), **5C** need-to-know, **5D** the chat screen and **5E** the runs view built in the sandbox — verified on the host together, with a real AD/LDAP and Entra ID (OWNER_VERIFICATION §25) · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
+> Last updated: 2026-11-17 (**the D75 host run triaged; build `2026-11-17 · D77 (triage of the D75 run)`**; **Phase 6 designed**) · Status: Phases 0–2 complete · Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B done; **3C**: judged and reported on the host — criteria 1–3 met, the owner's audit 86 % (criterion 4 not met; P6-0) · **D52**, **D56** · **Phase 4 complete** (owner, 2026-11-17: golden run 100 % / 97 %, retrieval 95 % / 95 %) · **Phase 5**: every stage built; on the host 5A against a real Samba AD up to the grants, then the run stopped at the directory (a re-provisioned domain's new CA; OWNER_VERIFICATION §26) — D76/D77 fix what it found; **the next run is §26e** · **Phase 6 designed** (evaluation and calibration on human labels), awaiting approval · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -40,8 +40,8 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **IN PROGRESS** — 3.P, 3.0, 3A (PostgreSQL), 3B done; 3C: all five conditions answered and judged on the host; the report and the owner's audit remain (OWNER_VERIFICATION §22d); SQL Server residue S2/S3 closed (D56) | ✅ approved 2026-11-14 · 3.0 ✅ 3A ✅ (PostgreSQL) 3B ✅ · 3C open |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
-| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **IN PROGRESS** — 5.0, 5A (passing on the host) and 5A.2 (Entra ID, sandbox) built, build D71; next 5B (review) | ✅ approved 2026-11-17 |
-| 6 | Evaluation harness, score calibration from SME labels (per model) | **planned** | ⬜ |
+| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **IN PROGRESS** — every stage built (5.0 … 5E, D68–D75); the D75 host run proved 5A against a real AD up to the grants and stopped at the directory; triaged, build D77 (D76, D77); next: OWNER_VERIFICATION §26e | ✅ approved 2026-11-17 |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **designed** (2026-11-17), awaiting approval (P6-0 … P6-7) | ⬜ |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence | **backlog** | ⬜ |
 
 ### Environment as it stands
@@ -60,9 +60,10 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | host, 2026-11-16: `nge_small` all 71 objects / 607 columns (231 accepted; queue 289); `demo_pg` all 28 objects / 213 columns (108 accepted) |
-| Tests | build D75: **698 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — 708 expected on the host (D71 on the host: **698 passed, 0 skipped**); the web UI: 34 (vitest). The sandbox's metadata store is PostgreSQL 16.15 with pgvector 0.6.2 and every extension but `pg_trgm`/`unaccent` for the test database; migrations are checked on a full one (DDL identical to the models) |
+| Tests | build D77: **714 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — 724 expected on the host (D75 on the host: **708 passed, 0 skipped**); the web UI: 42 (vitest). The sandbox's metadata store is PostgreSQL 16.15 with pgvector 0.6.0 (every extension) — migrations checked down and up
 | Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
-| Migrations | `0001`–`0014` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message) |
+| Sandbox (2026-11-17, D76) | Also a **real LDAPS directory** with the Samba script's people and groups and a Samba-shaped certificate chain (`ldaptor`), a **headless Chromium** driving the web UI, and an OpenAI-compatible **scripted model** and embedding stub: sign-in, review, chat, refusals and the admin pages run through uvicorn and Vite as on the host. Still no SQL Server, no LLM gateway, no Docker
+| Migrations | `0001`–`0016` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal) |
 | Web UI (Phase 5) | `frontend/`: Vite 8 + React 19 + TypeScript 5.9 + i18next, pnpm; `make web-install`, `make dev-web` (127.0.0.1:5173, proxies `/api`), `make web-test`, `make web-build` |
 
 ---
@@ -2090,7 +2091,7 @@ Revised 2026-11-16 for D52.
 
 ---
 
-## Phase 5 — Sign-in, roles and need-to-know; SME review first, then chat; administration (R1; scope revised 2026-11-17) · **approved 2026-11-17 — every stage built (5.0 … 5E); host verification pending (§25)**
+## Phase 5 — Sign-in, roles and need-to-know; SME review first, then chat; administration (R1; scope revised 2026-11-17) · **approved 2026-11-17 — every stage built (5.0 … 5E); the D75 host run triaged (D76, D77); host verification: §26e**
 
 **Goal.** People of a company sign in with their directory account and get what their role
 allows: an **SME** reviews and corrects Gaia's meanings for the data sources assigned to them,
@@ -2650,6 +2651,56 @@ keyword matching — good on schemas named after domains, weak on `dbo` — whic
 placement is shown and confirmed by people; a forbidden name the user types is not echoed, but
 "cannot answer" still tells them the question could not be answered.
 
+### Owner runs on D75 (2026-11-17) — triage, and build D77
+
+OWNER_VERIFICATION §26 has the details. The files (all stamped D75, most named after §22–§24)
+prove: **708 passed, 0 skipped** on the host as expected; the web UI's 34 tests and a
+bundle byte-identical to the sandbox's; **5A against a real AD** up to the grants — LDAPS with a
+private CA, the service bind, 5 users, 3 groups, nesting through Team-HR, exactly §22e's
+expectations. Then the run stopped at the directory, so 5B–5E were not verified on the host:
+
+* **The grants failed** because §22e's block ran before migration `0015` (F1) and were never
+  repeated, so no directory person had a Gaia role.
+* **The directory stopped answering**: the Samba domain was provisioned again, which makes a new
+  self-signed CA under the *same name*; `acme-ca.pem` held the old one → OpenSSL's *certificate
+  signature failure*. Reproduced exactly in the sandbox. Gaia's test had said `transport PASS`
+  without a handshake, and the failed test turned the directory `failed`, which took it off the
+  sign-in page: only `gaia-admin` was left, so no SME could review (the owner's "review box").
+* **Categories** proposed related tables apart on `nge_small` (`inventory` Product,
+  `inventory_movements` Sales): word matching only, with categories made from `demo_pg`'s schemas.
+* **Runs**: the data-source choice was built from the filtered totals. **Chat** for `gaia-admin`
+  was a one-sentence dead end (the local account cannot hold categories, D68).
+* Found while reproducing: **need-to-know refusals lost to repairs** (a forbidden reference beside
+  any other mistake was repaired, ended `failed` and went unaudited — nothing ran, but the refusal
+  and its audit were wrong); **profiling refused runtime data sources**; the 3C report hid B-P's
+  14 unjudged columns.
+* The golden runs: `24_golden_a/b` were replays of D73's runs (97 %, 90 %); `24_golden_sme` — fresh,
+  before any SME decision — 93 %. The D72 prompt's spread is ±4 points; D72 stands.
+* 3C: criteria 1–3 met (B-P +17.6 points over B-C, N-P = N-C, AUROC 0.802); the owner's audit
+  agrees with the judge on **86.2 %** of 94 columns — criterion 4 not met, the judge the more lenient
+  in 9 of 13 disagreements (P6-0).
+
+**Build D77** (D76, D77; sandbox): every finding above fixed with a test, each test failing on
+D75's code first. The directory test performs the TLS handshake and explains a refusal
+(`gaia.auth.tls`); a failing test of settings that passed before keeps the directory at sign-in;
+`ca_file` no longer depends on the working directory, and `ca_pem` keeps the CA in the settings;
+the Samba script writes its CA, and gained `start`, `check`, `status` and finn; `acme-samba.json`
+is delivered. `/health`, the API's start-up and every command-line tool say when a migration is
+missing. `AccessGuard` decides a forbidden reference before a mistake (the adversarial suite +7
+statements and a view read in part). Category proposals v2 (`gaia.access.proposal`, migration
+`0016`). Profiling resolves runtime data sources. The UI: the runs and queries filters, the chat
+and home of someone with nothing to ask, an error boundary, *last test failed* and the CA field on
+*Directories*, the basis of each proposal and "only those to check" on *Data categories*.
+
+Verified in the sandbox with the real processes — a real LDAPS directory (the Samba script's
+people and groups, served by `ldaptor` with a Samba-shaped certificate chain), uvicorn, Vite, a
+headless Chromium and a scripted OpenAI-compatible model: the owner's error reproduced and then
+explained by the test, the directory kept at sign-in, every role signed in through the directory,
+akaya's review decision on `finance.invoices.status` in the browser, finn's chat (the table
+first, a clarification, e-mails masked, refusals now *Not allowed* and in the auditor's *Refused
+questions*), the runs filter, the categories page on a `dbo`-shaped database. Tests: **714
+passed, 10 skipped** (+16), web **42** (+8); migration `0016` down and up.
+
 ### Decisions needed
 
 *P5-1 and P5-2 of the former plan are superseded: the owner's directive settles identity (the
@@ -2699,57 +2750,203 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
       plan … Let's start"; every decision answered, D68–D70); P5-1 … P5-3, P5-8, P5-10, P5-11,
       P5-12 answered (the others before the stage that needs them)
 - [ ] 5.0 complete (triage fixes; may run before the approval above) → 5A *(on the host, D68: T1
-      closed, T5 and T6 seen working; the golden run's dip to 90 %: three runs, not noise — T6's
-      prompt sentence withdrawn (D72), two fresh runs on D73 decide, §24b)*
-- [ ] 5A verified against a real directory on the host *(§22e, waiting)*
-- [ ] 5A.2 (Entra ID) verified against a real tenant *(built; tests pass on the host, D71; §23c)* → 5B
-- [ ] 5B verified by the owner as SME on `demo_pg` (g07 included) → 5C *(built, D73; §25)*
+      closed, T5 and T6 seen working; the golden run's dip to 90 %: T6's prompt sentence withdrawn
+      (D72); three fresh runs of the D72 prompt since — 97, 90, 93 % — so the model's spread is
+      ±4 points and D72 stands (§26c F6))*
+- [ ] 5A verified against a real directory on the host *(D75 run: LDAPS with a private CA, the
+      service bind, users, groups and nesting proven on a Samba AD by the CLI — `22_5a_cli.out`;
+      the grants, the browser and the re-check did not run (the migration order, then a stale CA):
+      §26e)*
+- [ ] 5A.2 (Entra ID) verified against a real tenant *(built; tests pass on the host, D71; D75 run:
+      discovery and keys of your tenant pass, the stored client secret is refused — its ID, not its
+      Value: §26e step 2)* → 5B
+- [ ] 5B verified by the owner as SME on `demo_pg` (g07 included) → 5C *(built, D73; no SME could
+      sign in on D75; §26e step 4)*
 - [ ] 5C adversarial suite passing → 5D offered to the `user` role *(built, D74: passing in the
-      sandbox — 0 executed; `user` is in `auth.chat_roles`; §25 on the host)*
-- [ ] 5D and 5E (read-only) complete → **Phase 5 done** *(built, D75; §25)*
+      sandbox — 0 executed; since D76 a forbidden reference beside any other mistake is refused,
+      not repaired (+7 statements); `user` is in `auth.chat_roles`; §26e step 5 on the host)*
+- [ ] 5D and 5E (read-only) complete → **Phase 5 done** *(built, D75; the runs filter and the
+      chat of someone with nothing to ask fixed in D77; §26e)*
 
 ---
 
 
-## Phase 6 — Evaluation & calibration
+## Phase 6 — Evaluation & calibration · **designed 2026-11-17 — awaiting approval**
 
-**Goal.** Make quality measurable and regressions visible, and turn the
-heuristic score into a calibrated probability.
+**Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
+way every time; a regression is seen **before** a build ships; and a score means what it says —
+"0.8" is right about 8 times in 10, for the model that produced it.
+
+### What Phases 3–5 left for this phase (2026-11-17)
+
+| Have | Where | Why it is not enough yet |
+|---|---|---|
+| Column scores (`heuristic-v2`), their evidence ledger, `calibrated_score` = identity | 3B, OUTLINE §12 | the weights are placeholders; nothing says how often a 0.8 is right |
+| **Human labels**: every SME decision (5B: accept / correct / reject, signed, per version), the owner's 40 columns of `nge_small` and the 3C audit | 5B, 3C | not collected into one place, not mapped to "right / partly / wrong", not used |
+| Golden runs (`demo_pg`, 32 questions), retrieval recall, clarification records (D61) | 4B, 4D | one run per build, files in `evaluations/`; a re-run into the same directory is a replay (the D75 run read two replays as fresh runs) |
+| The 3C harness and an LLM judge | 3C | the judge agrees with the owner on 86 % of columns and is the more lenient one in 9 of 13 disagreements (§26c F7): good for triage, not for calibration |
+| The answers' confidence, shown as a level with reasons (T7) | 4C, 5D | uncalibrated: g07 (wrong) was "medium", g01 (right) "low" |
+| Category proposals with their basis (D77), and the placements people confirmed | 5C | nothing measures how often a proposal is kept |
+
+And one measured fact that shapes the design: **the golden run varies by about ±4 points from run
+to run** with an unchanged prompt (97 / 90 / 93 %, §26c F6). A single run cannot tell a
+regression of less than ~7 points from noise, so Phase 6 compares *sets* of runs, question by
+question, and says how sure it is.
+
+### Design
+
+**6.0 — Phase 5 closed first.** The triage of §26e; the Phase 5 gate; the 3C gate (P6-0); D78
+if the owner wants it built (an account is the directory's object, not its login).
+
+**6A — one evaluation store, one report.** Schema `evaluation` (migration number at creation, R4):
+`evaluation_run` (kind — golden, retrieval, semantics, categories —, data source, build, git
+commit, model, prompt versions, snapshot, config hash, replayed or fresh, started/finished, cost)
+and `evaluation_item` (one question or column per run: expected, got, correct, the confidence
+shown, latency, tokens, the query run). The golden, retrieval and 3C tools write there as well as
+to their directories; a **fresh** run and a **replay** are recorded as what they are, and
+`--out` refuses an existing directory unless `--replay` or `--resume` says which is meant (F6).
+`make quality TARGET=… ` writes one report per data source and model: correct and executable
+answers with a 95 % interval (Wilson), clarification asked-back rate and best-guess agreement
+with its Beta lower bound (OUTLINE §36, method 1), retrieval recall, column-meaning accuracy
+against **human** labels with its interval, calibration error before and after (6C), latency
+p50/p95, tokens and cost — and, between two runs or two sets of runs, **the difference per
+question**. An *Evaluation* page (administrators, auditors; read-only, like *Runs*) shows the
+latest reports and their trend.
+
+**6B — labels from people, in one place.** A label is a person's verdict on Gaia's meaning of a
+column, at a version: an SME's *accept* → right; *correct* → wrong when the name, purpose or role
+changed, partly when only unit, entity or other names did; *reject* → wrong; *not used* → no
+label. The owner's 3C labels and audit count the same way; a stale decision (its column changed)
+stops counting. The LLM judge stays for triage — its agreement with people (Cohen's κ) is in every
+report — and never feeds a calibrator or a gate. Because the SME sees Gaia's certainty while
+deciding, a small random share of review items (P6-5: 10 %) is shown *without* it, to measure
+whether people anchor on it.
+
+**6C — column scores that mean what they say.** Per reasoning model (R3, A7) and scoring version:
+isotonic regression from `raw_score` to P(right), fitted on the labels of 6B — Platt scaling below
+the minimum of P6-1, the identity (and "uncalibrated" on the screens) below half of it. Fitted
+with cross-validation and judged on held-out labels: expected calibration error, Brier score and
+a reliability diagram, **against the identity**. The calibrator's version is stored beside every
+score (`calibrated_score`); the bands (`accept_at` …) are re-expressed as probabilities (P6-3),
+so the review queue ranks by calibrated uncertainty. Pooling across data sources of one model is
+partial (hierarchical), so a new data source starts from the others' calibration instead of from
+nothing.
+
+**6D — answers whose confidence means what it says.** P(the answer is right) from what Gaia knows
+when it answers — the retrieval scores, repairs, how many meanings it used are SME-confirmed or
+uncertain, whether it clarified, the question's kind — fitted (logistic, then isotonic) on the
+golden runs and on **people's feedback**: under an answer, "Was this right? yes / partly / no" with
+a note (P6-4). A "no" opens a review item for the data source's SME, who decides what was wrong (a
+meaning, a missing definition, the model); only a decided item becomes a label. People who only
+chat still see a level — its thresholds now fitted ("high" = right at least 95 % of the time, with
+the interval) — and SMEs, administrators and auditors the probability (P6-2).
+
+**6E — regressions seen before they ship.** Two nets. *Replayed* (no model, seconds, in `make
+test`): every golden question's prompt is compared byte for byte with the last accepted one, and
+the recorded answers are replayed through today's guard, executor and scorer — a code change that
+alters a prompt or an outcome fails the suite and names the question. *Fresh* (the model, minutes):
+a change that alters a prompt — or a new model — runs the golden set **three times**, and is
+compared question by question with the baseline's three runs (a paired bootstrap of the
+difference); it passes when the lower bound of the difference is above −3 points (P6-2). The
+acceptance test of the phase is a deliberate regression: a prompt with its JOINS rule removed, and
+a guard that lets a fan-out join through, must both be caught.
+
+**6F — more and harder questions.** `nge_small`'s golden set (P4-1, P6-6: Gaia drafts ~30
+questions from the schema and the meanings, the owner corrects them) and its first T-SQL golden
+run; golden runs *as a person* for each role pattern (`--as`, need-to-know in force); the
+clarification measurements of D61 with their intervals, which decide D61 (b) — answering without
+asking when the agreement's lower bound clears 90 % for that kind of ambiguity.
+
+**6G — category proposals measured.** How often Gaia's proposal is what people confirmed, per
+basis (D77) and per data source; the weights of D77 fitted to that record (still a deterministic,
+explainable rule — the fit chooses its numbers, not a model at run time).
+
+*Cut line:* 6A–6C and 6E are the phase; 6D's feedback control, 6F's drafted questions and 6G can
+move to Phase 7 if time is short. Scheduling runs, switching models from the screen and the
+overnight refresh stay in Phase 7 (P5-12); 6A makes a model switch *measurable*, which Phase 7's
+"impact preview" needs.
+
+### Order of work
+
+| Step | What | Verifiable in the sandbox | Needs the host |
+|---|---|---|---|
+| 6.0 | §26e triaged; Phase 5 and 3C gates; D78 if accepted | D78 with the LDAPS directory | §26e's outputs |
+| 6A | `evaluation` schema; the tools write to it; fresh vs replay; `make quality`; the *Evaluation* page | fully, with the scripted model | a real report on both data sources |
+| 6B | labels from decisions, 3C labels and audit; κ of the judge; blind share of review items | fully | the owner's decisions of §26e (the first real labels) |
+| 6C | calibrators per model; ECE/Brier/reliability; bands as probabilities | with synthetic labels | a fit on real labels (P6-1's count) |
+| 6D | answer confidence; the feedback control; feedback → review item → label | fully | people's feedback over weeks |
+| 6E | the replayed net in `make test`; three fresh runs and the paired comparison; the deliberate regressions | fully (scripted model) | three fresh golden runs as the baseline (~6 min) |
+| 6F | `nge_small` golden set (drafted, corrected), T-SQL golden run, persona runs, D61 (b) | drafting only | the owner's corrections; SQL Server |
+| 6G | proposal accuracy per basis; weights fitted | with a synthetic record | the owner's confirmed placements |
 
 ### Deliverables
 
-- `db/models/evaluation.py`, evaluation migration (number assigned at creation, R4)
-- Golden question suite with expected SQL and expected result shape
-- Column-purpose test set with SME-agreed labels (seeded by the owner's 40-column
-  set from 3C, then grown from Phase 5 review decisions)
-- Calibration (R3): fit isotonic/Platt on SME-reviewed examples **per reasoning
-  model** (model confidence differs per provider, A7), later per data source;
-  inputs are the Phase 3 evidence ledgers; store the calibrator version beside
-  the score
-- `scripts/evaluate.py` producing a repeatable report
-- Regression diffing between runs (score changes, SQL changes, pass/fail deltas)
+- Back end: `db/models/evaluation.py` and its migration; `gaia/evaluation/store.py` (runs and items),
+  `labels.py` (6B), `calibration.py` (6C, per model and scoring version), `answer_confidence.py`
+  (6D), `compare.py` (paired comparison, bootstrap), `quality.py` (the report); `api/evaluation.py`
+  (read-only); the feedback endpoint on a chat message
+- CLI: `make quality`, `make calibrate` (fit, report, `--apply`), `make golden --runs 3`,
+  `make compare ARGS="--baseline RUNS --candidate RUNS"`
+- Web: the *Evaluation* page (administrators, auditors); "Was this right?" under an answer; the
+  probability for SMEs, administrators and auditors
+- Tests: calibration against known distributions; the replayed golden net; the deliberate
+  regressions; label mapping; feedback → review item; every number of the report recomputed from
+  its items
+- Docs: OUTLINE (evaluation and calibration as built), USER_GUIDE (reading the report), a
+  measurement note per host report in `docs/measurements/`
 
 ### Acceptance criteria
 
-- [ ] One command produces a report: execution accuracy, column-purpose accuracy,
-      calibration error, mean latency, tokens, cost
-- [ ] Report is reproducible run-to-run on an unchanged schema
-- [ ] Calibration improves over identity baseline, measured, not asserted
-- [ ] A deliberate prompt regression is caught by the suite
+- [ ] One command (`make quality`) produces the report for a data source and model: correct and
+      executable answers with intervals, clarification metrics with intervals, retrieval recall,
+      column-meaning accuracy against human labels, calibration error, latency, tokens, cost
+- [ ] Reproducible: two reports of the same runs are identical; a replayed run is marked as one
+- [ ] Calibration improves over the identity on held-out human labels — ECE and Brier, measured,
+      per model — or the report says there are too few labels (P6-1)
+- [ ] A deliberate prompt regression (JOINS rule removed) and a deliberate code regression (a
+      fan-out join allowed) are both caught — the first by the fresh net, the second by the
+      replayed one, which runs in `make test`
+- [ ] The golden run is reported over three runs, and a change is compared question by question
+      with its baseline (P6-2)
+- [ ] "High" confidence answers are right at least as often as their threshold says, with the
+      interval shown (6D; P6-2)
+- [ ] The judge's agreement with people is in every report and no calibrator or gate reads it
+- [ ] The category proposals' accuracy per basis is reported (6G, if not cut)
 
 ### Decisions needed
 
-| # | Decision | My recommendation |
-|---|---|---|
-Renumbered `P6-n` (formerly 15–16).
+| # | Decision | Needed by | Recommendation |
+|---|---|---|---|
+| P6-0 | The 3C gate: criteria 1–3 met, criterion 4 (owner audit ≥ 90 %) at 86.2 % | now | **Accept 3C** with criterion 4 recorded as not met; the judge becomes triage only (6B) |
+| P6-1 | How many labels before a calibrator is used (per model) | 6C | **150 labelled columns with at least 30 wrong or partly wrong**; Platt from 75; identity below |
+| P6-2 | The primary gate, and what confidence users see | 6D, 6E | **Correctness on the golden set over 3 runs**, a change passing when the lower bound of the paired difference is above −3 points; users see levels with fitted thresholds, SMEs/admins/auditors the probability |
+| P6-3 | Bands as probabilities | 6C | `accepted` when P(right) ≥ 0.90 with the calibrator's lower bound ≥ 0.80; the rest as now |
+| P6-4 | "Was this right?" under answers | 6D | **Yes**, for everyone who chats; a "no" becomes an SME review item, a label only once decided |
+| P6-5 | A blind share of review items (no certainty shown) to measure anchoring | 6B | **10 %**, randomly, reported |
+| P6-6 | `nge_small`'s golden questions (P4-1) | 6F | Gaia drafts ~30 from the schema and the meanings; the owner corrects them (an hour) |
+| P6-7 | A second model through the same harness (D15: Claude or Gemini "may be evaluated later") | 6A | Optional, after 6E: the report compares models like builds |
 
-| # | Decision | My recommendation |
-|---|---|---|
-| P6-1 | Calibration needs reviewed examples — how many are acceptable | ~150 reviewed columns per model as a first fit |
-| P6-2 | Which metric is the primary gate | **execution accuracy** on golden questions |
+### Estimate
+
+6.0 S (½–1 day + the owner's run) · 6A M (3–4) · 6B S (1–2) · 6C M (2–3) · 6D M (3–4) · 6E M (2–3)
+· 6F S (1–2 + the owner's hour) · 6G S (1). Model calls: the fresh net is 3 × ~72 calls (~6 min at
+today's speed) per prompt change; calibration and the replayed net make none.
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Too few labels on a small database: a calibrator that overfits | P6-1's minimums; isotonic only above them; pooling across data sources of one model; the identity and a visible "uncalibrated" otherwise |
+| SMEs anchor on Gaia's certainty, so labels agree with Gaia too often | the blind share (P6-5) measures it; if it matters, blind review becomes the default for calibration items |
+| Model variance hides or fakes a regression | three runs, paired per question, an interval — never one run |
+| Feedback is sparse or biased (people report what surprised them) | feedback opens review items but becomes a label only when an SME decides; the golden set stays the gate |
+| A provider changes the model behind a name (`deepseek-flash` "always the latest", §21f) | every run records the answering model's id (T3); a calibrator is per model id and flagged when the id changes |
+| Scope creep into operations | the cut line: scheduling and model switching stay in Phase 7 |
 
 ### Gate
 
+- [ ] Phase 5 gate ticked (after §26e)
+- [ ] P6-0 … P6-7 answered
 - [ ] **Approved to start Phase 6**
 
 ---
@@ -2883,6 +3080,9 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D73 | new (2026-11-17, Phase 5B; D16, D69) | **SME review.** A decision — accept, correct (name, purpose, role, entity, unit, synonyms and **what each value of a code means**), reject (a note required) or not used — is a **new version** of the meaning, signed (`reviewed_by`, `reviewed_at`, `review_note`; migration `0014`), status `sme_reviewed` / `sme_rejected`, score 1.0 (`accepted`) or 0.0 (`abstain`); the machine's versions stay in the history (Phase 6 calibrates against these pairs). The ledger gets an `sme` item; the review item closes. **Carried forward:** re-reasoning keeps an SME's column version current while that column's structure hash is unchanged, and the table's SME purpose/grain while the table's is; otherwise the decision turns `stale` — still signed, no longer used, listed under "stale decisions" for a second look. **Lineage:** pass-through view columns inherit at once, a rejection included (a re-score of those views, no model call); computed view columns are queued (`input_reviewed`), never copied. Join hints the model proposed are confirmed or rejected (`source = sme`; the guard accepts a confirmed one; a declared FK is not reviewable). **Definitions reach the SQL generator:** value meanings next to a code column's values ("'2' = overdue", marked as confirmed by an expert) and glossary terms used by a question (or their synonyms) in a DEFINITIONS block — both only when they exist, so a store without SME work yields the same prompts as before. Only an SME of the data source may review it (403s audited); every decision and glossary change is in the audit chain. The SME sees personal data as shapes unless also a PII processor (D69). The object's **data category** moves to 5C, where categories exist |
 | D74 | new (2026-11-17, Phase 5C; P5-5, P5-6, D69, D70) | **Need-to-know.** One data category per object (table or view), in `auth.object_category`: Gaia proposes it by matching the object's schema, name and meaning against each category's name and keywords (deterministic; a view reading one category's objects gets that category; a tie or no match proposes nothing), an SME confirms what the data is, the administrator may set it, and Gaia's proposals never replace a confirmed one. A person reads an object's columns only through a `category` grant (to a directory role or an account); an object without a category is readable by nobody; a view needs its own category and its columns' bases (pass-through: the base column; computed: all inputs; unknown lineage: everything its definition reads). **Personal data is governed by the PII-processor permission, not by a category** (the assessment's built-in "Personal data" category is superseded by D69): a non-processor may show a personal-data column (masked, in the live answer too) or count it or test `IS [NOT] NULL`, nothing else — filtering, joining, grouping, sorting or computing with it would reveal what the mask hides; a processor is not restricted. A column is personal data if a detector (≥ 80 %) or the semantic type says so, or an SME states it (an SME's "no" wins); a view column inherits through lineage. Stored answers keep personal data masked for everyone (minimisation). Enforced in retrieval (a restricted index) and in the guard (a restricted catalog; `*` refused; a reference that exists but is not the person's → `refused`, never repaired, never run, audited without naming it to the user). Every chat turn computes the policy afresh. `user` is in `auth.chat_roles`; the operator's command line keeps the full policy unless `--as LOGIN` |
 | D75 | new (2026-11-17, Phase 5D, 5E; P4-2, P5-7, P5-12) | **Chat screen, the SQL, runs.** The chat streams each turn (stages, the table as soon as it exists, then the narrative), shows the confidence as a level with its reasons — never a number before Phase 6 — and clarifications as choices. The SQL of answers is in an audit view: SMEs see the queries of the data sources they review, administrators and auditors all; a person with only the `user` role never sees SQL, not even of their own answers (P4-2). `chat.query_run.asked_by` records the asker. The runs view is read-only, for administrators and auditors; starting, stopping, scheduling and switching models stay in Phase 7 (P5-12). 5C and 5D were built together at the owner's request, to be verified on the host in one run with a real AD/LDAP and Entra ID |
+| D76 | new (2026-11-17, triage of the D75 run; P5-9, D68, D74) | **What the D75 run taught.** (a) *A directory's test proves its TLS*: the handshake the sign-in makes — LDAPS or StartTLS, with the trust the sign-in uses — is part of the test, and a refusal is explained from OpenSSL's verification code, the server's certificate and the CA Gaia trusts (`gaia.auth.tls`). (b) *A failing test of proven settings keeps the directory at sign-in*: `verified` means "these settings passed once" (any change resets it), so a later failure is shown (*last test failed*) and sign-ins fail for its cause, but one failed click no longer leaves only the local account. Settings never proven stay `failed`. (c) *A CA file is found the same way by every process* (relative to `backend/`, else the repository root) and the CA may live in the settings (`ca_pem`). (d) *Need-to-know before repair*: a statement that reaches for an existing object or column outside the person's categories is refused whatever else is wrong with it — never sent back for repair, audited. (e) *The schema's revision is checked*: `/health`, the API's start-up log and every command-line tool name a missing migration. (f) Profiling resolves data sources added at runtime like every other tool. (g) The local account has no Chat; a page that fails to render shows its error |
+| D77 | new (2026-11-17, triage of the D75 run; D74, P5-6) | **Category proposals v2** (`gaia.access.proposal`; migration `0016`: `auth.object_category.basis`). Still deterministic and shown to people. Direct evidence: the category's words in the object's schema (5), name (2) or business name (2); weak: only in its entity (1) or purpose (½). Related evidence: the table it is named after (2.5) and the tables it references — declared FKs, joins an SME confirmed (1 each) — and, a little, direct-evidence tables referencing it (½); weighted by the neighbour's certainty (a person's confirmation 1.5, direct 1, related 0.7, weak 0.4); three rounds. Views: one category read → that category. Ties and no evidence propose nothing. Each proposal keeps its basis and reasons; the admin screen shows *only those to check*. Category vocabularies are literal words ("HR" is not "hour"). "Categories from the schemas" adds the first literal word of each table's name that no other schema uses, and skips `dbo`/`public` |
+| D78 | **proposed** (2026-11-17; P5-3, D69) — *not built, the owner decides* | **An account is the directory's object, not its login.** Today an account is matched by directory and login; the directory's stable id (AD `objectGUID`, Entra object id) is stored and refreshed. Proposal: a sign-in whose stable id differs from the stored one is refused and audited (`identity_changed`) until an administrator re-links the account or starts a new one — so a reused login never inherits the previous holder's own grants (a PII-processor grant included) |
 
 ## Definition of done (per phase)
 
@@ -2904,14 +3104,19 @@ delivered builds). Gates 3.0, 3A (PostgreSQL), 3B ticked; Phase 4 approved, 4A b
 OWNER_VERIFICATION §21f. Phase 4 complete; Phase 5 approved (D68–D70); 5.0 and 5A built (build
 D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B built (D73).*
 
-1. **Owner — the combined Phase 5 run** (OWNER_VERIFICATION §25, on build D75): tests; two
-   fresh golden runs first (D72); a real AD/LDAP (§22e) and Entra ID (§23c); you as SME on
-   `demo_pg` with g07 (§24); need-to-know and the chat in a browser with people of different
-   roles; the golden run `--as` a person. §22d (the 3C report) runs beside it.
-2. **Assistant — next:** triage of §25; then the Phase 5 gate, and Phase 6 (evaluation and
-   calibration: the SME decisions of 5B are its labels).
-4. **Owner, asynchronous:** the 3C audit (`make evaluate-audit`, fill `owner_meaning`), the
-   `demo_pg` 3C run; the SQL Server track S4, S8; `make evaluate-cost` (§13d).
+*2026-11-17 (later): the D75 run triaged (Phase 5, "Owner runs on D75"; OWNER_VERIFICATION
+§26); build D77 (D76, D77); D78 proposed; Phase 6 designed.*
+
+1. **Owner — the next run: OWNER_VERIFICATION §26e** (build D77): migrate (`0016`) and test
+   first; the directory back (`samba-ad-test.sh status`, then `ca` if it says so); Entra's client
+   secret (its Value); categories on both databases — tell me every proposal on `nge_small` you
+   find wrong; you as SME of `demo_pg` and g07; need-to-know and the chat in a browser; the golden
+   run as a person; optionally 3C's missing judgement.
+2. **Owner — decisions:** P6-0 (the 3C gate), P6-1 … P6-7 (Phase 6), D78 (an account is the
+   directory's object, not its login).
+3. **Assistant — next:** triage of §26e; then the Phase 5 gate, and Phase 6 once approved.
+4. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
+   evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
 5. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %
    threshold, accepted 2026-11-16). The golden runs' best guesses were the owner's answer in
    2–3 of 8–9, so asking stays right for now. D61 (c), definitions from an SME through the

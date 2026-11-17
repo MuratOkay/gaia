@@ -4,6 +4,13 @@ import { useTranslation } from "react-i18next";
 import { api, type CategoryView, type DataSourceView, type ObjectView } from "../../api/client";
 import { Busy, ErrorNote, useLoad, when } from "../../components/util";
 
+/** What the administrator should look at first: nothing proposed, or a proposal that rests on
+ *  relatives or on what Gaia wrote rather than on the object's own names (D77). */
+export function needsLook(o: ObjectView): boolean {
+  if (!o.category) return true;
+  return o.category.status === "proposed" && (o.category.basis === "weak" || o.category.basis === "related");
+}
+
 function words(text: string): string[] {
   return text.split(",").map((w) => w.trim()).filter(Boolean);
 }
@@ -20,9 +27,13 @@ export function Categories() {
   const [error, setError] = useState<Error | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
+  const [toCheck, setToCheck] = useState(false);
+
   useEffect(() => {
+    // a data source Gaia has read (D76: the default target was chosen even when it was not)
     const live = sources.data?.filter((s) => s.status !== "tombstoned") ?? [];
-    if (!ds && live.length) setDs(live[0].name);
+    const read = live.filter((s) => s.introspected !== false);
+    if (!ds && (read.length || live.length)) setDs((read[0] ?? live[0]).name);
   }, [sources.data, ds]);
 
   async function run(work: Promise<unknown>, done?: (r: unknown) => string | null) {
@@ -103,13 +114,32 @@ export function Categories() {
       <div className="actions">
         <label>{t("grants.dataSource")}
           <select value={ds} onChange={(e) => setDs(e.target.value)}>
-            {sources.data?.filter((s) => s.status !== "tombstoned").map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
+            {sources.data?.filter((s) => s.status !== "tombstoned").map((s) => (
+              <option key={s.name} value={s.name} disabled={s.introspected === false}>
+                {s.introspected === false ? t("categories.notRead", { name: s.name }) : s.name}
+              </option>
+            ))}
           </select>
         </label>
         <button type="button" disabled={!ds} onClick={() => void run(api(`/api/admin/data-sources/${encodeURIComponent(ds)}/categories/from-schemas`, { method: "POST" }),
-          (r) => t("categories.fromSchemasDone", { count: (r as unknown[]).length }))}>{t("categories.fromSchemas")}</button>
+          (r) => {
+            const made = r as { action?: string }[];
+            return t("categories.fromSchemasDone", {
+              count: made.filter((m) => m.action !== "completed").length,
+              completed: made.filter((m) => m.action === "completed").length,
+            });
+          })}>{t("categories.fromSchemas")}</button>
         <button type="button" disabled={!ds || live.length === 0} onClick={() => void run(api(`/api/admin/data-sources/${encodeURIComponent(ds)}/categories/propose`, { method: "POST" }),
-          (r) => { const x = r as { proposed: number; none: number; confirmed_kept: number }; return t("categories.proposeDone", { proposed: x.proposed, none: x.none, kept: x.confirmed_kept }); })}>{t("categories.propose")}</button>
+          (r) => {
+            const x = r as { proposed: number; unchanged: number; none: number; confirmed_kept: number; by_basis?: Record<string, number> };
+            const b = x.by_basis ?? {};
+            return t("categories.proposeDone", { proposed: x.proposed, unchanged: x.unchanged, none: x.none, kept: x.confirmed_kept,
+                                                 direct: (b.direct ?? 0) + (b.view ?? 0), related: b.related ?? 0, weak: b.weak ?? 0 });
+          })}>{t("categories.propose")}</button>
+        <label className="check small">
+          <input type="checkbox" checked={toCheck} onChange={(e) => setToCheck(e.target.checked)} />
+          {t("categories.onlyToCheck")}
+        </label>
       </div>
       {missing > 0 && <p className="note warn">{t("categories.missing", { count: missing })}</p>}
       <Busy loading={objects.loading} />
@@ -117,7 +147,7 @@ export function Categories() {
         <table>
           <thead><tr><th>{t("categories.object")}</th><th>{t("review.gaiaSays")}</th><th>{t("categories.category")}</th><th>{t("categories.decided")}</th></tr></thead>
           <tbody>
-            {objects.data.map((o) => (
+            {objects.data.filter((o) => !toCheck || needsLook(o)).map((o) => (
               <tr key={o.id}>
                 <td>{o.name} <span className="muted small">{o.kind}</span></td>
                 <td>{o.business_name ?? "—"}</td>
@@ -131,7 +161,14 @@ export function Categories() {
                   {o.category
                     ? <span className={`status placement-${o.category.status}`}>{o.category.status === "confirmed"
                         ? t("categories.confirmedBy", { who: o.category.decided_by, when: when(o.category.decided_at, i18n.language) })
-                        : t("categories.proposedBecause", { why: o.category.reason ?? "" })}</span>
+                        : <>
+                        {o.category.basis && (
+                          <span className={`basis basis-${o.category.basis}`} title={t(`categories.basisHelp.${o.category.basis}`)}>
+                            {t(`categories.basis.${o.category.basis}`)}
+                          </span>
+                        )}{" "}
+                        {t("categories.proposedBecause", { why: o.category.reason ?? "" })}
+                      </>}</span>
                     : <span className="warn small">{t("categories.nobody")}</span>}
                 </td>
               </tr>

@@ -15,7 +15,9 @@
     "cancel": "Cancel",
     "yes": "yes",
     "no": "no",
-    "notAllowed": "Your role does not include this page."
+    "notAllowed": "Your role does not include this page.",
+    "pageFailed": "This page could not be shown.",
+    "reload": "Reload"
   },
   "status": {
     "config": "from configuration",
@@ -91,11 +93,13 @@
     },
     "smeSources": "You are the SME of {{count}} data source(s).",
     "pii": "You are a PII processor: personal data is shown to you unmasked.",
-    "local": "You are signed in with the local administrator account, which is meant for setup and emergencies. Its every use is shown to the auditor.",
+    "local": "You are signed in with the local administrator account, which is meant for setup and emergencies: it connects directories and data sources and grants roles, but cannot chat or review. Its every use is shown to the auditor.",
     "conflict": "Not applied",
     "next": "Everyone who chats gets answers only from the data categories granted to them.",
     "categories": "You may read: {{names}}.",
-    "noCategories": "No data category is granted to you yet, so the chat has nothing to answer from. Ask your administrator."
+    "noCategories": "No data category is granted to you yet, so the chat has nothing to answer from. Ask your administrator.",
+    "noCategoriesAdmin": "No data category is granted to you yet, so the chat has nothing to answer from. You may grant categories to your directory role on",
+    "adminLocal": "You connect data sources and the company directory, define the data categories, and decide who may read what. This account does not chat or review."
   },
   "dataSources": {
     "title": "Data sources",
@@ -141,7 +145,7 @@
     "urls": "Server addresses (ldaps://…, comma-separated)",
     "startTls": "ldap:// with StartTLS",
     "tlsVerify": "Verify the server certificate (leave on outside tests)",
-    "caFile": "CA certificate file on the server (optional)",
+    "caFile": "CA certificate file on the server (optional; relative paths start in backend/)",
     "bindDn": "Service account (DN)",
     "password": "Service account password",
     "baseDn": "Base DN",
@@ -179,7 +183,10 @@
     "redirectUri": "Redirect URI (as registered; empty: this site's)",
     "userFilterOdata": "Which users to read (optional OData filter)",
     "namePrefix": "Only groups whose name starts with",
-    "securityOnly": "Security groups only"
+    "securityOnly": "Security groups only",
+    "lastTestFailed": "The last test failed (see below). These settings passed before, so people are still offered this directory at sign-in — but their sign-ins fail until the cause is fixed and the test passes again.",
+    "caPem": "…or the CA certificate itself (PEM, optional; kept with the settings)",
+    "lastTestFailedBadge": "last test failed"
   },
   "grants": {
     "title": "Roles & grants",
@@ -594,9 +601,9 @@
     "objectsTitle": "What each object's data is",
     "objectsIntro": "Set a category here, or let Gaia propose them; an SME confirms on the review screen. An object without a category is readable by nobody.",
     "fromSchemas": "Create categories from the schemas",
-    "fromSchemasDone": "{{count}} categor(ies) created.",
+    "fromSchemasDone": "{{count}} categor(ies) created; {{completed}} completed with the words of their tables.",
     "propose": "Let Gaia propose",
-    "proposeDone": "Gaia proposed {{proposed}}; {{kept}} confirmed kept; {{none}} without a proposal (no match, or a tie).",
+    "proposeDone": "Gaia proposed {{proposed}} ({{unchanged}} unchanged). What they rest on: the objects' own names {{direct}}, related tables {{related}}, only Gaia's descriptions {{weak}} — look at the last two. {{kept}} confirmed kept; {{none}} without a proposal (no match, or a tie).",
     "missing": "{{count}} object(s) have no category: nobody can read them.",
     "object": "Object",
     "category": "Category",
@@ -604,7 +611,21 @@
     "decided": "Decided",
     "confirmedBy": "confirmed by {{who}}, {{when}}",
     "proposedBecause": "proposed by Gaia: {{why}}",
-    "nobody": "readable by nobody"
+    "nobody": "readable by nobody",
+    "notRead": "{{name}} (not read yet)",
+    "onlyToCheck": "only those to check (nothing, related or weak)",
+    "basis": {
+      "direct": "its names",
+      "view": "its tables",
+      "related": "related tables",
+      "weak": "weak"
+    },
+    "basisHelp": {
+      "direct": "The category's words are in the object's schema, name or business name.",
+      "view": "A view that reads objects of this category only.",
+      "related": "Follows the table it is named after or references; check it.",
+      "weak": "Only what Gaia wrote about it (its entity or description) matches; check it."
+    }
   },
   "chat": {
     "title": "Chat",
@@ -651,7 +672,10 @@
       "cannot_answer": "Cannot answer:",
       "failed": "Something went wrong:",
       "refused": "Not allowed:"
-    }
+    },
+    "localAccount": "The local administrator account cannot chat: it is for setup and emergencies and holds no data category, by design. To ask questions, sign in with your directory account — once an administrator has granted its role a data category.",
+    "nothingToReadAdmin": "No data category is granted to you yet, so there is nothing to ask about. As an administrator you may grant categories to your directory role or to yourself — every grant is audited and shown to the auditor.",
+    "toGrants": "Roles & grants"
   },
   "queries": {
     "title": "Queries",

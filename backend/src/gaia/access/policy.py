@@ -355,13 +355,52 @@ class AccessGuard:
         if result.ok or not any(v.code in _RESOLUTION for v in result.errors):
             return result
         full = self.full.check(sql)
-        if any(v.code in _RESOLUTION for v in full.errors):
-            return result  # a genuine mistake: the model repairs it as before
+        # Reaching for data outside the role decides the turn, whatever else is wrong with
+        # the statement (D76): the model never sees the forbidden tables' columns, so a
+        # statement that reaches for them usually guesses a column name too — and a
+        # "mistake" would be sent back for repair, telling the model the table is "not in
+        # the catalog" and inviting another try, and end as a failure nobody audits.
+        reached = [t for t in full.tables if not self.policy.can_read(t)]
+        if not reached:
+            reached = self._forbidden_columns(sql)
+        if not reached and any(v.code in _RESOLUTION for v in full.errors):
+            return result  # a genuine mistake on data the person may read: repaired
         out = GuardResult(result.dialect, sql, tables=full.tables)
         out.errors.append(Violation("forbidden", refusal_message("forbidden")))
-        out.forbidden = [t for t in full.tables if not self.policy.can_read(t)] or [
-            "a column outside the role"]
+        out.forbidden = reached or ["a column outside the role"]
         return out
+
+    def _forbidden_columns(self, sql: str) -> list[str]:
+        """Columns the statement names through a table alias that exist in the full catalog
+        but are not the person's — found without resolving the whole statement, which may
+        not resolve (a guessed column beside them)."""
+        import sqlglot
+        from sqlglot import exp
+
+        catalog = self.full.catalog
+        try:
+            trees = [t for t in sqlglot.parse(sql, read=self.full.read) if t is not None]
+        except Exception:  # unparseable: the restricted guard has said so already
+            return []
+        out: set[str] = set()
+        for tree in trees:
+            aliases: dict[str, tuple[str, str]] = {}
+            for table in tree.find_all(exp.Table):
+                if not isinstance(table.this, exp.Identifier):
+                    continue
+                hits = catalog.find(table.db or None, table.name)
+                if len(hits) == 1:
+                    aliases[table.alias_or_name.lower()] = hits[0]
+                    aliases.setdefault(table.name.lower(), hits[0])
+            for column in tree.find_all(exp.Column):
+                hit = aliases.get((column.table or "").lower())
+                if hit is None:
+                    continue
+                cols = {c.lower() for c in catalog.columns(*hit)}
+                key = f"{hit[0]}.{hit[1]}"
+                if column.name.lower() in cols and not self.policy.can_read(key, column.name):
+                    out.add(f"{key}.{column.name.lower()}")
+        return sorted(out)
 
 
 def build_access_guard(settings, label: str, index: RetrievalIndex, full_catalog: GuardCatalog,

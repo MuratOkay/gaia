@@ -88,7 +88,12 @@ async def queries(request: Request, data_source: str | None = None,
         total = await s.scalar(select(func.count()).select_from(q.subquery()))
         rows = (await s.execute(q.order_by(QueryRun.created_at.desc(), QueryRun.attempt.desc())
                                 .limit(max(1, min(limit, 500))).offset(max(0, offset)))).all()
-        return {"total": total, "items": [_view(r, ds) for r, ds in rows]}
+        names = select(DataSource.name).where(DataSource.id.in_(
+            select(QueryRun.data_source_id).distinct()))
+        if scope is not None:
+            names = names.where(DataSource.id.in_([uuid.UUID(i) for i in scope]))
+        return {"total": total, "items": [_view(r, ds) for r, ds in rows],
+                "data_sources": sorted((await s.scalars(names)).all())}
 
 
 @router.get("/queries/{query_id}")
@@ -159,6 +164,9 @@ async def runs(request: Request, data_source: str | None = None, limit: int = 50
                            "cost": float(row[3]) if row[3] is not None else None,
                            "queries": asked})
     return {
+        # every data source, whatever the filter: the page's choice of data source (D76:
+        # built from the filtered totals, it offered only the one chosen)
+        "data_sources": sorted(n for n in sources.values() if "~" not in n),
         "totals": totals,
         "reasoning": [{
             "id": str(r.id), "data_source": sources.get(r.data_source_id), "kind": "reasoning",

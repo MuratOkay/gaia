@@ -426,7 +426,10 @@ What someone may do in Gaia comes from **grants** an administrator makes:
 | `pii_processor` | see personal data unmasked in answers, and filter or group by it (5C) |
 | `category` (per category) | read the objects of that data category (5C) — nothing is readable until granted |
 
-**First time:** the one local account, `gaia-admin`, is for setup and emergencies.
+**First time:** the one local account, `gaia-admin`, is for setup and emergencies. It
+connects directories and data sources and grants roles — it never chats or reviews (it holds
+no data category), so to try the chat or the review, sign in with a directory account that has
+the role.
 
 ```bash
 make admin-user                          # its password, asked twice (≥ 12 characters)
@@ -440,11 +443,13 @@ JSON file like `infra/auth/acme-samba.json`: the server URLs (`ldaps://…`, or 
 `"start_tls": true` — never clear text), the service account's DN (it only reads), where
 people are, and **how roles are read**: group membership (`"kind": "group"`, nesting
 followed), a user attribute (`"kind": "attribute", "attribute": "department"`) or the OU
-(`"kind": "ou"`).
+(`"kind": "ou"`). A directory with a private CA needs it: `"ca_file"` (a relative path starts in
+`backend/`, whichever directory the API runs in) or the certificate itself, `"ca_pem"` (PEM, kept
+with the settings; the *Directories* form has a field for it).
 
 ```bash
 make auth ARGS="directory add acme --settings ../infra/auth/acme.json"   # the password is asked
-make auth ARGS="directory probe acme"        # test the connection: transport, bind, users, roles
+make auth ARGS="directory probe acme"        # test the connection: TLS, bind, users, roles
 make auth ARGS="directory sync acme"         # read every user and role now
 make auth ARGS="directory roles acme"        # the distinct roles, with members
 make auth ARGS="grant admin --role acme/GAIA-Admins"
@@ -456,6 +461,22 @@ make auth ARGS="revoke <grant id> --note 'moved team'"
 make auth ARGS="accounts"                    # who may do what now, conflicts included
 make auth ARGS="audit-check"                 # is the access audit intact; its head hash
 ```
+
+**The test of a directory** (*Test connection*, `directory probe`) makes the TLS handshake a
+sign-in makes and, when the certificate is refused, says why in words: a CA re-created under the
+same name ("signed by a CA named like the one in … but with a different key" — a Samba test
+domain provisioned again: `infra/auth/samba-ad-test.sh ca`), another issuer, a self-signed or
+expired certificate, a host name the certificate does not carry, a name that does not resolve,
+nothing listening. A test that fails on settings that passed before keeps the directory on the
+sign-in page (*last test failed* on the admin screen; sign-ins fail until the cause is fixed);
+settings that never passed are not offered. Changing any setting or the password means testing
+again.
+
+**The throwaway Samba AD** for trying this out (`infra/auth/samba-ad-test.sh`, Docker): `up`
+provisions the domain and writes its CA to `infra/auth/acme-ca.pem`; `start` brings Samba back
+after a reboot; `status` and `check` say whether the CA file still matches the running domain
+(every `down` + `up` makes a new CA under the same name); `down` removes it. Its settings file is
+`infra/auth/acme-samba.json`.
 
 **Microsoft Entra ID** instead of (or beside) AD/LDAP (5A.2): register an app in Entra (a Web
 redirect URI `http(s)://<where the web UI is>/api/auth/oidc/callback`, a client secret, the
@@ -496,10 +517,10 @@ directory roles, or to them); **nothing is readable until granted**, administrat
 and an object without a category is readable by nobody.
 
 ```bash
-make access TARGET=sales_pg ARGS="from-schemas"    # a first set: one category per schema
+make access TARGET=sales_pg ARGS="from-schemas"    # a first set: one category per schema, with its tables' words
 make access ARGS="add Finance --keywords finance,invoice,ledger --description 'money'"
 make access TARGET=sales_pg ARGS="propose"         # Gaia places every object it can
-make access TARGET=sales_pg ARGS="objects"         # each object, its category, who decided
+make access TARGET=sales_pg ARGS="objects --why"   # each object, its category, who decided, why
 make access TARGET=sales_pg ARGS="place hr.payroll HR --note 'payroll is HR'"
 make access ARGS="suggestions"                     # directory roles -> categories (grants nothing)
 make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"
@@ -507,10 +528,19 @@ make access TARGET=sales_pg ARGS="policy akaya"    # what akaya may read there
 ```
 
 The same in the web UI: *Data categories* (the categories, each object's category, "Let Gaia
-propose") and *Roles & grants* (privilege "data category"). Gaia proposes by matching an
-object's schema, name and meaning against each category's name and keywords; a view that reads
-one category's objects gets that category; a tie proposes nothing. **An SME confirms** what an
-object's data is on the review screen's table page; a proposal never replaces a confirmation.
+propose", "only those to check") and *Roles & grants* (privilege "data category"). **How Gaia
+proposes** (D77): a category's name and keywords found in the object's schema, name or business
+name are *its names* — direct evidence; found only in what Gaia wrote about it (its entity or
+description), the proposal is *weak*. A table follows the table it is **named after**
+(`order_lines` after `orders`) and the tables it **references**, so related tables land together
+(*related tables*); a view that reads one category's objects gets that category (*its tables*).
+A tie, or nothing, proposes nothing. Each proposal shows its basis and reasons: look at the weak
+and related ones first. "From the schemas" gives each category its schema's name and the words
+its tables are named with (`sales` → order, payment, return), so it also recognises that data in a
+database whose tables all sit in `dbo`; it makes no category of `dbo` or `public`. **An SME
+confirms** what an object's data is on the review screen's table page (an administrator may set it
+on *Data categories*); a proposal never replaces a confirmation, and a confirmed table steers its
+related tables at the next proposal.
 
 * **A view** is readable only with its own category *and* what its columns come from — a view
   is no way around a category.

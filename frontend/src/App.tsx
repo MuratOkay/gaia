@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from "react-router-dom";
 
 import { api, type Me, type Role, SIGNED_OUT_EVENT } from "./api/client";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { Accounts } from "./pages/admin/Accounts";
 import { Categories } from "./pages/admin/Categories";
 import { DataSources } from "./pages/admin/DataSources";
@@ -30,7 +31,7 @@ export function App() {
     return () => window.removeEventListener(SIGNED_OUT_EVENT, out);
   }, []);
 
-  if (me === null) return null;
+  if (me === null) return <LoadingShell />;
   if (me === false) return <Login onSignedIn={setMe} />;
   return (
     <BrowserRouter>
@@ -39,9 +40,18 @@ export function App() {
   );
 }
 
+function LoadingShell() {
+  const { t } = useTranslation();
+  return <p className="muted loading-shell" role="status">{t("common.loading")}</p>;
+}
+
 export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) {
   const { t } = useTranslation();
+  const location = useLocation();
   const has = useCallback((...roles: Role[]) => roles.some((r) => me.roles.includes(r)), [me]);
+  // the local account is an administrator and nothing else: it holds no data category and
+  // cannot chat (D68, D76) — its Chat page only explains that
+  const chats = has("user", "sme", "admin") && !me.local;
 
   async function signOut() {
     try {
@@ -57,7 +67,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
         <strong className="brand">{t("app.name")}</strong>
         <nav aria-label={t("nav.label")}>
           <NavLink to="/" end>{t("nav.home")}</NavLink>
-          {has("user", "sme", "admin") && <NavLink to="/chat">{t("nav.chat")}</NavLink>}
+          {chats && <NavLink to="/chat">{t("nav.chat")}</NavLink>}
           {has("sme") && <NavLink to="/review">{t("nav.review")}</NavLink>}
           {has("sme", "admin") && <NavLink to="/queries">{t("nav.queries")}</NavLink>}
           {has("admin") && (
@@ -79,6 +89,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
         </span>
       </header>
       <main>
+        <ErrorBoundary resetKey={location.pathname}>
         <Routes>
           <Route path="/" element={<Home me={me} />} />
           <Route path="/chat" element={<Only when={has("user", "sme", "admin")}><ChatPage me={me} /></Only>} />
@@ -106,6 +117,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
           <Route path="/audit/events" element={<Only when={has("auditor")}><AuditEvents /></Only>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
+        </ErrorBoundary>
       </main>
     </div>
   );

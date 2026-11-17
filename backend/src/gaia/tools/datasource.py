@@ -68,7 +68,9 @@ def _print(view: dict) -> None:
           + (f"  failed: {', '.join(failed)}" if failed else ""))
     if view.get("status") in ("failed", "verified") and probe:
         for c in probe:
-            print(f"      [{'PASS' if c['ok'] else 'FAIL'}] {c['name']:<20} {c['detail'][:100]}")
+            # whole, on one line: the reason is at the end of a driver's message (D76)
+            detail = " ".join(str(c["detail"]).split())
+            print(f"      [{'PASS' if c['ok'] else 'FAIL'}] {c['name']:<20} {detail[:400]}")
 
 
 async def _run(args: argparse.Namespace) -> int:

@@ -127,13 +127,19 @@ async def _run(args: argparse.Namespace) -> int:
             elif a == "update":
                 v = await svc.update_directory(
                     args.name, actor=actor, settings=_settings_arg(args),
-                    password=_secret(args.password_env, "service account password")
+                    password=_secret(args.password_env, "service account password (Entra "
+                                     "ID: the client secret's Value, not its ID)")
                     if args.password or args.password_env else None)
                 _print_directory(v)
             elif a == "probe":
                 v = await svc.probe_directory(args.name, actor=actor)
                 _print_directory(v)
-                return 0 if v["status"] == "verified" else 2
+                if v.get("last_test_failed"):
+                    print(f"  the test failed; {args.name} stays offered at sign-in (these "
+                          "settings passed before), and sign-ins through it fail until it "
+                          "passes again (D76)")
+                ok = v["status"] == "verified" and not v.get("last_test_failed")
+                return 0 if ok else 2
             elif a == "sync":
                 _print_directory(await svc.sync_directory(args.name, actor=actor))
             elif a in ("disable", "enable"):

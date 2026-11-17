@@ -193,6 +193,19 @@ def test_report_compares_conditions_on_the_columns_both_answered(tmp_path):
     assert crit["value"] == ("B-P 100.0 % vs B-C 0.0 % on 4 paired column(s); "
                              "6 column(s) answered or judged in one condition only, left out")
 
+    # D76: answered but not judged is said, with the judge's error, and how to fix it
+    (tmp_path / "N-C").mkdir()
+    (tmp_path / "N-C" / "results.json").write_text(json.dumps({"summary": {
+        "description": "N-C", "calls": [], "second_round": [], "failed": [], "notes": []},
+        "columns": both + extra}))
+    (tmp_path / "N-C" / "judgements.json").write_text(json.dumps({
+        "verdicts": {f"s.a.c{i}": {"meaning": "yes", "reference": "names"} for i in range(4)},
+        "errors": ["s.lost: the model gave no usable answer"]}))
+    text, doc = build_report(tmp_path, "ds", {}, 0.8)
+    assert doc["conditions"]["N-C"]["unjudged"] == 6
+    assert ("6 answered column(s) not judged" in text and "make evaluate-judge` again" in text
+            and "s.lost: the model gave no usable answer" in text)
+
 
 def test_report_names_the_models_behind_each_condition(tmp_path):
     """5.0 (T3): the recorder keys answers by the request, not by the model, so a provider

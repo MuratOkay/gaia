@@ -46,6 +46,7 @@ APP_ROLES = ("user", "sme", "admin", "auditor")
 PRIVILEGES = (*APP_ROLES, "pii_processor", "category")
 OBJECT_CATEGORY_STATUSES = ("proposed", "confirmed")
 OBJECT_CATEGORY_SOURCES = ("gaia", "sme", "admin")
+PROPOSAL_BASES = ("direct", "view", "related", "weak")  # D77
 DIRECTORY_KINDS = ("ldap", "entra")
 DIRECTORY_STATUSES = ("unverified", "verified", "failed", "disabled")
 ROLE_SOURCES = ("group", "attribute", "ou")
@@ -181,6 +182,8 @@ class ObjectCategory(Base):
         sa.Index("ix_object_category_source", "data_source_id", "is_current"),
         _in("status", OBJECT_CATEGORY_STATUSES, "status"),
         _in("source", OBJECT_CATEGORY_SOURCES, "source"),
+        sa.CheckConstraint("basis IS NULL OR basis IN ('direct', 'view', 'related', 'weak')",
+                           name="basis"),
         {"schema": S},
     )
 
@@ -198,6 +201,8 @@ class ObjectCategory(Base):
     decided_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
                                                  server_default=_now())
     is_current: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=True)
+    # what Gaia's proposal rests on (D77, migration 0016): direct | view | related | weak
+    basis: Mapped[str | None] = mapped_column(sa.Text)
 
 
 class Grant(Base):

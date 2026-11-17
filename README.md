@@ -10,26 +10,19 @@ Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status (2026-11-17): **Phases 0–2 and 4 complete.** Phase 3: 3.P, 3.0, 3A (PostgreSQL) and
-> 3B done; 3C answered and judged on the owner's host, its report pending. Phase 4 (the SQL
-> guard, retrieval, answering, golden runs, the chat API, data sources added at runtime): the
-> configured model's golden run on `demo_pg` is **executable 100 %, correct 97 %**.
-> **Phase 5 is in progress** (approved 2026-11-17): **5.0** (triage fixes) and **5A** — sign-in
-> with the company's **Active Directory / LDAP**, four Gaia roles (user, SME, administrator,
-> auditor) and the PII-processor permission, one local break-glass account, server-side
-> sessions, a hash-chained access audit with the auditor's reports, and the first **web UI**
-> (`make dev-web`) — and **5A.2, sign-in with Microsoft Entra ID**, pass on the owner's host
-> (698 tests). Built since, and verified in the sandbox: **5B, the SME review** (decisions that
-> survive re-reasoning and reach the SQL generator, a glossary), **5C, need-to-know** (data
-> categories granted to directory roles; every answer only from the asker's categories,
-> enforced in retrieval and in the SQL guard; personal data masked for anyone who is not a PII
-> processor), **5D, the chat screen** (streamed answers, clarifications, the SQL for SMEs,
-> administrators and auditors) and **5E, a read-only runs view** — Phase 5 is complete pending
-> one combined host run with a real AD/LDAP and Entra ID. Every API endpoint except `/health`
-> and sign-in needs a session.
+> 3B done; 3C judged and reported on the owner's host (criteria 1–3 met; the owner's audit 86 %,
+> P6-0). **Phase 5 — every stage built** (D68–D75): sign-in with the company's **Active Directory /
+> LDAP** and **Microsoft Entra ID**, four Gaia roles and the PII-processor permission, the SME
+> review, need-to-know by data category, the chat screen and a read-only runs view — the web UI is
+> `make dev-web`. The owner's D75 run proved sign-in against a real Samba AD up to the grants and
+> stopped at the directory (a re-provisioned domain's new CA); **build D77** fixes what it found
+> (D76: the directory's TLS explained, a failed test no longer empties the sign-in page,
+> need-to-know refusals decided before repairs, missing migrations named; D77: category proposals
+> that follow related tables) — tests **714 passed, 10 skipped** in the sandbox, web 42. **Phase 6
+> (evaluation and calibration) is designed**, awaiting approval.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§25: the combined Phase 5 run on build D75). See
-> [PHASES.md](PHASES.md).
-
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§26: the D75 run triaged,
+> and §26e, the next run on build D77). See [PHASES.md](PHASES.md).
 ---
 
 ## Layout
@@ -41,7 +34,7 @@ gaia/
 ├── infra/postgres/init/    metadata store: extensions + schemas (first-run only)
 ├── infra/sqlserver/        SQL Server read-only login script
 ├── infra/pg-target/        PostgreSQL dev target: schema, read-only role, seed
-├── infra/auth/             a throwaway Samba AD and its settings, to verify sign-in (5A)
+├── infra/auth/             a throwaway Samba AD (up / start / check / ca / status / down) and its settings, to verify sign-in (5A)
 ├── backend/                FastAPI app, Alembic, tooling
 ├── gaia-env/               Python 3.12 virtualenv (git-ignored)
 ├── frontend/               the web UI: React + TS + Vite + i18next, pnpm (Phase 5)
@@ -319,7 +312,7 @@ Key decisions already fixed:
 | `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
 | `make review` | the SME review queue, highest priority first (`TARGET=...`); decisions are taken in the web UI, **Review** (5B) |
-| `make access` | 5C: data categories — `from-schemas`, `propose`, `objects`, `place OBJ CAT`, `suggestions`, `policy LOGIN` (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
+| `make access` | 5C: data categories — `from-schemas`, `propose`, `objects [--why]` (each proposal's basis and reasons, D77), `place OBJ CAT`, `suggestions`, `policy LOGIN` (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |

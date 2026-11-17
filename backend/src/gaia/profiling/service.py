@@ -153,8 +153,21 @@ class ProfileReport:
 # -- configuration ---------------------------------------------------------------------------
 
 
+def _target(settings: Settings, label: str) -> TargetConfig | None:
+    """A config target, or a data source added at runtime (4F; D76: profiling looked in the
+    config only, so such a data source could be reasoned about but never profiled)."""
+    from gaia.datasources.resolver import TargetUnusable
+
+    try:
+        return settings.target(label)
+    except TargetUnusable as exc:  # a KeyError too: first
+        raise ProfilingError(str(exc)) from None
+    except KeyError:
+        return None
+
+
 def profiling_enabled(settings: Settings, label: str) -> bool:
-    target = settings.targets.get(label)
+    target = _target(settings, label)
     return bool(settings.profiling.enabled and (target is None or target.profiling_enabled))
 
 
@@ -222,9 +235,10 @@ async def _context(
     snapshot_loader: Callable[[dict], Snapshot] | None,
 ) -> _Context:
     label = options.target or settings.app.default_target
-    target = settings.targets.get(label)
+    target = _target(settings, label)
     if target is None:
-        raise ProfilingError(f"no target {label!r} in config")
+        raise ProfilingError(f"no target {label!r} in config, and no data source of that "
+                             "name (make datasource ARGS=list)")
     if snapshot_loader is None:
         from gaia.introspect.service import snapshot_from_document as snapshot_loader
     store = SemanticsStore(session)

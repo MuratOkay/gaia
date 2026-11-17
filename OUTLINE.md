@@ -11,7 +11,9 @@
 > (data sources added at runtime)**; the configured model's golden run: executable 100 %,
 > correct 97 %. **Phase 5 in progress**: sign-in through the company directory, four roles
 > and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39),
-> need-to-know, the chat screen and runs (§40) — built in the sandbox, host run pending.
+> need-to-know, the chat screen and runs (§40) — built in the sandbox; the owner's D75 run
+> proved sign-in against a real Samba AD and stopped at the directory, and build D77 fixes what it
+> found (§41). Phase 6 (evaluation and calibration) is designed in PHASES.md.
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -1887,3 +1889,43 @@ names and personal values; refusals audited and worded without names; the prompt
 golden set for a person holding every category byte-identical to the operator's; the real
 server streaming a refused and a masked answer. **Still to see on the host:** people from a
 real directory in a browser (OWNER_VERIFICATION §25).
+
+## 41. What the D75 run taught (D76, D77 — build D77, 2026-11-17)
+
+The owner's first run of Phase 5 with a real directory proved sign-in against a Samba AD — LDAPS
+with a private CA, the service bind, nested groups — and then stopped at the directory. Four
+lessons, each now a rule of the code (OWNER_VERIFICATION §26):
+
+* **A test must test what it names.** The directory's "test connection" reported
+  `transport PASS` from the settings alone; the handshake happened inside the bind, and a
+  certificate problem came back as a Python exception's repr. The Samba domain had been
+  provisioned again, which makes a new self-signed CA under the *same name*; OpenSSL found the
+  old CA by name and the signature failed — "certificate signature failure", which says nothing
+  to an administrator. The test now makes the handshake itself with the sign-in's trust, and
+  translates OpenSSL's verification code, the server's certificate and the trusted CA into a
+  cause and a fix (`gaia.auth.tls`). A trust file is found the same way by every process (not
+  relative to whichever directory the process started in), and may be kept in the settings.
+* **A diagnostic must not be an outage.** A failed test turned the directory `failed`, and only
+  verified directories are offered at sign-in, so one click left only the local account — and no
+  SME could review. `verified` now means "these settings passed once" (any change resets it); a
+  later failure is shown, and sign-ins fail for its cause, but nobody is locked out by a test.
+* **Need-to-know is decided before repair.** The guard told a forbidden reference from a mistake
+  by asking whether the full catalog resolved the statement. Beside any other mistake — a guessed
+  column, which is what a model writes about tables it has never seen — the reference counted as a
+  mistake: the model was told the table "is not in the catalog", asked to repair, and the turn
+  ended as a failure nobody audited. Reaching for an existing object or column outside the role
+  now decides the turn first. Nothing ever ran; the lesson is that the adversarial suite needs
+  *messy* hostile statements, not only well-formed ones.
+* **Proposals must respect structure.** Category proposals matched words; with global categories
+  made from one database's schemas and another database whose tables all sit in `dbo`, loose words
+  in a purpose decided, and `inventory` and `inventory_movements` were proposed apart. Proposals
+  v2 weigh where a word was found (the object's own names are direct evidence, what Gaia wrote
+  about it is weak), make a table follow the table it is named after and the tables it references,
+  let people's confirmations steer their neighbours, and show each proposal's basis so people
+  check the uncertain ones first. Still deterministic: no model decides anything about access.
+
+Smaller, equally general: a command-line tool that meets an older schema now says which migration
+is missing; a report that leaves columns out says so; a filter's choices never come from its own
+filtered result; profiling resolves data sources added at runtime like every other tool. Since
+D76 the sandbox has a real LDAPS directory, a browser and a scripted model behind the real
+processes, so the host run is no longer the first time the screens meet a directory.

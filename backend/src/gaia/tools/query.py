@@ -97,7 +97,11 @@ async def _run(args: argparse.Namespace) -> int:
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:
         async with factory() as session:
-            catalog, ds_id = await load_guard_catalog(session, label)
+            try:
+                catalog, ds_id = await load_guard_catalog(session, label)
+            except LookupError as exc:  # never introspected: say what to do (D76)
+                print(f"FAILED: {exc}", file=sys.stderr)
+                return 2
             guard = build_guard(settings, label, catalog).check(sql)
             execution = None
             if guard.ok and not args.dry_run:

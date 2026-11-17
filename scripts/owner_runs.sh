@@ -61,8 +61,10 @@ quick() {
 }
 
 gateway() {
+  # a dated directory: running the track again the same day resumes; another day asks the model
+  # afresh (an existing directory replays every recorded answer — OWNER_VERIFICATION §26c F6)
   run 20_golden_pg make golden TARGET=demo_pg \
-      ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg"
+      ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_$(date +%Y%m%d)"
   run 20_judge_nge make evaluate-judge \
       ARGS="--out evaluations/nge_small --labels $LABELS --condition B-C --condition B-P"
   run 20_report_nge make evaluate-report ARGS="--out evaluations/nge_small --labels $LABELS"

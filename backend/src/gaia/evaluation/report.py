@@ -171,6 +171,15 @@ def _judgements(out: Path, code: str) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))["verdicts"] if path.exists() else {}
 
 
+def _judge_errors(out: Path, code: str) -> list[str]:
+    """The tables the judge could not judge (D76: B-P's 14 unjudged columns on the owner's
+    host were visible only as "85" in a table of 99-column conditions)."""
+    path = out / code / "judgements.json"
+    if not path.exists():
+        return []
+    return list(json.loads(path.read_text(encoding="utf-8")).get("errors") or [])
+
+
 # -- report -----------------------------------------------------------------------------
 
 
@@ -230,6 +239,9 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
             "critique_failed": summary.get("critique_failed", []),
             "notes": summary["notes"],
             "models": condition_models(calls),
+            "unjudged": sum(1 for r in rows if f"{r['table']}.{r['column']}" not in judged)
+            if judged else 0,
+            "judge_errors": _judge_errors(out, code),
         }
 
     def paired(a: str, b: str, only: set[tuple[str, str]] | None
@@ -329,6 +341,11 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
         extra = []
         if not e["judged"]:
             extra.append("not judged yet (`make evaluate-judge`)")
+        elif e["unjudged"]:
+            extra.append(f"{e['unjudged']} answered column(s) not judged — left out of its "
+                         "numbers; `make evaluate-judge` again judges them (the rest is "
+                         "replayed)" + (": " + "; ".join(x[:160] for x in e["judge_errors"])
+                                        if e["judge_errors"] else ""))
         if e["second_round"]:
             extra.append(f"re-reasoned after Stage 3: {', '.join(e['second_round'])}")
         extra += [f"failed: {f}" for f in e["failed"]]
