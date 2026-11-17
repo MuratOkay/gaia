@@ -5,17 +5,18 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status (2026-11-16): Phases 0–2 done; Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B
-> done, 3C runs resuming on the host; **Phase 4 built in the sandbox — 4A (SQL guard,
+> Status (2026-11-17): Phases 0–2 done; Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B
+> done, 3C runs on the host; **Phase 4 built and verified on the host — 4A (SQL guard,
 > executor), 4B (retrieval), 4C (answering), 4D (golden runs), 4E (chat API) and 4F
-> (data sources added at runtime)**; the gate waits for the configured model's golden
-> run on the host. Delivery state, gates and
+> (data sources added at runtime)**; the configured model's golden run: executable 100 %,
+> correct 97 %. **Phase 5 re-planned** for sign-in through the company directory, three
+> roles and need-to-know (§38). Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
 > Metadata store: PostgreSQL 18 + pgvector. Targets: **PostgreSQL (main dialect
 > since D52, 2026-11-16)** and SQL Server 2025 (the first target; since D52 its
 > live results are asynchronous and non-blocking). Reasoning LLM: configurable per deployment;
-> development uses `deepseek-v4.1-flash` via a gateway. Embeddings: local Ollama
+> development uses `deepseek-flash` (formerly `deepseek-v4.1-flash`) via a gateway. Embeddings: local Ollama
 > `bge-m3`. Frontend: React + TypeScript (Vite, pnpm).
 >
 > Design premise (D23): assume the worst case — no comments, no data dictionary,
@@ -111,7 +112,7 @@ A named Docker volume avoids the problem entirely.
 
 | Topic | Decision | Rationale |
 |---|---|---|
-| Reasoning LLM | Configurable per deployment (local or remote, A7); development uses `deepseek-v4.1-flash` via an OpenAI-compatible gateway (D1) | Customers choose the model; the pipeline must not depend on one provider's features (thinking mode, huge contexts) |
+| Reasoning LLM | Configurable per deployment (local or remote, A7); development uses `deepseek-flash` (until 2026-11-16 `deepseek-v4.1-flash`) via an OpenAI-compatible gateway (D1) | Customers choose the model; the pipeline must not depend on one provider's features (thinking mode, huge contexts) |
 | Thinking mode | On for semantics + critique, off for SQL repair and classification | Thinking is the default and must be explicitly disabled per task to control latency |
 | Structured output | `response_format={"type":"json_object"}` + Pydantic validation + bounded retry | JSON mode guarantees valid JSON, not schema conformance; blank content must be retried |
 | Prompt caching | Byte-identical stable prefix, volatile question last | Cache-hit input ≈ 1/50th of cache-miss price — the largest cost lever |
@@ -831,7 +832,7 @@ environment and is excluded from version control.
 | **2** | LLM client (DeepSeek + Ollama), JSON-mode structured outputs with Pydantic retry, table + column reasoning, evidence-based scoring, embeddings, `semantics.*` | every column has meaning, evidence, alternatives, score breakdown **— DONE, see §23** |
 | **3** | *Approved 2026-11-14:* 3.P PostgreSQL target + dialect (**done**, §25); module/view evidence, bounded profiling, detectors, targeted verification, scoring v2, one-pass re-reasoning, SME review queue | accuracy on a name-blind worst-case simulation improves and the score ranks correct above incorrect |
 | **4** | Retrieval (all non-abstain meanings, ranked), planner, SQL generation per dialect, `sqlglot` guards, read-only execution, repair loop, streaming API, data-source management | golden business questions return correct SQL and results |
-| **5** | Web UI: **SME review first**, then chat (R1) | an SME works through a database's queue; a question is answered in the browser |
+| **5** | *Re-planned 2026-11-17:* sign-in through the company directory (LDAP/AD), three roles (user, SME, admin), need-to-know enforced in retrieval and the SQL guard; web UI: **SME review first**, then chat; administration (§38) | an SME works through a database's queue; a question is answered in the browser, only from data the user's role may see |
 | **6** | Evaluation harness, calibration from SME labels per model, cost/latency tracking | repeatable regression report |
 | **7** | Masking/FPE, scheduled refresh, further dialects, workload evidence | later |
 
@@ -1722,3 +1723,41 @@ The administration API exists but is off (`datasources.admin_api`) until Phase 5
 logins (P5-1); until then it is a CLI for whoever holds the server. Decision D65; details:
 PHASES, "4F results".
 
+
+---
+
+## 38. Identity, roles and need-to-know (Phase 5 design, proposed 2026-11-17)
+
+The owner's brief for Phase 5 adds what a company deployment cannot do without: people sign in
+with their **directory** account (Active Directory / LDAP, later OIDC), they are **chat users**,
+**SMEs** (who review one or more data sources) or **administrators** (who connect data sources
+and the directory and assign rights, and who may not review), and nobody may get an answer
+built from data their role is not entitled to — **need-to-know**. The plan, the decisions and
+the stages are in PHASES (Phase 5). This section records why the design looks the way it does.
+
+* **The directory is the source of who someone is; Gaia is the source of what they may read.**
+  Directory groups become roles through a mapping the administrator makes. Gaia reads only the
+  groups under the base and filter the administrator chooses, not the whole directory. It reads
+  a user's groups fresh at sign-in and re-checks them while the session lasts, so switching an
+  account off in the directory switches it off in Gaia. A local bootstrap administrator exists
+  because someone must configure the directory before the directory can log anyone in.
+* **Need-to-know is enforced where SQL is decided, not where it is phrased.** Since Phase 4 the
+  guard resolves every object and column a statement touches against the catalog (§31), so
+  "this user may read it" is one more deterministic check on the same tree. It holds against
+  prompt injection and against anything the model writes. Retrieval applies the same
+  permission set first, so the model never sees, and cannot leak, what the user may not read.
+  Prompts stay what they have always been here: never the guardrail (§13).
+* **Categories, not a role × column matrix.** Roles are granted a handful of business domains
+  (plus a built-in *Personal data*), and each object carries its domain. Gaia proposes the
+  domain from what it has reasoned, the SME confirms it like any other meaning (never
+  overwritten by re-reasoning, D16), and the administrator grants domains to roles. Roles start
+  with nothing. A model may suggest, but it never grants.
+* **A forbidden column is forbidden everywhere in a statement.** A filter or a join leaks as
+  surely as a select list, so the check covers all of them. View columns inherit their base
+  columns' domains through lineage (D44). Refusals tell the user that their role does not
+  cover the data, without naming it.
+* **What waits.** Row-level rules, aggregate-only grants and per-role masking (Phase 7). So do
+  starting, stopping and scheduling runs from the screen, and switching the reasoning or
+  embedding model there. Those need a worker, one-run-per-data-source locks and an impact
+  preview first: a model change re-reasons everything, and an embedding change re-embeds
+  everything.

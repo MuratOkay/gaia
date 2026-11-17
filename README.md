@@ -9,14 +9,18 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status (2026-11-16): **Phases 0–2 complete.** Phase 3: 3.P, 3.0, 3A
-> (PostgreSQL) and 3B done; the 3C evaluation is running on the owner's host.
-> **Phase 4 built: 4A (the SQL guard, the read-only executor), 4B
-> (retrieval), 4C (answering questions), 4D (golden runs), 4E (the chat API) and 4F
-> (data sources added at runtime)** (`make query`, `make retrieve`, `make ask`, `make golden`,
-> `make dev-api`, `make datasource`); the gate waits for the golden run on the host. PostgreSQL is the main dialect (D52); SQL
-> Server is verified asynchronously on delivered builds (D56). What to run on your
-> machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)**. See [PHASES.md](PHASES.md).
+> Status (2026-11-17): **Phases 0–2 complete.** Phase 3: 3.P, 3.0, 3A (PostgreSQL) and 3B
+> done; the 3C evaluation is running on the owner's host (B-C, B-P, N-C, N-P complete).
+> **Phase 4 built and verified on the host**: 4A (the SQL guard, the read-only executor),
+> 4B (retrieval), 4C (answering questions), 4D (golden runs), 4E (the chat API), 4F (data
+> sources added at runtime) (`make query`, `make retrieve`, `make ask`, `make golden`,
+> `make dev-api`, `make datasource`). The configured model's golden run on `demo_pg`:
+> **executable 100 %, correct 97 %** (targets 80 / 70); the gate awaits the owner's tick.
+> **Phase 5 is re-planned** (sign-in through the company directory, three roles,
+> need-to-know, SME review, chat, administration) and awaits approval. PostgreSQL is the main
+> dialect (D52); SQL Server is verified asynchronously on delivered builds (D56). What to run
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§21 is the latest
+> triage). See [PHASES.md](PHASES.md).
 
 ---
 
@@ -282,7 +286,7 @@ Key decisions already fixed:
 
 | Concern | Choice |
 |---|---|
-| Reasoning LLM | `deepseek-v4.1-flash` via OpenAI-compatible gateway, JSON mode + thinking mode |
+| Reasoning LLM | `deepseek-flash` via OpenAI-compatible gateway (`GAIA_LLM_MODEL`; `deepseek-v4.1-flash` until 2026-11-16), JSON mode + thinking mode |
 | Embeddings | local Ollama `bge-m3`, 1024 dims, CPU (`num_gpu: 0`) |
 | Target databases | SQL Server 2025, `nge_small` (68 tables, 3 views, 607 columns, 0 comments); PostgreSQL dev target `demo_pg` (24 tables, 4 views, 213 columns, 3 comments) |
 | Design premise | worst case by default: no comments, no dictionary, possibly meaningless names; an SME per database is the ground truth (D23) |
@@ -332,3 +336,8 @@ SQL guard and executor (done), then retrieval (4B, done), answering (4C, done), 
 runs (4D, done), the API (4E, done) and data-source management (4F). The 99 columns reasoned so far are 65 `deep_profile`,
 32 `deep_profile_flagged` and 2 `abstain`; they are the catalog-only baseline
 (condition N-C). SME review moves forward into Phase 5 (roadmap R1).
+**Phase 5** (re-planned 2026-11-17, awaiting approval) runs in stages: 5.0 triage fixes →
+5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles) → 5B SME
+review → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
+and the SQL guard) → 5D the chat screen → 5E a read-only runs view; scheduling runs and
+switching models from the admin screen are proposed for later (PHASES, Phase 5).
