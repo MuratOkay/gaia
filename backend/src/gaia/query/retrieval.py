@@ -223,6 +223,8 @@ class IndexedColumn:
     band: str | None = None
     status: str | None = None
     values: list[str] = field(default_factory=list)  # readable under the exposure policy
+    # what the values mean, stated by an SME (5B): {"2": "overdue"}
+    meanings: dict[str, str] = field(default_factory=dict)
     distinct: int | None = None  # how many values there are (the list may be the top ones)
     value_note: str | None = None  # e.g. "~2,300 distinct values" when not listed
     range: tuple[str, str] | None = None  # min, max for dates and numbers
@@ -287,6 +289,8 @@ class RetrievalIndex:
     catalog: GuardCatalog
     data_source_id: uuid.UUID | None = None
     snapshot_id: str | None = None
+    # business terms SMEs defined (5B): (term, definition, synonyms)
+    glossary: list[tuple[str, str, list[str]]] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         self._lex_columns: _BM25 | None = None
@@ -315,6 +319,8 @@ class RetrievalIndex:
                     doc += tokens(c.unit)
                     for v in c.values:
                         doc += tokens(v) * 2
+                    for meaning in c.meanings.values():  # "overdue" finds the status column
+                        doc += tokens(meaning) * 2
                     doc += tokens(o.business_name or o.name)
                     col_docs[(o.key, c.name)] = doc
                 obj_docs[o.key] = odoc
@@ -378,6 +384,7 @@ class SchemaContext:
     ranking: list[tuple[str, float]]  # every candidate object and its fused relevance
     notes: list[str] = field(default_factory=list)
     snapshot_id: str | None = None
+    definitions: list[tuple[str, str]] = field(default_factory=list)  # glossary terms used
 
     @property
     def tables(self) -> list[str]:
@@ -412,7 +419,10 @@ def retrieve(index: RetrievalIndex, question: str, *, vector_hits: list[VectorHi
     """Rank objects for ``question``, connect them and choose what to show."""
     s = settings or RetrievalSettings()
     notes = list(notes or [])
-    q = question_tokens(question)
+    definitions = glossary_matches(index, question)
+    # a definition's words search too: "overdue invoice = finance.invoices.status = 2" brings
+    # the invoices and their status column although the question names neither
+    q = question_tokens(" ".join([question, *(d for _t, d in definitions)]))
     lex_cols, lex_objs = index._docs()
     col_hits = lex_cols.search(q, s.lexical_k)
     obj_hits = lex_objs.search(q, s.lexical_k)
@@ -464,7 +474,7 @@ def retrieve(index: RetrievalIndex, question: str, *, vector_hits: list[VectorHi
     if not ranking:
         notes.append("nothing in the catalog matched the question")
         return SchemaContext(question, index.data_source, index.dialect, [], [], [], notes,
-                             index.snapshot_id)
+                             index.snapshot_id, definitions)
 
     top = ranking[0][1]
     chosen = [k for k, v in ranking if v >= s.relative_cutoff * top][: s.max_objects]
@@ -498,9 +508,22 @@ def retrieve(index: RetrievalIndex, question: str, *, vector_hits: list[VectorHi
         r.columns = _choose_columns(r, join_cols.get(r.obj.key.lower(), set()), s)
 
     ctx = SchemaContext(question, index.data_source, index.dialect, list(picked.values()),
-                        joins, ranking, notes, index.snapshot_id)
+                        joins, ranking, notes, index.snapshot_id, definitions)
     _fit_budget(ctx, s)
     return ctx
+
+
+def glossary_matches(index: RetrievalIndex, question: str) -> list[tuple[str, str]]:
+    """The glossary terms (or their synonyms) a question uses, as whole words."""
+    text = f" {' '.join(tokens(question))} "
+    out = []
+    for term, definition, synonyms in index.glossary:
+        for name in (term, *synonyms):
+            words = " ".join(tokens(name))
+            if words and f" {words} " in text:
+                out.append((term, definition))
+                break
+    return out
 
 
 def _temporal(obj: IndexedObject) -> bool:
@@ -726,7 +749,10 @@ def _column_line(ctx: SchemaContext, obj: IndexedObject, c: IndexedColumn,
         line += f"; {hint.format(c=c.name)}"
     elif c.semantic_type:
         line += f"; holds {c.semantic_type.replace('_', ' ')}"
-    if c.values:
+    if c.meanings:  # an SME said what the values mean (5B)
+        shown = ", ".join(f"'{v}' = {m}" for v, m in list(c.meanings.items())[:20])
+        line += f"; values (meanings confirmed by an expert): {shown}"
+    elif c.values:
         shown = ", ".join(f"'{v}'" for v in c.values[:20])
         total = max(c.distinct or 0, len(c.values))
         if total > min(len(c.values), 20):
@@ -765,6 +791,11 @@ def render_context(ctx: SchemaContext) -> str:
         hidden = len(o.columns) - len(r.columns)
         if hidden > 0:
             lines.append(f"  ({hidden} more column(s) not shown)")
+    if ctx.definitions:
+        lines.append("\nDEFINITIONS (business terms as the company's experts define them; "
+                     "apply them):")
+        for term, definition in ctx.definitions:
+            lines.append(f"  {term}: {definition}")
     if ctx.joins:
         lines.append("\nJOINS (the only joins allowed):")
         for e in ctx.joins:

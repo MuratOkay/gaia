@@ -134,12 +134,21 @@ async def load_retrieval_index(session, data_source: str, settings: Settings) ->
                 synonyms=list(sem.synonyms) if sem else [], semantic_type=stype,
                 score=sem.calibrated_score if sem else None, band=sem.band if sem else None,
                 status=sem.status if sem else None, values=values, value_note=note,
+                meanings=dict((sem.value_domain or {}).get("meanings") or {}) if sem else {},
                 distinct=summary.distinct if summary is not None else None,
                 range=_range(snapshot.dialect, c.data_type, c.type_definition, summary, stype),
                 is_key=c.name in pk, personal=personal))
         objects[t.qualified_name] = obj
+    from sqlalchemy import or_, select
+
+    from gaia.db.models.semantics import GlossaryTerm
+
+    terms = (await session.scalars(select(GlossaryTerm).where(
+        or_(GlossaryTerm.data_source_id == ds_id, GlossaryTerm.data_source_id.is_(None)),
+        GlossaryTerm.status == "approved").order_by(GlossaryTerm.term))).all()
     return RetrievalIndex(data_source, snapshot.dialect, snapshot.database, objects, catalog,
-                          data_source_id=ds_id, snapshot_id=catalog.snapshot_id)
+                          data_source_id=ds_id, snapshot_id=catalog.snapshot_id,
+                          glossary=[(g.term, g.definition, list(g.synonyms)) for g in terms])
 
 
 async def vector_search(session, index: RetrievalIndex, vector: list[float], model: str,

@@ -154,6 +154,11 @@ class TableSemantic(Base):
     score_breakdown: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
     critique: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    # Phase 5B: an SME's decision (status sme_reviewed / sme_rejected); kept through
+    # re-reasoning while the structure is unchanged (D16, D73)
+    reviewed_by: Mapped[str | None] = mapped_column(sa.Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(sa.Text)
     created_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
@@ -249,6 +254,12 @@ class ColumnSemantic(Base):
     pii_confidence: Mapped[float | None] = mapped_column(sa.Float)
     pii_evidence: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
+    # Phase 5B: an SME's decision (status sme_reviewed / sme_rejected); kept through
+    # re-reasoning while the column's structure is unchanged (D16, D73)
+    reviewed_by: Mapped[str | None] = mapped_column(sa.Text)
+    reviewed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    review_note: Mapped[str | None] = mapped_column(sa.Text)
+
     # Full-text search over the meaning (OUTLINE §8). 'english' matches the
     # English-only output decision; revisit with the locale work.
     search_vector: Mapped[Any | None] = mapped_column(
@@ -333,9 +344,10 @@ class JoinHint(Base):
 class GlossaryTerm(Base):
     """Business terminology for the human-in-the-loop step.
 
-    Filled by SMEs or imported from an existing company glossary, which is then
-    treated as ground truth. Phase 2 creates the table only; nothing writes it.
-    ``data_source_id`` NULL means the term applies to every data source.
+    Filled by SMEs (Phase 5B review screens) or imported from an existing company
+    glossary, which is then treated as ground truth. ``data_source_id`` NULL means the
+    term applies to every data source. A withdrawn term is kept with status
+    ``rejected`` and no longer reaches the SQL generator.
     """
 
     __tablename__ = "glossary_term"

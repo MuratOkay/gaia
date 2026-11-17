@@ -24,6 +24,7 @@ from gaia.api.admin import router as admin_router
 from gaia.api.audit import router as audit_router
 from gaia.api.auth import router as auth_router
 from gaia.api.chat import router as chat_router
+from gaia.api.review import router as review_router
 from gaia.auth.deps import require
 from gaia.core.config import get_settings
 from gaia.db.engine import asyncpg_dsn, dispose_engine
@@ -57,6 +58,7 @@ app.include_router(auth_router)
 app.include_router(chat_router)
 app.include_router(admin_router)  # the admin role (Phase 5A)
 app.include_router(audit_router)  # the auditor role (Phase 5A)
+app.include_router(review_router)  # SMEs of a data source (Phase 5B)
 
 app.add_middleware(
     CORSMiddleware,

@@ -617,7 +617,10 @@ def inherited_row(
         "table_id": table_id,
         "column_id": column_id,
         "run_id": run_id,
-        "status": base.status if base.status in ("auto_approved", "sme_reviewed") else "draft",
+        # an SME's rejection travels too: the view must not present a meaning the SME
+        # rejected (D73)
+        "status": base.status if base.status in ("auto_approved", "sme_reviewed",
+                                                 "sme_rejected") else "draft",
         "band": base.band,
         "locale": locale,
         "structure_hash": column_hash,

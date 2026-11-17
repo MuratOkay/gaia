@@ -20,7 +20,7 @@ from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
-from sqlalchemy import and_, case, func, or_, select, update
+from sqlalchemy import and_, case, func, or_, select, true, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -139,14 +139,23 @@ class SemanticsStore:
             .execution_options(synchronize_session=False)
         )
         gone_columns = select(ColumnRecord.id).where(ColumnRecord.is_tombstoned.is_(True))
+        # an SME's decision goes stale only when its own column changed or went (D73); a
+        # change elsewhere in the table leaves it standing
+        changed_columns = select(ColumnRecord.id).join(
+            ColumnSemantic, ColumnSemantic.column_id == ColumnRecord.id).where(
+            ColumnSemantic.is_current.is_(True),
+            ColumnSemantic.structure_hash != ColumnRecord.structure_hash)
         c = await self.session.execute(
             update(ColumnSemantic)
             .where(
                 ColumnSemantic.is_current.is_(True),
                 ColumnSemantic.status != "stale",
                 or_(
-                    ColumnSemantic.table_id.in_(changed_tables),
+                    and_(ColumnSemantic.reviewed_by.is_(None),
+                         ColumnSemantic.table_id.in_(changed_tables)),
                     ColumnSemantic.column_id.in_(gone_columns),
+                    and_(ColumnSemantic.reviewed_by.is_not(None),
+                         ColumnSemantic.column_id.in_(changed_columns)),
                 ),
             )
             .values(status="stale")
@@ -222,6 +231,37 @@ class SemanticsStore:
             )
         ) + 1
 
+        # D16 / D73: an SME's decision outlives re-reasoning. A column whose current version
+        # is an SME's keeps it while the column's own structure is the same (the machine's new
+        # answer for it is not written); if the column changed, the decision goes ``stale`` —
+        # still signed, visible — and the machine's answer becomes current. The table's own
+        # SME-reviewed purpose and grain are kept likewise while the table is unchanged.
+        sme_columns = {
+            row.column_id: row for row in await self.session.scalars(
+                select(ColumnSemantic).where(
+                    ColumnSemantic.table_id == table_id, ColumnSemantic.is_current.is_(True),
+                    ColumnSemantic.reviewed_by.is_not(None),
+                    ColumnSemantic.status.in_(("sme_reviewed", "sme_rejected"))))
+        }
+        kept: set[uuid.UUID] = set()
+        for row in column_rows:
+            decided = sme_columns.get(row["column_id"])
+            if decided is None:
+                continue
+            if decided.structure_hash == row.get("structure_hash"):
+                kept.add(row["column_id"])
+            else:
+                decided.status = "stale"
+        column_rows = [r for r in column_rows if r["column_id"] not in kept]
+        current_table = await self.session.scalar(select(TableSemantic).where(
+            TableSemantic.table_id == table_id, TableSemantic.is_current.is_(True)))
+        if (current_table is not None and current_table.reviewed_by
+                and current_table.status == "sme_reviewed"
+                and current_table.structure_hash == table_row.get("structure_hash")):
+            table_row = {**table_row, **{k: getattr(current_table, k) for k in (
+                "business_name", "purpose", "grain", "entity", "synonyms", "status",
+                "reviewed_by", "reviewed_at", "review_note")}}
+
         column_ids = [r["column_id"] for r in column_rows]
         column_versions: dict[uuid.UUID, int] = {}
         if column_ids:
@@ -248,6 +288,7 @@ class SemanticsStore:
                     ColumnSemantic.column_id.in_(column_ids),
                 ),
                 ColumnSemantic.is_current.is_(True),
+                ColumnSemantic.column_id.not_in(kept) if kept else true(),
             )
             .values(is_current=False)
             .execution_options(synchronize_session=False)
@@ -256,6 +297,13 @@ class SemanticsStore:
         table_sem = TableSemantic(**table_row, version=next_table_version, is_current=True)
         self.session.add(table_sem)
         await self.session.flush()
+        if kept:  # the kept decisions belong to the new table version
+            await self.session.execute(
+                update(ColumnSemantic)
+                .where(ColumnSemantic.column_id.in_(kept), ColumnSemantic.is_current.is_(True))
+                .values(table_semantic_id=table_sem.id)
+                .execution_options(synchronize_session=False)
+            )
 
         column_sems: list[ColumnSemantic] = []
         for row in column_rows:

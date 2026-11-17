@@ -9,8 +9,9 @@
 > done, 3C runs on the host; **Phase 4 built and verified on the host — 4A (SQL guard,
 > executor), 4B (retrieval), 4C (answering), 4D (golden runs), 4E (chat API) and 4F
 > (data sources added at runtime)**; the configured model's golden run: executable 100 %,
-> correct 97 %. **Phase 5 re-planned** for sign-in through the company directory, three
-> roles and need-to-know (§38). Delivery state, gates and
+> correct 97 %. **Phase 5 in progress**: sign-in through the company directory, four roles
+> and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39, built
+> in the sandbox). Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
 > Metadata store: PostgreSQL 18 + pgvector. Targets: **PostgreSQL (main dialect
@@ -1792,3 +1793,55 @@ app's own credentials, who the person is and which groups they are in. Token cla
 used for that: they carry ids without names, stop at about 200 groups, and cannot be
 re-checked fifteen minutes later, whereas Graph can — so an Entra directory behaves exactly as
 an LDAP one does for sync, re-check, grants and audit.
+
+## 39. Phase 5B — the SME review (done in the sandbox)
+
+Human-in-the-loop has been the premise since the start (A1): the SME of a database is the
+ground truth (D23), and Phase 3 spent most of its effort deciding *what* to ask them — the
+ranked queue. 5B is where they answer. Four design choices matter more than the screens:
+
+* **A decision is a version, not an edit.** Accepting, correcting or rejecting writes a new
+  version of the meaning, signed with the reviewer's login, time and note, and scored 1.0 (or
+  0.0 for a rejection); the machine's versions stay beneath it. That keeps the history honest
+  and gives Phase 6 exactly what calibration needs: the machine's score next to a person's
+  verdict for the same column.
+* **Re-reasoning keeps a person's decision — until the thing it was about changes.** The model
+  never overwrites an SME (D16), but "never" cannot mean "forever": if the column's type or
+  constraints change, the decision may be about something that no longer exists. So it goes
+  *stale* — still signed, no longer used, listed for a second look — rather than silently kept
+  or silently dropped. What "changed" means is the column's own structure hash, not the
+  table's: adding a column to a table does not invalidate the decisions on its other columns.
+* **A decision travels only where lineage is certain.** A view column that shows a base column
+  as it is (pass-through) inherits the decision at once; a column *computed* from it may mean
+  something else (a sum, a conversion, a case expression), so it is queued for a look and never
+  copied.
+* **Definitions reach the SQL generator, not just the screen.** The golden question that has
+  failed in every run since Phase 4 (g07, "overdue invoices") fails because nothing in the
+  database says that status 2 means overdue. An SME can now say so — as a code's value meanings,
+  shown next to the values in the context the model reads, and as a glossary term whose
+  definition is added when a question uses it. Both appear only when they exist, so a store
+  without SME work gives the model the same prompts as before (checked byte for byte against
+  build D65, D72).
+
+What the SME sees follows D69: everything Gaia knows, but a few plain sentences first and the
+details folded below — an SME who has never seen Gaia should not have to read a score breakdown
+to decide whether "Status" is right. Personal data is shown as its shape unless the SME is also a
+PII processor: reviewing what a column *is* rarely needs its values, and the permission is
+separate on purpose (D70).
+
+**Verified (sandbox, build D73):** on `demo_pg` profiled for real and reasoned by the tests'
+scripted model — the queue in priority order; a correction with value meanings; the decision
+kept by a forced re-reasoning while every other column got a new version; a changed column
+hash turning it stale, visible, and a new decision clearing it; a pass-through view column
+inheriting, a computed one queued; join proposals confirmed (the guard then accepts the join)
+and rejected, and both surviving re-reasoning; table purpose and grain kept; personal data as
+shapes; and, after the decision, the SQL generator's context for g07 holding `'2' = overdue` and
+the definition. Over HTTP, only the SME of a data source may review it, and refusals are
+audited. **Still to see on the host:** the owner as SME in a browser, and g07 answered right by
+the configured model after that decision alone (OWNER_VERIFICATION §24).
+
+**The golden dip (D72).** Three host runs after build D68 gave 90 % correct where D65 gave
+97 %, most misses being answers *after* a clarification. The only change to what the model
+received was one sentence in the SQL prompt about clarifications; it is withdrawn and the
+prompt is D65's again, byte for byte, pinned by a test. Prompt wording is cheap to change and
+expensive to measure, so a change to it now needs a golden run to justify it.

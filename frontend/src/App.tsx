@@ -10,6 +10,12 @@ import { Grants } from "./pages/admin/Grants";
 import { AuditAccess, AuditEvents, AuditGrants, AuditPii, AuditSummaryPage } from "./pages/audit/Audit";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
+import { ColumnPage } from "./pages/review/Column";
+import { ReviewGlossary } from "./pages/review/Glossary";
+import { ReviewQueue } from "./pages/review/Queue";
+import { ReviewSources } from "./pages/review/Sources";
+import { TablePage } from "./pages/review/Table";
+import { ReviewTables } from "./pages/review/Tables";
 
 export function App() {
   const [me, setMe] = useState<Me | null | false>(null); // null: checking; false: signed out
@@ -48,6 +54,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
         <strong className="brand">{t("app.name")}</strong>
         <nav aria-label={t("nav.label")}>
           <NavLink to="/" end>{t("nav.home")}</NavLink>
+          {has("sme") && <NavLink to="/review">{t("nav.review")}</NavLink>}
           {has("admin") && (
             <>
               <NavLink to="/admin/data-sources">{t("nav.dataSources")}</NavLink>
@@ -71,6 +78,12 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
           <Route path="/admin/directories" element={<Only when={has("admin")}><Directories /></Only>} />
           <Route path="/admin/grants" element={<Only when={has("admin")}><Grants /></Only>} />
           <Route path="/admin/accounts" element={<Only when={has("admin")}><Accounts /></Only>} />
+          <Route path="/review" element={<Only when={has("sme")}><ReviewSources /></Only>} />
+          <Route path="/review/:ds" element={<Only when={has("sme")}><ReviewQueue /></Only>} />
+          <Route path="/review/:ds/columns/:id" element={<Only when={has("sme")}><ColumnPage /></Only>} />
+          <Route path="/review/:ds/tables" element={<Only when={has("sme")}><ReviewTables /></Only>} />
+          <Route path="/review/:ds/tables/:id" element={<Only when={has("sme")}><TablePage /></Only>} />
+          <Route path="/review/:ds/glossary" element={<Only when={has("sme")}><ReviewGlossary /></Only>} />
           <Route path="/audit" element={<Only when={has("auditor")}><AuditSummaryPage /></Only>} />
           <Route path="/audit/access" element={<Only when={has("auditor")}><AuditAccess /></Only>} />
           <Route path="/audit/pii" element={<Only when={has("auditor")}><AuditPii /></Only>} />

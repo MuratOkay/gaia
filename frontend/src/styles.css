@@ -66,3 +66,30 @@ tr.revoked td:last-child { text-decoration: none; }
 .grant-control { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
 button.microsoft { width: 100%; margin: 0.3rem 0; background: #fff; color: var(--fg); border-color: #8c8c8c; }
 .or { text-align: center; margin: 0.4rem 0; }
+
+/* review (5B) */
+textarea { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid #bcccdc; border-radius: 4px; background: #fff; resize: vertical; }
+.small { font-size: 0.8rem; }
+a.button.secondary { background: #fff; color: var(--accent); }
+.tabs { display: flex; gap: 0.3rem; margin: 0.4rem 0 0.8rem; border-bottom: 1px solid var(--line); }
+.tab { background: #fff; color: var(--accent); border-color: var(--line); border-bottom: none; border-radius: 4px 4px 0 0; }
+.tab.active { background: var(--accent); color: #fff; }
+.chips { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+.chip { font-size: 0.75rem; padding: 0.05rem 0.45rem; border-radius: 10px; background: #fff4d6; color: var(--warn); }
+.chip.reason-contradiction, .chip.reason-critique_disagrees { background: #ffebe9; color: var(--danger); }
+.band-accepted, .meaning-sme_reviewed, .meaning-auto_approved { background: #dafbe1; color: var(--ok); }
+.band-abstain, .meaning-sme_rejected, .meaning-stale { background: #ffebe9; color: var(--danger); }
+.band-deep_profile_flagged { background: #fff4d6; color: var(--warn); }
+.review-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+@media (max-width: 900px) { .review-grid { grid-template-columns: 1fr; } }
+.summary { padding-left: 1.1rem; }
+.summary li { margin: 0.2rem 0; }
+.decision .choices { display: flex; flex-direction: column; gap: 0.3rem; }
+.decision fieldset .wide { grid-column: 1 / -1; }
+.card.done { border-color: var(--ok); }
+table.compact { font-size: 0.85rem; }
+table.compact th { width: 12rem; }
+table.compact input { width: 100%; box-sizing: border-box; }
+details { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.8rem; margin: 0.4rem 0; }
+details > summary { cursor: pointer; font-weight: 600; }
+pre { white-space: pre-wrap; word-break: break-word; background: #f4f6f8; padding: 0.5rem; }

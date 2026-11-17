@@ -17,11 +17,14 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 > with the company's **Active Directory / LDAP**, four Gaia roles (user, SME, administrator,
 > auditor) and the PII-processor permission, one local break-glass account, server-side
 > sessions, a hash-chained access audit with the auditor's reports, and the first **web UI**
-> (`make dev-web`) — pass on the owner's host (685 tests); **5A.2, sign-in with Microsoft
-> Entra ID**, is built and verified in the sandbox. Next: SME review (5B). Every API endpoint
-> except `/health` and sign-in needs a session.
+> (`make dev-web`) — and **5A.2, sign-in with Microsoft Entra ID**, pass on the owner's host
+> (698 tests); **5B, the SME review** — the queue, everything Gaia knows about a column, and
+> decisions (accept, correct incl. what a code's values mean, reject, not used) that survive
+> re-reasoning and reach the SQL generator, plus a glossary — is built and verified in the
+> sandbox. Next: need-to-know (5C). Every API endpoint except `/health` and sign-in needs a
+> session.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22–§23 for builds D68, D71). See
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22–§24 for builds D68, D71, D73). See
 > [PHASES.md](PHASES.md).
 
 ---
@@ -312,7 +315,7 @@ Key decisions already fixed:
 | `make reason-dry` / `make reason` | reasoning over the stored snapshot and evidence (`ARGS=...`, `TARGET=...`) |
 | `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
-| `make review` | the SME review queue, highest priority first (`TARGET=...`) |
+| `make review` | the SME review queue, highest priority first (`TARGET=...`); decisions are taken in the web UI, **Review** (5B) |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events), administration (`/api/admin`), audit (`/api/audit`) — a session is needed since 5A |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
@@ -347,6 +350,6 @@ runs (4D, done), the API (4E, done) and data-source management (4F). The 99 colu
 **Phase 5** (approved 2026-11-17) runs in stages: 5.0 triage fixes (built) →
 5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles; built) →
 5A.2 Entra ID (built) → 5B SME
-review → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
+review (built) → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
 and the SQL guard) → 5D the chat screen → 5E a read-only runs view; scheduling runs and
 switching models from the admin screen are proposed for later (PHASES, Phase 5).

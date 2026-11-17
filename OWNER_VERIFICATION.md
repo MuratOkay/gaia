@@ -20,12 +20,13 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D71 (5A.2)` — 5.0 and 5A (§22, being run) and 5A.2,
-  sign-in with Microsoft Entra ID (§23).*
+  there. *Latest build: `2026-11-17 · D73 (5B)` — 5B, the SME review, and the SQL prompt back
+  to D65's wording (§24); earlier: 5.0 and 5A (§22), 5A.2 Entra ID (§23).*
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
-  complete; Phase 5 is approved. **§22 is the next run**: the new build, its tests, and 5A
-  against a real directory.
+  complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
+  items (§22e, §23c). **§24 is the next run**: the D73 build, two golden runs first, then you as
+  the SME of `demo_pg`.
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -119,6 +120,7 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 21 | Triage of the D65 outputs (2026-11-17): findings, the runs still wanted, three questions | metadata DB, `demo_pg`, Ollama; `sql1` for S4/S6 | ~30 min + answers |
 | 22 | Build D68: 5.0 (triage fixes) and 5A (sign-in, roles, administration, audit); the 3C report; a real directory | metadata DB, `demo_pg`, Docker (a test AD), the LLM gateway (22b, 2 min) | ~1 h |
 | 23 | Build D71: 5A.2 — sign-in with Microsoft Entra ID; the golden run's spread | an Entra tenant you can register an app in; the LLM gateway (23b, ~4 min) | ~45 min |
+| 24 | Build D73: 5B — you as SME on `demo_pg`; the golden run with D65's prompt (D72); g07 | the LLM gateway (~8 min), a directory account with the `sme` grant (§22e or §23c) | ~1 h |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -1769,10 +1771,10 @@ env | grep -c '^GAIA_TEST_'      # 3
 (make stamp; make web-install; make web-test; make web-build) > verification/23_web.out 2>&1
 ```
 
-- [ ] `23_migrate.out`: `0012 -> 0013, Sign-in with Microsoft Entra ID …`
-- [ ] `23_tests.out`: `gaia build 2026-11-17 · D71 (5A.2)` and **698 passed, 0 skipped**
-      (sandbox: 688 passed, 10 skipped)
-- [ ] `23_web.out`: `17 passed`, then `✓ built`
+- [x] `23_migrate.out`: `0012 -> 0013, Sign-in with Microsoft Entra ID …` *(D71, git `8c65e19`)*
+- [x] `23_tests.out`: `gaia build 2026-11-17 · D71 (5A.2)` and **698 passed, 0 skipped**
+      (sandbox: 688 passed, 10 skipped) *(exactly: `698 passed in 270.01s`)*
+- [x] `23_web.out`: `17 passed`, then `✓ built` *(4 files, 17 tests; `✓ built in 213ms`)*
 
 ### 23b · The golden run's spread (why 90 % after 97 %?)
 
@@ -1786,10 +1788,19 @@ for run in a b; do
 done
 ```
 
-- [ ] send both files. Read with §22b's run, three runs of one build show how much the model
+- [x] send both files. Read with §22b's run, three runs of one build show how much the model
       varies from run to run. If all three sit near 90 %, the sentence added for T6 costs
       something and I look at it again; if they scatter between 90 and 97 %, it was noise
-- [ ] in each, which ambiguous question (if any) was answered without asking
+      *(both **90 %** — 100 % executable — like §22b's: three of three at 90 %, so not noise.
+      The misses: g07 in all three (5B's test); **wrong after a clarification** — o02 and o03
+      in `23_golden_a`, o05 in `23_golden_b`, o02 in §22b — which D65's 97 % run never had.
+      T6's prompt sentence bears on exactly these re-asked answers: withdrawn in D72, the prompt
+      is D65's again byte for byte; two fresh runs on D73 decide it — §24b. Note: both files
+      say git `8576ee1`, the tests `8c65e19`, with the same build stamp — fine if the only
+      commit between them was your own)*
+- [x] in each, which ambiguous question (if any) was answered without asking *(`23_golden_a`:
+      none — 11 of 11 asked back; `23_golden_b`: o03 (and it was wrong); §22b: o06; D65: o05 —
+      one at most per run, a different one each time: that part is noise)*
 
 ### 23c · An Entra ID directory (the main item)
 
@@ -1856,6 +1867,144 @@ redirect URI uses. One private window per test user:
 
 Not covered yet: a tenant where people have more groups than a token can carry — irrelevant here,
 since Gaia reads groups from Graph, never from the token.
+
+---
+
+## 24 · Build D73: 5B — the SME review; the SQL prompt as in D65
+
+What is new (PHASES, Phase 5, "Owner runs on D71 — triage" and "5B results"; D72, D73):
+
+* **D72 — the SQL prompt is D65's again, word for word.** Your three golden runs after D68 all
+  gave 90 %, and most misses were answers *after* a clarification — which D65's run (97 %) never
+  had. The one change to what the model receives between D65 and D68 was T6's prompt sentence
+  about clarifications; it is withdrawn. In the sandbox, the messages for all 32 golden questions
+  are now byte-identical to build D65's. T6's real fix (a `--clarified` follow-up carries its
+  question) stays.
+* **5B — the SME review.** An SME of a data source signs in and finds **Review**: their data
+  sources → the queue, most important first, with why each item is there → one column with
+  everything Gaia knows about it, summarised first, details below → a decision: **accept**,
+  **correct** (name, purpose, role, entity, unit, other names, and **what each value of a code
+  means**), **reject** (with a note) or **not used**. Also a table's purpose and grain, the
+  model's join proposals (confirm / reject), and a **glossary** per data source. A decision is
+  signed, kept when Gaia re-reads the database (unless that column changed — then it shows as
+  *stale*), travels at once to views that show the column as it is, and reaches the SQL
+  generator: a code's values with their meanings, and a glossary term's definition when a
+  question uses the term. Migration `0014`. Every decision is in the audit.
+
+**The order matters:** the golden runs of §24b come **before** any decision of §24c, because your
+decisions change what the model sees for some questions (that is the point of §24d).
+
+### 24a · Setup and tests
+
+No new dependencies (neither Python nor web).
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/24_migrate.out 2>&1
+(make stamp; make test) > verification/24_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/24_web.out 2>&1
+```
+
+- [ ] `24_migrate.out`: `0013 -> 0014, SME review (Phase 5B, D73) …`
+- [ ] `24_tests.out`: `gaia build 2026-11-17 · D73 (5B)` and **702 passed, 0 skipped**
+      (sandbox: 692 passed, 10 skipped)
+- [ ] `24_web.out`: `25 passed`, then `✓ built`
+
+### 24b · Two golden runs with D65's prompt (D72) — before any review decision
+
+Fresh directories, so nothing is replayed; ~2 minutes and ~73 calls each. Run them the way you ran
+§23b (Ollama up or down alike — the vectors change the context).
+
+```bash
+for run in a b; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d73$run") \
+    > verification/24_golden_$run.out 2>&1
+done
+```
+
+- [ ] send both files. **Both near 97 %** (g07 the only miss, perhaps one slip): T6's sentence
+      was the cause, and D72 stands. **Still near 90 %**: the model varies more than D65's single
+      run showed; the prompt stays D65's anyway (the sentence bought nothing), and 90 % becomes
+      the baseline §24d is compared with
+- [ ] in each: which questions were wrong after their clarification (the `Correct` column says
+      **no** on an `answered` row whose `First` is `clarify`)
+
+### 24c · You as the SME of `demo_pg` (the main item)
+
+You need a directory account with the `sme` grant for `demo_pg`: **akaya** from §22e (granted
+there), or one of your Entra test users from §23c:
+
+```bash
+make auth ARGS="accounts"                                                  # the exact login
+make auth ARGS="grant sme --user corp/<login> --data-source demo_pg"       # Entra only
+```
+
+With `make dev-api` and `make dev-web` running, sign in as that person (after the grant), at
+http://127.0.0.1:5173 (for Entra: http://localhost:5173).
+
+1. **Review** is in the navigation; *My data sources* shows `demo_pg` with the number of items
+   waiting — the same items `make review TARGET=demo_pg` lists.
+2. **The queue.** Items in priority order, each with its reasons ("Gaia is not sure", "no more
+   evidence to gather", …). Try the filters (a reason; the table `finance.invoices`) and the tabs
+   *To do / Decided / Stale decisions*.
+3. **`finance.invoices.status`** — *Tables* → `finance.invoices` → `status` (whether or not it
+   is in the queue). Read the summary, then open the sections: *In the database*, *In the
+   data* (the values 0, 1, 2, 9 and their counts), *Evidence*, *History*. Then **Correct**:
+   name `Invoice status`; role `code`; under *What the values mean* the values are already listed
+   — type `0` open, `1` paid, `2` overdue, `9` void; a note (e.g. "finance manual"). Save →
+   "Saved as version N", and **Next: …** takes you to the next item.
+4. **Glossary** (top of the review pages): add `overdue invoice` — definition `an invoice of
+   finance.invoices whose status is 2 (overdue)`, other names `late invoice, past-due invoice`.
+5. **A few more decisions, your call:** accept one item whose meaning is right; reject one that
+   is wrong (the note is required); mark a legacy column *not used*. Then **`legacy.tb_trx02.f2`**
+   (a code of customers): correct its name — the outcome says the view
+   `rpt.v_legacy_transactions` took it; open that view's `customer_code`: it shows f2's meaning
+   and says it cannot be reviewed itself. If a column has *Joins* proposed by Gaia ("Gaia's
+   guess"), confirm or reject one.
+6. **The table page** of `finance.invoices`: the purpose and *One row per* — correct or accept.
+7. **Personal data.** `crm.customers.email`: akaya is a PII processor (§22e grants it to
+   GAIA-Finance), so she sees real values. An SME without that permission sees shapes only
+   (`aaaa.aaaa@aaaa.aaa`) — optional: revoke that grant for a minute in *Roles & grants*, sign in
+   again, look, grant it back.
+8. **Someone else.** Signed in as the administrator, open http://127.0.0.1:5173/review by hand:
+   "Your role does not include this page." As the auditor: *Events*, action *review decision*:
+   your decisions, with your login.
+
+```bash
+(make stamp; make review TARGET=demo_pg ARGS="--limit 15"; make auth ARGS="audit-check") \
+  > verification/24_review_after.out 2>&1
+```
+
+- [ ] `24_review_after.out`: the queue without the items you decided; `audit-check`: `intact`
+- [ ] tell me what was unclear, slow or missing on the screens — they are for SMEs who have not
+      seen Gaia before, so "I had to guess what this means" is a finding
+
+### 24d · g07 and the decisions kept by re-reasoning
+
+After §24c's steps 3 and 4:
+
+```bash
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d73sme") \
+  > verification/24_golden_sme.out 2>&1
+```
+
+- [ ] **g07 correct** (`| g07 | answer | answered | answered | yes |`) — the 5B acceptance
+      criterion: your decision alone, no change to code or prompts
+- [ ] the rest as in §24b (questions about other tables are replayed — same context, same
+      answer; the finance ones are asked afresh)
+
+Then re-reason the table with fresh model answers (~1 minute), and look again:
+
+```bash
+(make stamp; make reason TARGET=demo_pg ARGS="--table finance.invoices --force --no-cache") \
+  > verification/24_carry.out 2>&1
+```
+
+- [ ] `24_carry.out`: `finance.invoices` reasoned, `failed=0`
+- [ ] in the browser, `finance.invoices.status`: still *reviewed by* you, the same version, your
+      value meanings; its *History* shows no newer machine version on top. The columns you did
+      not decide have a new version each
+- [ ] send `24_golden_sme.out`, `24_carry.out` and §24c's file
 
 ---
 

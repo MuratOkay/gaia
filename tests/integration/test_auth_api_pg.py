@@ -62,6 +62,8 @@ MATRIX = [  # (method, path, who may: set of logins)
     ("GET", "/api/admin/data-sources", {"dyilmaz"}),
     ("GET", "/api/admin/grants", {"dyilmaz"}),
     ("GET", "/api/meta", {"dyilmaz"}),
+    ("GET", "/api/review", {"akaya"}),  # an SME (5B); never the administrator
+    ("GET", "/api/review/demo_pg/queue", {"akaya"}),
     ("GET", "/api/audit/summary", {"bdemir"}),
     ("GET", "/api/audit/access", {"bdemir"}),
     ("GET", "/api/audit/events", {"bdemir"}),

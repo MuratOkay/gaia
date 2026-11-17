@@ -148,6 +148,10 @@ def generation_messages(ctx: SchemaContext, question: str, today: date,
             if computed:
                 parts.append(f"  Computed: {computed}")
     if clarifications:
+        # Worded exactly as in build D65 (97 % correct). The D68 rule "a clarification
+        # settles what it answered" went with three golden runs at 90 %, the misses mostly
+        # answers *after* a clarification; withdrawn until measured (D72, OWNER_VERIFICATION
+        # §24b). T6's real fix — the follow-up carries its question — is code, and stays.
         parts += ["", "Earlier clarifications:"]
         for asked, answered in clarifications:
             parts.append(f"- Asked: {asked}" if asked else "- Asked: (a clarification)")

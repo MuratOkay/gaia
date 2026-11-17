@@ -1,4 +1,4 @@
-"""Show the SME review queue (Phase 3B; the review UI is Phase 5).
+"""Show the SME review queue (Phase 3B; decisions are taken in the web UI, Review — 5B).
 
     python -m gaia.tools.review --target demo_pg
     make review TARGET=demo_pg ARGS="--limit 100"

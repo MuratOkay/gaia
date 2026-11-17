@@ -158,7 +158,8 @@ export function AuditEvents() {
           <option value="">{t("audit.allActions")}</option>
           {["sign_in", "sign_in_refused", "forbidden", "grant_added", "grant_revoked", "directory_added",
             "directory_changed", "directory_probed", "directory_synced", "local_password_set",
-            "local_setup_code_issued", "privileges_changed", "session_ended"].map((a) => (
+            "local_setup_code_issued", "privileges_changed", "session_ended", "review_decision",
+            "glossary_term_added", "glossary_term_changed", "glossary_term_removed"].map((a) => (
             <option key={a} value={a}>{t(`audit.actions.${a}`)}</option>
           ))}
         </select>

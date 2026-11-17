@@ -179,3 +179,238 @@ export interface AuditSummary {
   refusals: number;
   chain: { ok: boolean; events: number; head: string; broken_at: number | null; reason: string | null };
 }
+
+// -- SME review (5B) ------------------------------------------------------------------------
+
+export type QueueStatus = "open" | "done" | "stale";
+
+export interface ReviewSource {
+  name: string;
+  id: string;
+  dialect: string;
+  open: number;
+  reviewed: number;
+  stale: number;
+}
+
+export interface QueueItem {
+  id: string | null;
+  table_id: string;
+  table: string;
+  column_id: string | null;
+  column: string | null;
+  data_type: string | null;
+  business_name: string | null;
+  role: string | null;
+  score: number | null;
+  band: string | null;
+  status: string | null;
+  reasons: string[];
+  priority: number | null;
+  coverage: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  resolved_at: string | null;
+}
+
+export interface Queue {
+  total: number;
+  items: QueueItem[];
+}
+
+export interface Meaning {
+  version: number;
+  status: string;
+  band: string;
+  score: number;
+  raw_score: number;
+  business_name: string | null;
+  purpose: string | null;
+  role: string | null;
+  entity: string | null;
+  unit: string | null;
+  value_domain: Record<string, unknown> | null;
+  value_meanings: Record<string, string>;
+  synonyms: string[];
+  example_questions: string[];
+  assumptions: string[];
+  unknowns: string[];
+  alternatives: unknown[];
+  self_confidence: number | null;
+  critique: Record<string, unknown> | null;
+  semantic_type: string | null;
+  claimed_semantic_type: string | null;
+  coverage: string;
+  unused: boolean;
+  model: string | null;
+  prompt_version: string | null;
+  created_at: string;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+  inherited_from: string | null;
+}
+
+export interface SummaryLine {
+  key: string;
+  [value: string]: string | number | null | undefined;
+}
+
+export interface Evidence {
+  kind: string;
+  direction: string;
+  strength: number;
+  source: string;
+  ref: string | null;
+  detail: string | null;
+}
+
+export interface ColumnProfileView {
+  method: string | null;
+  rows: number | null;
+  non_null: number | null;
+  distinct: number | null;
+  minimum: string | null;
+  maximum: string | null;
+  top_values: [string, number][];
+  sample_values: string[];
+  [key: string]: unknown;
+}
+
+export interface JoinHintView {
+  id: string;
+  from: string;
+  to: string;
+  source: string;
+  status: string;
+  confidence: number | null;
+  rationale: string | null;
+  reviewable: boolean;
+}
+
+export interface TestView {
+  test: string;
+  kind: string;
+  passed: boolean | null;
+  metric: number | null;
+  origin: string | null;
+  method: string | null;
+  detail: string | null;
+}
+
+export interface VersionView {
+  version: number;
+  created_at: string;
+  status: string;
+  band: string;
+  score: number;
+  business_name: string | null;
+  role: string | null;
+  model: string | null;
+  reviewed_by: string | null;
+  review_note: string | null;
+}
+
+export interface ColumnReview {
+  data_source: string;
+  table: { id: string; schema: string; name: string; kind: string; business_name: string | null; purpose: string | null; grain: string | null; status: string | null };
+  column: {
+    id: string;
+    name: string;
+    data_type?: string;
+    nullable?: boolean;
+    default?: string | null;
+    comment?: string | null;
+    keys?: string[];
+    checks?: string[];
+    references?: string[];
+    indexes?: string[];
+    computed?: string | null;
+    rows?: number | null;
+  };
+  meaning: Meaning | null;
+  summary: SummaryLine[];
+  breakdown: Record<string, unknown> | null;
+  ledger: Evidence[];
+  profile: ColumnProfileView | null;
+  personal: boolean;
+  masked: boolean;
+  tests: TestView[];
+  join_hints: JoinHintView[];
+  lineage: {
+    shown_in: { view: string; column: string; how: string }[];
+    comes_from: { how: string; source: string | null; expression: string | null; inputs: string[] }[];
+  };
+  versions: VersionView[];
+  questions: { question: string; at: string; origin: string | null }[];
+  review: { id: string; status: string; reasons: string[]; priority: number; importance: number; coverage: string; assignee: string | null } | null;
+  reviewable: boolean;
+  roles: string[];
+}
+
+export interface ColumnDecision {
+  meaning: Meaning;
+  propagated: { views: string[]; done: boolean; note?: string };
+  requeued: string[];
+  next: QueueItem | null;
+}
+
+export interface TableMeaning {
+  version: number;
+  status: string;
+  business_name: string | null;
+  purpose: string | null;
+  grain: string | null;
+  entity: string | null;
+  synonyms: string[];
+  assumptions: string[];
+  unknowns: string[];
+  score: number;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  review_note: string | null;
+}
+
+export interface TableReview {
+  data_source: string;
+  id: string;
+  schema: string;
+  name: string;
+  kind: string;
+  rows: number | null;
+  meaning: TableMeaning | null;
+  columns: {
+    id: string;
+    name: string;
+    data_type: string;
+    business_name: string | null;
+    role: string | null;
+    score: number | null;
+    band: string | null;
+    status: string | null;
+    inherited: boolean;
+    queued: boolean;
+    reasons: string[];
+  }[];
+}
+
+export interface GlossaryEntry {
+  id: string;
+  term: string;
+  definition: string;
+  synonyms: string[];
+  source: string;
+  everywhere: boolean;
+  editable: boolean;
+}
+
+export interface TableListEntry {
+  id: string;
+  name: string;
+  kind: string;
+  business_name: string | null;
+  reviewed_by: string | null;
+  columns: number;
+  queued: number;
+  decided: number;
+}

@@ -73,13 +73,14 @@
     "grants": "Roles & grants",
     "accounts": "Accounts",
     "audit": "Audit",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "review": "Review"
   },
   "home": {
     "title": "Welcome, {{name}}",
     "role": {
       "user": "You can ask questions about the data your role covers. The chat screen arrives in step 5D.",
-      "sme": "You review what Gaia understood about the data sources assigned to you. The review screens arrive in step 5B.",
+      "sme": "You review what Gaia understood about the data sources assigned to you: open “Review”.",
       "admin": "You connect data sources and the company directory, and decide who may do what.",
       "auditor": "You audit the administrators' decisions: who may see what, who is a PII processor, every grant and sign-in."
     },
@@ -87,7 +88,7 @@
     "pii": "You are a PII processor: personal data is shown to you unmasked.",
     "local": "You are signed in with the local administrator account, which is meant for setup and emergencies. Its every use is shown to the auditor.",
     "conflict": "Not applied",
-    "next": "More screens follow: SME review (5B), need-to-know (5C), chat (5D)."
+    "next": "More screens follow: need-to-know (5C), chat (5D)."
   },
   "dataSources": {
     "title": "Data sources",
@@ -267,7 +268,265 @@
       "local_setup_code_issued": "local setup code issued",
       "local_setup_refused": "local setup code refused",
       "local_enabled": "local account enabled",
-      "local_disabled": "local account disabled"
+      "local_disabled": "local account disabled",
+      "review_decision": "review decision",
+      "glossary_term_added": "glossary term added",
+      "glossary_term_changed": "glossary term changed",
+      "glossary_term_removed": "glossary term withdrawn"
     }
+  },
+  "review": {
+    "title": "Review",
+    "intro": "What Gaia understood about your data sources, and what it is unsure of. Your decisions are signed with your name, kept when Gaia re-reads the database, and used at once by the question answering.",
+    "noSources": "You are not the SME of any data source. An administrator assigns data sources to SMEs.",
+    "openCount": "{{count}} item(s) waiting for you",
+    "reviewedCount": "{{count}} meaning(s) decided by an SME",
+    "staleCount": "{{count}} decision(s) to look at again: the column changed since",
+    "nav": "Review",
+    "sources": "My data sources",
+    "queue": "Queue of {{ds}}",
+    "glossary": "Glossary",
+    "queueTitle": "Review queue — {{ds}}",
+    "tabsLabel": "Which items",
+    "tabs": {
+      "open": "To do",
+      "done": "Decided",
+      "stale": "Stale decisions"
+    },
+    "tabHelp": {
+      "open": "Most important first: where a wrong meaning would cost most and Gaia is least sure.",
+      "done": "Items decided already, the latest first. Open one to change the decision.",
+      "stale": "Decisions whose column changed in the database since. They are no longer used; look at them again."
+    },
+    "empty": {
+      "open": "Nothing is waiting. Gaia is sure enough of everything else, or it has been decided.",
+      "done": "Nothing decided yet.",
+      "stale": "No stale decisions."
+    },
+    "filters": "Filters",
+    "reason": "Why",
+    "anyReason": "any reason",
+    "table": "Table",
+    "tablePlaceholder": "schema.table",
+    "showing": "{{from}}–{{to}} of {{total}}",
+    "column": "Column",
+    "gaiaSays": "Gaia reads it as",
+    "score": "Certainty",
+    "why": "Why it is here",
+    "decided": "Decided",
+    "by": "by {{who}}, {{when}}",
+    "previous": "Previous",
+    "nextPage": "Next",
+    "reasons": {
+      "abstain": "Gaia is not sure",
+      "evidence_exhausted": "no more evidence to gather",
+      "contradiction": "evidence contradicts",
+      "critique_disagrees": "the second opinion disagrees",
+      "test_not_run": "a test could not run",
+      "input_reviewed": "an input was reviewed",
+      "stale_decision": "the column changed"
+    },
+    "reasonHelp": {
+      "abstain": "The certainty is too low to use the meaning as a fact.",
+      "evidence_exhausted": "Profiling and tests are done; only a person can settle it.",
+      "contradiction": "Some evidence says otherwise — see Evidence.",
+      "critique_disagrees": "A second model reading found the meaning doubtful.",
+      "test_not_run": "A test of Gaia's claim could not run (time or budget).",
+      "input_reviewed": "A column this view column is computed from was reviewed: check whether the computation changes its meaning.",
+      "stale_decision": "An SME decided this column, and it changed in the database since."
+    },
+    "bands": {
+      "accepted": "sure",
+      "deep_profile": "fairly sure",
+      "deep_profile_flagged": "unsure",
+      "abstain": "not sure"
+    },
+    "statuses": {
+      "draft": "Gaia's draft",
+      "auto_approved": "Gaia, sure",
+      "sme_reviewed": "reviewed by an SME",
+      "sme_rejected": "rejected by an SME",
+      "stale": "stale"
+    },
+    "verdicts": {
+      "supported": "supported",
+      "plausible": "plausible",
+      "doubtful": "doubtful",
+      "contradicted": "contradicted"
+    },
+    "summary": {
+      "none": "Gaia has no meaning for this column yet (run make reason).",
+      "reads_as": "Gaia reads it as “{{name}}” ({{role}}): {{purpose}}",
+      "decided": "{{status}}: {{who}}.",
+      "score": "Certainty {{score}} ({{band}}), from {{supports}} piece(s) of evidence for and {{contradicts}} against.",
+      "critique": "A second reading found it {{verdict}}.",
+      "tests": "{{passed}} of {{total}} test(s) of Gaia's claims passed.",
+      "distinct": "{{count}} distinct value(s) in the data.",
+      "personal": "It holds personal data.",
+      "unsure": "Gaia is unsure about: {{items}}."
+    },
+    "summaryTitle": "In short",
+    "inTable": "Table: {{purpose}}",
+    "status": "Status",
+    "decision": "Your decision",
+    "actions": {
+      "accept": "Accept",
+      "correct": "Correct",
+      "reject": "Reject",
+      "unused": "Not used"
+    },
+    "actionHelp": {
+      "accept": "Gaia's meaning is right as it stands.",
+      "correct": "Right once edited — including what each code means.",
+      "reject": "Wrong; say why. Gaia stops using it.",
+      "unused": "Nobody uses this column (legacy, empty). It leaves the question answering."
+    },
+    "correctIntro": "Change what is wrong; what you leave is kept.",
+    "fields": {
+      "business_name": "Name",
+      "purpose": "What it holds",
+      "role": "Role",
+      "entity": "About (entity)",
+      "unit": "Unit",
+      "synonyms": "Other names (comma-separated)",
+      "grain": "One row per"
+    },
+    "meaningsTitle": "What the values mean",
+    "meaningsHelp": "For a code: what each value stands for (2 = overdue). The SQL generator sees these. The most frequent values are listed; add others.",
+    "value": "Value",
+    "means": "Means",
+    "valueN": "Value {{n}}",
+    "meansN": "Meaning of {{value}}",
+    "addValue": "Add a value",
+    "note": "Note (optional)",
+    "noteRequired": "Why is it wrong? (required)",
+    "save": "{{action}} and save",
+    "saved": "Saved as version {{version}}.",
+    "propagated": "The views that show this column took the decision: {{views}}.",
+    "propagateLater": "A reasoning run is busy; the views {{views}} take the decision with the next run.",
+    "requeued": "Computed from this column, queued for a look: {{columns}}.",
+    "nextItem": "Next: {{item}}",
+    "queueEmpty": "The queue is empty.",
+    "backToQueue": "Back to the queue",
+    "inherited": "This view column shows {{base}} as it is. Review that column; the decision comes here by itself.",
+    "inheritedShort": "(from its base column)",
+    "noMeaning": "Gaia has no meaning here yet: it has not reasoned about this table (make reason).",
+    "details": "Everything Gaia knows",
+    "sections": {
+      "facts": "In the database",
+      "profile": "In the data",
+      "evidence": "Evidence ({{count}})",
+      "breakdown": "How the certainty was computed",
+      "tests": "Tests of Gaia's claims ({{count}})",
+      "joins": "Joins ({{count}})",
+      "lineage": "Views",
+      "versions": "History ({{count}})",
+      "questions": "Questions that used it ({{count}})"
+    },
+    "facts": {
+      "type": "Type",
+      "nullable": "May be empty",
+      "default": "Default",
+      "comment": "Comment in the database",
+      "keys": "Keys",
+      "references": "Refers to",
+      "checks": "Checks",
+      "indexes": "Indexes",
+      "computed": "Computed as",
+      "rows": "Rows in the table"
+    },
+    "noProfile": "Not profiled.",
+    "masked": "Personal data: values are shown as their shape only (a = letter, 9 = digit). PII processors see them.",
+    "profile": {
+      "rows": "Rows read",
+      "nonNull": "Not empty",
+      "distinct": "Distinct",
+      "range": "Smallest … largest",
+      "count": "Rows"
+    },
+    "directions": {
+      "supports": "for",
+      "contradicts": "against",
+      "neutral": "neutral",
+      "inconclusive": "inconclusive"
+    },
+    "evidence": {
+      "direction": "For / against",
+      "kind": "Kind",
+      "strength": "Strength",
+      "source": "From",
+      "detail": "Detail"
+    },
+    "tests": {
+      "test": "Test",
+      "result": "Result",
+      "metric": "Measured",
+      "notRun": "not run"
+    },
+    "joins": {
+      "from": "From",
+      "to": "To",
+      "origin": "Origin",
+      "confidence": "Confidence",
+      "why": "Why"
+    },
+    "hintSources": {
+      "fk": "foreign key",
+      "llm": "Gaia's guess",
+      "sme": "an SME"
+    },
+    "hintStatuses": {
+      "confirmed": "confirmed",
+      "inferred": "proposed",
+      "rejected": "rejected",
+      "refuted": "refuted by a test",
+      "stale": "no longer proposed"
+    },
+    "confirm": "Confirm",
+    "rejectHint": "Reject",
+    "hintWhy": "Why is {{from}} → {{to}} wrong? (required)",
+    "lineage": {
+      "comesFrom": "This view column is {{how}}: {{source}}",
+      "shownIn": "Shown in {{view}}.{{column}} ({{how}})",
+      "none": "No view uses this column.",
+      "kinds": {
+        "pass_through": "passed through as it is",
+        "computed": "computed",
+        "unresolved": "not traced"
+      }
+    },
+    "versions": {
+      "when": "When",
+      "who": "By"
+    },
+    "questionsHelp": "Approximate: questions whose query read this table and mentioned the column.",
+    "tableMeaning": "The table's meaning",
+    "unknowns": "Gaia is unsure about: {{items}}",
+    "tableSaved": "Saved.",
+    "saveCorrection": "Save the correction",
+    "acceptTable": "Accept as it stands",
+    "columns": "Columns",
+    "rows": "about {{count}} row(s)",
+    "tables": "Tables",
+    "tablesTitle": "Tables and views — {{ds}}",
+    "tablesIntro": "Every table and view, whether or not something of it waits for you. Open one to see its columns and to review any of them.",
+    "find": "Find",
+    "waiting": "Waiting",
+    "decidedCount": "Decided by an SME"
+  },
+  "glossary": {
+    "title": "Glossary — {{ds}}",
+    "intro": "Business terms and what they mean in this data source. When a question uses a term (or one of its other names), the SQL generator gets its definition. Say it in terms of the data: “an invoice whose status is 2”.",
+    "none": "No terms yet.",
+    "term": "Term",
+    "definition": "Definition",
+    "synonyms": "Other names (comma-separated)",
+    "everywhere": "for every data source",
+    "edit": "Edit",
+    "withdraw": "Withdraw",
+    "editPrompt": "The definition of “{{term}}”:",
+    "confirmWithdraw": "Withdraw “{{term}}”? It is kept in the history and no longer used.",
+    "add": "Add a term",
+    "addButton": "Add"
   }
 }

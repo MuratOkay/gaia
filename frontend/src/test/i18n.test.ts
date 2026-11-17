@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import en from "../i18n/locales/en.json";
+import { BANDS, MEANING_STATUSES, REASONS } from "../pages/review/common";
 
 function files(dir: string): string[] {
   return readdirSync(dir).flatMap((f: string) => {
@@ -28,7 +29,24 @@ const DYNAMIC: Record<string, string[]> = {
   "directories.roleKinds.": ["group", "attribute", "ou"],
   "status.": ["config", "unverified", "verified", "failed", "disabled", "tombstoned"],
   "dataSources.origins.": ["config", "admin"],
-  "audit.actions.": ["sign_in", "sign_in_refused", "forbidden", "grant_added", "grant_revoked", "session_ended", "privileges_changed"],
+  "audit.actions.": ["sign_in", "sign_in_refused", "forbidden", "grant_added", "grant_revoked", "session_ended", "privileges_changed",
+                     "review_decision", "glossary_term_added", "glossary_term_changed", "glossary_term_removed"],
+  "review.reasons.": [...REASONS],
+  "review.reasonHelp.": [...REASONS],
+  "review.bands.": [...BANDS],
+  "review.statuses.": [...MEANING_STATUSES],
+  "review.verdicts.": ["supported", "plausible", "doubtful", "contradicted"],
+  "review.summary.": ["none", "reads_as", "decided", "score", "critique", "tests", "distinct", "personal", "unsure"],
+  "review.tabs.": ["open", "done", "stale"],
+  "review.tabHelp.": ["open", "done", "stale"],
+  "review.empty.": ["open", "done", "stale"],
+  "review.actions.": ["accept", "correct", "reject", "unused"],
+  "review.actionHelp.": ["accept", "correct", "reject", "unused"],
+  "review.fields.": ["business_name", "entity", "unit"],
+  "review.directions.": ["supports", "contradicts"],
+  "review.hintSources.": ["fk", "llm", "sme"],
+  "review.hintStatuses.": ["confirmed", "inferred", "rejected", "refuted", "stale"],
+  "review.lineage.kinds.": ["pass_through", "computed", "unresolved"],
 };
 
 describe("locale keys", () => {

@@ -36,6 +36,7 @@ These stages exist and work:
 | **Profile** | `make profile` | Evidence from the data (Phase 3A): column profiles, value-type detections, cross-column identities, view lineage and aliases, join candidates; `make profile-tests` later tests the model's claims |
 | **Reason** | `make reason` | A business meaning per table and column, with evidence, alternatives and an honest score (Phase 3B: scored from an evidence ledger) |
 | **Review queue** | `make review` | What the SME should look at first, and why |
+| **SME review** (Phase 5B) | the web UI, **Review** | An SME's decisions on what Gaia understood — accept, correct (also what a code's values mean), reject, not used; join proposals; a glossary. Signed, kept by re-reasoning, used at once when questions are answered |
 | **Embed** | (inside `make reason`) | 1024-dimension vectors for retrieval in Phase 4 |
 | **Query** (Phase 4A) | `make query`, `make query-check` | One SQL statement validated by the SQL guard and run read-only, recorded in `chat.query_run` — the path every generated query will take |
 | **Retrieve** (Phase 4B) | `make retrieve`, `make retrieval-eval` | The schema context for a business question — objects, meanings and their certainty, values, allowed joins — and its recall over a question set |
@@ -56,9 +57,9 @@ Built but still being run: the Phase 3 evaluation (3C, `make evaluate*`). Built
 in Phase 4 so far: the SQL guard and the read-only executor (4A), retrieval (4B),
 answering (4C), golden runs (4D), the chat API (4E), data sources added at runtime
 (4F) — Phase 4 is complete (golden run on `demo_pg`: 100 % executable, 97 % correct). Phase 5
-so far: sign-in through the company directory, roles, administration and audit, and the web
-UI's first screens (5A). Not built yet: the review screens (5B), need-to-know (5C), the chat
-screen (5D).
+so far: sign-in through the company directory (AD/LDAP, Entra ID), roles, administration and
+audit, the web UI's first screens (5A, 5A.2), and the SME review (5B). Not built yet:
+need-to-know (5C), the chat screen (5D).
 
 Since Phase 4C **Gaia answers questions** from the command line (`make ask`). Read the
 confidence and the "unconfirmed" lines of every answer: the confidence is a heuristic until
@@ -482,6 +483,50 @@ host name of the redirect URI (`localhost`, not `127.0.0.1`, in development).
 * **From a script**, sign in with `POST /api/auth/login` and send the `X-CSRF-Token` header
   (the value of the `gaia_csrf` cookie) with every request that changes something.
 
+### Reviewing as an SME (the web UI, Phase 5B)
+
+An SME reviews the data sources an administrator assigned to them (`grant sme --user … --data-source …`,
+or to a directory role). Sign in to the web UI and open **Review**:
+
+1. **My data sources** — how many items wait in each, how many meanings an SME has decided, and
+   how many decisions went *stale* (the column changed in the database since).
+2. **The queue** — the most important first: where a wrong meaning would cost most (big tables,
+   keys, many joins) and Gaia is least sure. Each item says why it is there ("Gaia is not sure",
+   "no more evidence to gather", "evidence contradicts", …). *Tables* lists every table and view,
+   so any column can be reviewed, queued or not.
+3. **One column** — a few sentences first (what Gaia reads it as, how sure, from what), then
+   everything behind it: the database facts, the values in the data, the evidence for and
+   against, the tests of Gaia's claims, the joins, the views it appears in, its history and the
+   questions that used it. Personal data is shown as shapes (`aaaa.aaaa@aaaa.aaa`) unless you
+   are also a PII processor.
+4. **Your decision:**
+
+| Decision | When | What happens |
+|---|---|---|
+| Accept | Gaia's meaning is right | signed with your name; certainty 1.0 |
+| Correct | right once edited | the name, what it holds, the role, entity, unit, other names — and **what each value of a code means** (`2` = overdue): the SQL generator sees these next to the values |
+| Reject | wrong (say why — required) | no longer used anywhere; Gaia's attempt stays in the history |
+| Not used | legacy, empty, nobody uses it | leaves the question answering |
+
+A decision is kept when Gaia re-reads and re-reasons the database — as long as that column does
+not change. If it changes, the decision turns *stale*: still signed, no longer used, listed under
+*Stale decisions* for a second look. A view column that only shows another column takes that
+column's decision by itself (review the base column); a view column *computed* from it is queued
+for a look instead of being copied.
+
+**The glossary** — business terms of this data source and what they mean, in terms of the data
+("overdue invoice: an invoice of finance.invoices whose status is 2"). When a question uses the
+term, or one of its other names, the SQL generator gets the definition. Terms can be edited or
+withdrawn (kept in the history).
+
+**Joins** that Gaia guessed (no foreign key declares them) can be confirmed — then the SQL guard
+accepts them — or rejected (with a note); Gaia never overwrites either. A declared foreign key is
+a fact of the database and is not reviewed. A table's own purpose and grain ("one row per
+invoice") are reviewed on the table's page.
+
+Every decision and glossary change is in the audit; the auditor sees them under *Events*. From a
+script, the same through `/api/review/…` (PHASES, 5B results).
+
 ### Golden runs (`make golden`, Phase 4D)
 
 ```bash
@@ -739,8 +784,19 @@ WHERE r.status = 'open'
 ORDER BY r.priority DESC;
 ```
 
-Or `make review`. An SME decision (Phase 5) closes an item; a newer scored
-version supersedes an open one, so the queue never shows a stale score.
+Or `make review`. An SME decision (the web UI, Review — Phase 5B) closes an item; a newer
+scored version supersedes an open one, so the queue never shows a stale score. The decisions
+themselves:
+
+```sql
+SELECT t.schema_name, t.object_name, k.column_name, c.version, c.status, c.business_name,
+       c.reviewed_by, c.reviewed_at, c.review_note, c.value_domain -> 'meanings' AS meanings
+FROM semantics.column_semantic c
+JOIN catalog.columns k ON k.id = c.column_id
+JOIN catalog.tables t ON t.id = c.table_id
+WHERE c.reviewed_by IS NOT NULL
+ORDER BY c.reviewed_at DESC;
+```
 
 ### Failed calls
 
@@ -1027,7 +1083,7 @@ State these honestly when showing Gaia to anyone:
 | **`thinking` is not in the skip key** | Toggling it does not upgrade existing answers without `--force`; the default path always uses thinking |
 | **Targets come from config** | Several targets can be configured and selected with `--target`; admin-supplied connections are a Phase 4 item (OUTLINE §24) |
 | **No question answering yet** | Phases 4–5 build SQL generation and the chat UI |
-| **No SME review UI yet** | Low-confidence items are stored and flagged, but reviewed by hand in SQL; the review UI moves into Phase 5 (R1) |
+| **SME review: what is not there yet** | The review screens exist since 5B. Not yet: adding a join no model proposed (only proposals are reviewed), and a table cannot be rejected as a whole (its columns can); "questions that used it" matches the column's name in the SQL until 5C records what a query read |
 | **Two dialects** | SQL Server and PostgreSQL (catalog, read-only probe, profiling, reasoning). SQL Server profiling awaits its first run on the owner's host; further engines stay in Phase 7 |
 
 ### What "good" looks like today

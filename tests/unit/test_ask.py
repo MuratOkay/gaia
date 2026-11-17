@@ -318,3 +318,25 @@ def test_clarification_options_are_shown_in_a_seeded_shuffled_order():
         present(c, f"question {n}")[0].default for n in range(400))
     assert set(positions) == {0, 1, 2, 3}
     assert all(60 <= n <= 140 for n in positions.values()), positions  # ~100 each
+
+
+def test_the_sql_prompt_is_build_d65s_word_for_word():
+    """D72: the golden run gave 97 % on D65 and 90 % three times after D68 added a rule about
+    clarifications (the misses mostly answers after a clarification). The prompt and the
+    re-ask block are D65's again, byte for byte, until fresh runs measure the difference —
+    a change to either must be a decision, not an accident."""
+    import hashlib
+    from datetime import date
+
+    from gaia.query.planner import generation_messages
+    from gaia.query.retrieval import SchemaContext
+
+    ctx = SchemaContext(question="q", data_source="demo_pg", dialect="postgres", objects=[],
+                        joins=[], ranking=[])
+    first = generation_messages(ctx, "Top 5 shops", date(2026, 1, 15))
+    again = generation_messages(ctx, "Top 5 shops", date(2026, 1, 15),
+                                clarifications=[("Best by what?", "order amount")])
+    assert again[0].content == first[0].content
+    assert hashlib.sha256(first[0].content.encode()).hexdigest() == "7454f08cc3db34a6a3f78ac12d12cc36722b16abeee75920a3bad10930288036"
+    assert "\nEarlier clarifications:\n- Asked: Best by what?\n  User: order amount" in \
+        again[1].content

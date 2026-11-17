@@ -139,13 +139,18 @@ class ChatService:
         return build_embedding_client(self.settings.embeddings)
 
     async def index(self, session, data_source: str, ds_id: uuid.UUID) -> RetrievalIndex:
-        """The retrieval index, reloaded when the snapshot, the meanings, the join hints or
-        the tests changed (or after ``INDEX_TTL_S``)."""
+        """The retrieval index, reloaded when the snapshot, the meanings (an SME's decision
+        included), the glossary, the join hints or the tests changed (or after
+        ``INDEX_TTL_S``)."""
         row = (await session.execute(text("""
             SELECT (SELECT id::text FROM catalog.snapshots WHERE data_source_id = :ds
                     ORDER BY captured_at DESC LIMIT 1),
                    (SELECT max(created_at)::text FROM semantics.table_semantic
                     WHERE data_source_id = :ds),
+                   (SELECT max(c.created_at)::text FROM semantics.column_semantic c
+                    JOIN catalog.tables t ON t.id = c.table_id WHERE t.data_source_id = :ds),
+                   (SELECT max(updated_at)::text FROM semantics.glossary_term
+                    WHERE data_source_id = :ds OR data_source_id IS NULL),
                    (SELECT max(updated_at)::text FROM semantics.join_hint
                     WHERE data_source_id = :ds),
                    (SELECT max(created_at)::text FROM profiling.verification_test
