@@ -16,6 +16,7 @@ Directories, roles and grants (the admin screen does the same):
     make auth ARGS="grant admin --role acme/GAIA-Admins"
     make auth ARGS="grant sme --user acme/akaya --data-source demo_pg"
     make auth ARGS="grant pii_processor --role acme/GAIA-Finance --note 'KVKK list 2026-11'"
+    make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"   (5C)
     make auth ARGS="grants [--all] | revoke <grant id> | accounts"
     make auth ARGS="audit-check"                     # is the audit chain intact; its head
 
@@ -150,9 +151,11 @@ async def _run(args: argparse.Namespace) -> int:
             role = _split(args.role, "role") if args.role else None
             user = _split(args.user, "user") if args.user else None
             v = await svc.grant(args.privilege, actor=actor, role=role, account=user,
-                                data_source=args.data_source, note=args.note)
+                                data_source=args.data_source, note=args.note,
+                                category=args.category)
             print(f"granted {v['privilege']} to {v['subject']}"
-                  + (f" on {v['data_source']}" if v["data_source"] else "") + f"  ({v['id']})")
+                  + (f" on {v['data_source']}" if v["data_source"] else "")
+                  + (f": {v['category']}" if v.get("category") else "") + f"  ({v['id']})")
             return 0
         if args.command == "revoke":
             v = await svc.revoke(uuid.UUID(args.grant_id), actor=actor, note=args.note)
@@ -165,7 +168,8 @@ async def _run(args: argparse.Namespace) -> int:
                 end = f"  revoked {g['revoked_at']:%Y-%m-%d} by {g['revoked_by']}" \
                     if g["revoked_at"] else ""
                 print(f"  {g['privilege']:<13} {g['subject']:<40} "
-                      f"{g['data_source'] or '':<12} by {g['granted_by']}{end}  {g['id']}")
+                      f"{g['data_source'] or g.get('category') or '':<12} by "
+                      f"{g['granted_by']}{end}  {g['id']}")
             return 0
         if args.command == "accounts":
             rows = await svc.accounts()
@@ -176,6 +180,8 @@ async def _run(args: argparse.Namespace) -> int:
                     flags += " + PII"
                 if r["sme_sources"]:
                     flags += f" (sme: {', '.join(r['sme_sources'])})"
+                if r.get("categories"):
+                    flags += f" [reads: {', '.join(r['categories'])}]"
                 state = "" if r["enabled"] else "  DISABLED"
                 print(f"  {(r['directory'] or 'local') + '/' + r['login']:<32} {flags}{state}")
                 for c in r["conflicts"]:
@@ -218,11 +224,13 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--gone", action="store_true", help="roles: also those no longer there")
 
     s = sub.add_parser("grant", help="give a Gaia role or permission")
-    s.add_argument("privilege", choices=["user", "sme", "admin", "auditor", "pii_processor"])
+    s.add_argument("privilege", choices=["user", "sme", "admin", "auditor", "pii_processor",
+                                         "category"])
     who = s.add_mutually_exclusive_group(required=True)
     who.add_argument("--role", help="a directory role: DIRECTORY/NAME")
     who.add_argument("--user", help="an account: [DIRECTORY/]LOGIN")
     s.add_argument("--data-source", help="for sme: the data source reviewed")
+    s.add_argument("--category", help="for category: the data category (make access)")
     s.add_argument("--note")
 
     s = sub.add_parser("revoke", help="end a grant (kept, dated and signed)")

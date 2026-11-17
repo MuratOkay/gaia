@@ -24,13 +24,13 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 import gaia
+from gaia.access.policy import OPERATOR, build_access_guard, policy_for_login, restrict_index
 from gaia.core.config import get_settings
 from gaia.db.engine import dispose_engine, get_engine
 from gaia.db.repositories.query_store import QueryStore
 from gaia.evaluation.recorder import RecordingLLMClient
 from gaia.query.golden import load_golden
 from gaia.query.golden_run import report_markdown, run_golden, summarise
-from gaia.query.guard import build_guard
 from gaia.query.retrieval_store import load_retrieval_index
 from gaia.tools.ask import ask_settings, llm_client
 
@@ -57,7 +57,14 @@ async def _run(args: argparse.Namespace) -> int:
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:
         async with factory() as session:
-            index = await load_retrieval_index(session, label, settings)
+            full_index = await load_retrieval_index(session, label, settings)
+            policy = OPERATOR
+            if args.as_login:  # answered as the chat would answer this person (5C)
+                policy = await policy_for_login(session, full_index, args.as_login,
+                                                args.directory)
+                print(f"as {policy.label}: {len(policy.readable)} object(s) readable"
+                      + ("" if policy.pii_processor else ", personal data masked"))
+            index = restrict_index(full_index, policy)
             hits: dict[str, object] = {}
             if not args.no_vectors:
                 from gaia.tools.retrieve import _embedder, _vectors
@@ -73,7 +80,7 @@ async def _run(args: argparse.Namespace) -> int:
                     embedder.close()
                 for n in sorted(set(notes)):
                     print(f"note: {n}")
-            guard = build_guard(settings, label, index.catalog)
+            guard = build_access_guard(settings, label, index, full_index.catalog, policy)
 
             def progress(o) -> None:
                 mark = {True: "ok  ", False: "NO  ", None: "--  "}[o.correct]
@@ -130,6 +137,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--no-record", action="store_true")
     p.add_argument("--workers", type=int, help="questions at a time (default llm.concurrency)")
     p.add_argument("--force", action="store_true")
+    p.add_argument("--as", dest="as_login", metavar="LOGIN",
+                   help="answer as this person would be answered in the chat (need-to-know)")
+    p.add_argument("--directory", help="with --as: the person's directory")
     return asyncio.run(_run(p.parse_args(argv)))
 
 

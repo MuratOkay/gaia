@@ -70,6 +70,8 @@ class GuardCatalog:
     snapshot_id: str | None = None
     # "schema.object.column" (lower case) that are unique on their own
     unique: set[str] = field(default_factory=set)
+    # need-to-know (5C): personal-data columns this person may only show or count
+    show_only: set[str] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         self._parent: dict[str, str] = {}

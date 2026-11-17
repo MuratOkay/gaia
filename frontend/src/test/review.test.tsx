@@ -76,7 +76,7 @@ describe("the review screens", () => {
   it("an SME sees Review in the navigation; a user does not", () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]"));
     const { unmount } = render(<MemoryRouter><Shell me={me(["user", "sme"])} onSignedOut={vi.fn()} /></MemoryRouter>);
-    expect(screen.getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Review"]);
+    expect(screen.getAllByRole("link").map((a) => a.textContent)).toEqual(["Home", "Chat", "Review", "Queries"]);
     unmount();
     render(<MemoryRouter initialEntries={["/review"]}><Shell me={me(["user"])} onSignedOut={vi.fn()} /></MemoryRouter>);
     expect(screen.getByText("Your role does not include this page.")).toBeInTheDocument();

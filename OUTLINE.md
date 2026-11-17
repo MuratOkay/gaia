@@ -10,8 +10,9 @@
 > executor), 4B (retrieval), 4C (answering), 4D (golden runs), 4E (chat API) and 4F
 > (data sources added at runtime)**; the configured model's golden run: executable 100 %,
 > correct 97 %. **Phase 5 in progress**: sign-in through the company directory, four roles
-> and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39, built
-> in the sandbox). Delivery state, gates and
+> and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39),
+> need-to-know, the chat screen and runs (§40) — built in the sandbox, host run pending.
+> Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
 > Metadata store: PostgreSQL 18 + pgvector. Targets: **PostgreSQL (main dialect
@@ -1845,3 +1846,44 @@ the configured model after that decision alone (OWNER_VERIFICATION §24).
 received was one sentence in the SQL prompt about clarifications; it is withdrawn and the
 prompt is D65's again, byte for byte, pinned by a test. Prompt wording is cheap to change and
 expensive to measure, so a change to it now needs a golden run to justify it.
+
+## 40. Phase 5C–5E — need-to-know, the chat screen, runs (done in the sandbox)
+
+§38 said need-to-know would be enforced where SQL is decided, not where it is phrased. As
+built (D74), it is enforced twice, both times by construction rather than by inspection:
+
+* **Retrieval works on a restricted index.** The person's policy is computed for every turn —
+  objects whose category they hold, view columns whose bases they may read, personal-data
+  columns marked — and the index the model is given holds nothing else: no object, column,
+  value, join or glossary definition outside it. The model cannot leak what it never saw.
+* **The guard works on a restricted catalog.** A statement that names a forbidden table or
+  column simply does not resolve, wherever the name appears — a filter, a join, a CTE, a set
+  operation, a subquery. Only then is the full catalog asked whether the name exists, to tell
+  a forbidden reference (refused, never repaired, audited) from a mistake (repaired as always).
+  `*` is refused because the database would expand it, not the guard.
+
+Personal data needed a decision the owner had left open (D69): may someone who sees it masked
+still filter by it? No — a filter on a masked value is a way of reading it ("is there a
+customer with this e-mail?"). A non-processor may show it (masked), count it, or ask whether
+there is a value at all. That is one rule in the guard, over the same resolved tree, and it
+replaces the "Personal data" category the assessment had planned: one permission, decided by
+the administrator and listed for the auditor, is easier to govern than a category that would
+have had to be granted alongside every other.
+
+The categories themselves are deliberately coarse — one per object — because a role × column
+matrix is unmanageable, and because a person must be able to read the decision. Gaia's
+proposal is keyword matching, not a model's judgement: no model grants access, and a proposal
+anyone can explain ("matches finance") is one an SME can confirm quickly.
+
+**The chat screen (D75)** shows the table before the explanation (the number is the answer; the
+prose is commentary), the confidence as a level with its reasons until Phase 6 calibrates it,
+and clarifications as choices in a shuffled order (T5). The SQL stays out of the chat (P4-2)
+and lives in an audit view for the roles that need to check Gaia's work. The runs view is
+read-only: operating runs from the screen needs a worker and impact previews first (§38).
+
+**Verified (sandbox, build D75):** an adversarial suite of 33 statements and a model that obeys
+every injection through the chat — nothing forbidden executed; contexts free of forbidden
+names and personal values; refusals audited and worded without names; the prompts of the
+golden set for a person holding every category byte-identical to the operator's; the real
+server streaming a refused and a masked answer. **Still to see on the host:** people from a
+real directory in a browser (OWNER_VERIFICATION §25).

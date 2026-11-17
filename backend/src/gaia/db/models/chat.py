@@ -45,7 +45,7 @@ __all__ = ["CLARIFICATION_STATUSES", "MESSAGE_KINDS", "QUERY_RUN_ORIGINS", "QUER
            "Clarification", "Conversation", "Message", "QueryRun"]
 
 MESSAGE_KINDS = ("question", "clarification_answer", "answer", "clarification",
-                 "cannot_answer", "failed")
+                 "cannot_answer", "failed", "refused")
 
 CLARIFICATION_STATUSES = ("open", "answered", "abandoned")
 
@@ -80,6 +80,7 @@ class QueryRun(Base):
     attempt: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=1)
     origin: Mapped[str] = mapped_column(sa.Text, nullable=False)
     question: Mapped[str | None] = mapped_column(sa.Text)
+    asked_by: Mapped[str | None] = mapped_column(sa.Text)  # the login (chat API, 5D)
     dialect: Mapped[str] = mapped_column(sa.Text, nullable=False)
     submitted_sql: Mapped[str] = mapped_column(sa.Text, nullable=False)
     executed_sql: Mapped[str | None] = mapped_column(sa.Text)
@@ -175,7 +176,7 @@ class Message(Base):
         sa.CheckConstraint("role IN ('user', 'assistant')", name="role"),
         sa.CheckConstraint(
             "kind IN ('question', 'clarification_answer', 'answer', 'clarification', "
-            "'cannot_answer', 'failed')", name="kind"),
+            "'cannot_answer', 'failed', 'refused')", name="kind"),
         {"schema": "chat"},
     )
 

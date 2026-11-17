@@ -259,6 +259,9 @@ class ColumnSemantic(Base):
     reviewed_by: Mapped[str | None] = mapped_column(sa.Text)
     reviewed_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
     review_note: Mapped[str | None] = mapped_column(sa.Text)
+    # an SME's statement that the column holds personal data, or does not (5C, D74); None:
+    # the detectors decide
+    personal: Mapped[bool | None] = mapped_column(sa.Boolean)
 
     # Full-text search over the meaning (OUTLINE §8). 'english' matches the
     # English-only output decision; revisit with the locale work.

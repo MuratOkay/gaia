@@ -17,6 +17,7 @@ export interface Draft {
   unit: string;
   synonyms: string;
   meanings: [string, string][];
+  personal: "" | "yes" | "no"; // "": the detectors decide (5C)
 }
 
 export const FEW_VALUES = 25;
@@ -37,6 +38,7 @@ export function draftFrom(meaning: Meaning, profile: ColumnProfileView | null, m
     entity: meaning.entity ?? "",
     unit: meaning.unit ?? "",
     synonyms: meaning.synonyms.join(", "),
+    personal: meaning.personal === true ? "yes" : meaning.personal === false ? "no" : "",
     meanings: [...given, ...(codeLike ? seen.slice(0, FEW_VALUES).map((v): [string, string] => [v, ""]) : [])],
   };
 }
@@ -52,6 +54,8 @@ export function decisionBody(action: Action, note: string, draft: Draft, meaning
   }
   const synonyms = splitList(draft.synonyms);
   if (synonyms.join("|") !== meaning.synonyms.join("|")) changes.synonyms = synonyms;
+  const personal = draft.personal === "yes" ? true : draft.personal === "no" ? false : null;
+  if (personal !== (meaning.personal ?? null)) changes.personal = personal;
   if (Object.keys(changes).length) body.changes = changes;
   const meanings = Object.fromEntries(draft.meanings.filter(([k, v]) => k.trim() && v.trim()).map(([k, v]) => [k.trim(), v.trim()]));
   const before = meaning.value_meanings ?? {};
@@ -131,6 +135,14 @@ function DecisionPanel({ ds, item, onDone }: { ds: string; item: ColumnReview; o
           <label className="wide">
             {t("review.fields.synonyms")}
             <input value={draft.synonyms} onChange={(e) => setDraft({ ...draft, synonyms: e.target.value })} />
+          </label>
+          <label>
+            {t("review.fields.personal")}
+            <select value={draft.personal} onChange={(e) => setDraft({ ...draft, personal: e.target.value as Draft["personal"] })}>
+              <option value="">{t("review.personal.auto")}</option>
+              <option value="yes">{t("review.personal.yes")}</option>
+              <option value="no">{t("review.personal.no")}</option>
+            </select>
           </label>
           <div className="wide">
             <h3>{t("review.meaningsTitle")}</h3>

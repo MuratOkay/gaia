@@ -20,10 +20,12 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gaia import __version__
+from gaia.api.access import router as access_router
 from gaia.api.admin import router as admin_router
 from gaia.api.audit import router as audit_router
 from gaia.api.auth import router as auth_router
 from gaia.api.chat import router as chat_router
+from gaia.api.queries import router as queries_router
 from gaia.api.review import router as review_router
 from gaia.auth.deps import require
 from gaia.core.config import get_settings
@@ -59,6 +61,8 @@ app.include_router(chat_router)
 app.include_router(admin_router)  # the admin role (Phase 5A)
 app.include_router(audit_router)  # the auditor role (Phase 5A)
 app.include_router(review_router)  # SMEs of a data source (Phase 5B)
+app.include_router(access_router)  # data categories: the admin role (Phase 5C)
+app.include_router(queries_router)  # the SQL of answers, runs (Phase 5D, 5E)
 
 app.add_middleware(
     CORSMiddleware,

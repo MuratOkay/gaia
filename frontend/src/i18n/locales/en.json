@@ -36,7 +36,8 @@
     "sme": "SME — reviews a data source",
     "admin": "administrator",
     "auditor": "auditor",
-    "pii_processor": "PII processor — sees personal data unmasked"
+    "pii_processor": "PII processor — sees personal data unmasked",
+    "category": "data category — may read its objects"
   },
   "login": {
     "title": "Sign in",
@@ -74,21 +75,27 @@
     "accounts": "Accounts",
     "audit": "Audit",
     "signOut": "Sign out",
-    "review": "Review"
+    "review": "Review",
+    "chat": "Chat",
+    "queries": "Queries",
+    "categories": "Data categories",
+    "runs": "Runs"
   },
   "home": {
     "title": "Welcome, {{name}}",
     "role": {
-      "user": "You can ask questions about the data your role covers. The chat screen arrives in step 5D.",
+      "user": "You ask questions about the data your role covers: open “Chat”.",
       "sme": "You review what Gaia understood about the data sources assigned to you: open “Review”.",
-      "admin": "You connect data sources and the company directory, and decide who may do what.",
+      "admin": "You connect data sources and the company directory, define the data categories, and decide who may read what. You chat within the categories granted to you.",
       "auditor": "You audit the administrators' decisions: who may see what, who is a PII processor, every grant and sign-in."
     },
     "smeSources": "You are the SME of {{count}} data source(s).",
     "pii": "You are a PII processor: personal data is shown to you unmasked.",
     "local": "You are signed in with the local administrator account, which is meant for setup and emergencies. Its every use is shown to the auditor.",
     "conflict": "Not applied",
-    "next": "More screens follow: need-to-know (5C), chat (5D)."
+    "next": "Everyone who chats gets answers only from the data categories granted to them.",
+    "categories": "You may read: {{names}}.",
+    "noCategories": "No data category is granted to you yet, so the chat has nothing to answer from. Ask your administrator."
   },
   "dataSources": {
     "title": "Data sources",
@@ -176,7 +183,7 @@
   },
   "grants": {
     "title": "Roles & grants",
-    "intro": "You decide who may do what. Grants are never deleted: a revocation is dated and signed, and every change goes to the auditor. An administrator cannot also be an SME or an auditor — such grants are kept but not applied.",
+    "intro": "You decide who may do what. Grants are never deleted: a revocation is dated and signed, and every change goes to the auditor. An administrator cannot also be an SME or an auditor — such grants are kept but not applied. Data categories decide what someone may read: nothing is readable until a category is granted.",
     "byRole": "To a directory role",
     "byAccount": "To one person",
     "directory": "Directory",
@@ -196,7 +203,11 @@
     "note": "Note",
     "revoke": "Revoke",
     "revokeWhy": "Revoke “{{privilege}}” of {{subject}}? A note for the auditor (optional):",
-    "revokedBy": "revoked by {{who}}, {{when}}"
+    "revokedBy": "revoked by {{who}}, {{when}}",
+    "category": "Data category",
+    "scope": "Data source / category",
+    "suggested": "Gaia suggests: {{categories}}",
+    "suggestedShort": "suggested"
   },
   "accounts": {
     "title": "Accounts",
@@ -210,7 +221,8 @@
     "disabled": "disabled",
     "enabled": "enabled",
     "noRole": "no Gaia role",
-    "smeOf": "SME of {{sources}}"
+    "smeOf": "SME of {{sources}}",
+    "reads": "reads: {{categories}}"
   },
   "audit": {
     "nav": "Audit",
@@ -272,7 +284,28 @@
       "review_decision": "review decision",
       "glossary_term_added": "glossary term added",
       "glossary_term_changed": "glossary term changed",
-      "glossary_term_removed": "glossary term withdrawn"
+      "glossary_term_removed": "glossary term withdrawn",
+      "category_added": "data category added",
+      "category_changed": "data category changed",
+      "category_retired": "data category retired",
+      "object_category_set": "object's category set",
+      "categories_proposed": "categories proposed by Gaia",
+      "access_refused": "question refused (need-to-know)"
+    },
+    "categories": "Data categories",
+    "categoriesTitle": "Data categories: what is in them, who may read them",
+    "categoriesIntro": "Each category with its objects (proposed by Gaia or confirmed by an SME or administrator) and everyone who may read it, with the grant it comes through.",
+    "holders": "May read it",
+    "nobody": "nobody",
+    "questionsRefused": "Questions refused by need-to-know",
+    "refusalsNav": "Refused questions",
+    "refusalsTitle": "Questions refused by need-to-know",
+    "refusalsIntro": "Questions whose query reached for data outside the asker's categories, or used personal data they may only see masked. The asker was told only that their role does not cover it; here is what it reached for.",
+    "why": "Why",
+    "reachedFor": "Reached for",
+    "refusalCodes": {
+      "forbidden": "outside their categories",
+      "personal_data": "personal data used, not only shown"
     }
   },
   "review": {
@@ -389,7 +422,8 @@
       "entity": "About (entity)",
       "unit": "Unit",
       "synonyms": "Other names (comma-separated)",
-      "grain": "One row per"
+      "grain": "One row per",
+      "personal": "Personal data"
     },
     "meaningsTitle": "What the values mean",
     "meaningsHelp": "For a code: what each value stands for (2 = overdue). The SQL generator sees these. The most frequent values are listed; add others.",
@@ -512,7 +546,19 @@
     "tablesIntro": "Every table and view, whether or not something of it waits for you. Open one to see its columns and to review any of them.",
     "find": "Find",
     "waiting": "Waiting",
-    "decidedCount": "Decided by an SME"
+    "decidedCount": "Decided by an SME",
+    "personal": {
+      "auto": "as the detectors say",
+      "yes": "yes — personal data",
+      "no": "no — not personal data"
+    },
+    "noCategories": "No data categories are defined yet (an administrator defines them).",
+    "categoryTitle": "What this data is (its category)",
+    "categoryIntro": "The category decides who may read this object; which roles hold it is the administrator's decision.",
+    "categoryConfirmed": "{{name}} — confirmed by {{who}}, {{when}}.",
+    "categoryProposed": "{{name}} — proposed by Gaia ({{why}}). Confirm it, or choose another.",
+    "categoryNone": "No category: nobody can read this object in the chat.",
+    "categoryConfirm": "Confirm"
   },
   "glossary": {
     "title": "Glossary — {{ds}}",
@@ -528,5 +574,129 @@
     "confirmWithdraw": "Withdraw “{{term}}”? It is kept in the history and no longer used.",
     "add": "Add a term",
     "addButton": "Add"
+  },
+  "categories": {
+    "title": "Data categories",
+    "intro": "Need-to-know: every object of a data source belongs to one category (Sales, Finance, HR …); a person may read an object only if a category grant covers it — nothing is readable until granted. Gaia proposes each object's category, an SME confirms what the data is, you decide who may read it (Roles & grants). Personal data is shown unmasked only to PII processors.",
+    "list": "Categories",
+    "none": "No category yet. Create them from the schemas of a data source below, or add them one by one.",
+    "name": "Name",
+    "keywords": "Keywords (comma-separated)",
+    "description": "Description",
+    "objects": "Objects",
+    "grants": "Grants",
+    "editKeywords": "Keywords",
+    "keywordsPrompt": "Keywords of {{name}} (comma-separated) — Gaia matches them against schema and object names and meanings:",
+    "retire": "Retire",
+    "confirmRetire": "Retire {{name}}? Only possible when no object is in it; its grants stay on record.",
+    "add": "Add a category",
+    "addButton": "Add",
+    "objectsTitle": "What each object's data is",
+    "objectsIntro": "Set a category here, or let Gaia propose them; an SME confirms on the review screen. An object without a category is readable by nobody.",
+    "fromSchemas": "Create categories from the schemas",
+    "fromSchemasDone": "{{count}} categor(ies) created.",
+    "propose": "Let Gaia propose",
+    "proposeDone": "Gaia proposed {{proposed}}; {{kept}} confirmed kept; {{none}} without a proposal (no match, or a tie).",
+    "missing": "{{count}} object(s) have no category: nobody can read them.",
+    "object": "Object",
+    "category": "Category",
+    "categoryOf": "Category of {{name}}",
+    "decided": "Decided",
+    "confirmedBy": "confirmed by {{who}}, {{when}}",
+    "proposedBecause": "proposed by Gaia: {{why}}",
+    "nobody": "readable by nobody"
+  },
+  "chat": {
+    "title": "Chat",
+    "nothingToRead": "Your role covers no data yet, so there is nothing to ask about. Ask your administrator for a data category.",
+    "conversations": "Conversations",
+    "dataSource": "Data source",
+    "new": "New conversation",
+    "untitled": "(untitled)",
+    "intro": "Ask a question about {{ds}} in your own words. Gaia answers from the data your role covers, shows the table first, then explains it.",
+    "ask": "Ask",
+    "question": "Your question",
+    "placeholder": "e.g. Which three store cities sold the most last month?",
+    "answerPlaceholder": "Choose an option above, or answer in your own words",
+    "send": "Send",
+    "askNew": "ask something new instead",
+    "clarifyHint": "Choose one, or type your own answer below.",
+    "result": "Result",
+    "maskedColumn": "personal data: masked",
+    "maskedCell": "personal data: masked for you",
+    "maskedLive": "Personal data is masked for you (it needs the PII-processor permission).",
+    "maskedStored": "Personal data is not kept in the conversation: it is masked here.",
+    "rowsKept": "Kept with the conversation: {{kept}} of {{total}} rows. Ask again for all of them.",
+    "capped": "The result stops at the row limit; there may be more.",
+    "howRead": "How I read the question",
+    "assumptions": "Assumptions",
+    "uncertain": "Meanings not yet confirmed by an expert",
+    "showSql": "Show the SQL",
+    "confidenceNoReasons": "Nothing lowered it.",
+    "confidence": {
+      "high": "Confidence: high",
+      "medium": "Confidence: medium",
+      "low": "Confidence: low"
+    },
+    "stages": {
+      "retrieval": "Finding the data…",
+      "retrieved": "Found the data…",
+      "generation": "Writing the query…",
+      "checking": "Checking the query…",
+      "running": "Running it…",
+      "repairing": "Correcting the query…",
+      "narrating": "Explaining the result…"
+    },
+    "kinds": {
+      "cannot_answer": "Cannot answer:",
+      "failed": "Something went wrong:",
+      "refused": "Not allowed:"
+    }
+  },
+  "queries": {
+    "title": "Queries",
+    "intro": "The SQL behind the answers, with what the guard decided and what ran. SMEs see the queries of the data sources they review; administrators and auditors all of them. People who only chat never see SQL.",
+    "filters": "Filters",
+    "status": "Status",
+    "any": "any",
+    "askedBy": "Asked by",
+    "dataSource": "Data source",
+    "when": "When",
+    "question": "Question",
+    "rows": "Rows",
+    "count": "{{count}} query attempt(s)",
+    "attempt": "attempt {{n}}",
+    "back": "← All queries",
+    "noQuestion": "(no question)",
+    "meta": "Asked by {{who}}, {{when}}, on {{ds}}",
+    "copy": "Copy",
+    "copied": "Copied",
+    "reachedFor": "Refused by need-to-know; it reached for: {{what}}",
+    "facts": "{{rows}} row(s) · {{ms}} ms · read: {{tables}}",
+    "statuses": {
+      "ok": "ran",
+      "rejected": "rejected by the guard",
+      "refused": "refused (need-to-know)",
+      "error": "database error",
+      "timeout": "timed out",
+      "lock_timeout": "lock timeout"
+    }
+  },
+  "runs": {
+    "title": "Runs",
+    "intro": "What Gaia ran to understand the data sources, and what the model calls cost (read-only; starting and scheduling runs come later).",
+    "totals": "Per data source",
+    "calls": "Model calls",
+    "tokens": "Tokens",
+    "cost": "Cost",
+    "questions": "Questions asked",
+    "reasoning": "Reasoning runs",
+    "profiling": "Profiling runs",
+    "started": "Started",
+    "tables": "Tables",
+    "model": "Model",
+    "queriesRun": "Queries",
+    "reasoned": "{{done}} reasoned, {{skipped}} skipped, {{failed}} failed",
+    "profiled": "{{done}} profiled, {{reused}} reused, {{failed}} failed"
   }
 }

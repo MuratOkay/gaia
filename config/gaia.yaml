@@ -258,8 +258,8 @@ auth:
   local_admin_enabled: true      # the one local account, for setup and break-glass
   max_failed_sign_ins: 5
   lockout_minutes: 15
-  # who may chat until need-to-know exists (5C adds user)
-  chat_roles: [admin, sme]
+  # who may chat; every one of them only within their data categories (need-to-know, 5C)
+  chat_roles: [user, sme, admin]
 
 chat:
   # Phase 4E. Result rows stored with an answer (chat.message), personal-data columns

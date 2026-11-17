@@ -4,6 +4,7 @@ import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
 import en from "../i18n/locales/en.json";
+import { STAGES } from "../components/chat";
 import { BANDS, MEANING_STATUSES, REASONS } from "../pages/review/common";
 
 function files(dir: string): string[] {
@@ -24,13 +25,15 @@ function has(key: string): boolean {
 
 const DYNAMIC: Record<string, string[]> = {
   "role.": ["user", "sme", "admin", "auditor"],
-  "privilege.": ["user", "sme", "admin", "auditor", "pii_processor"],
+  "privilege.": ["user", "sme", "admin", "auditor", "pii_processor", "category"],
   "home.role.": ["user", "sme", "admin", "auditor"],
   "directories.roleKinds.": ["group", "attribute", "ou"],
   "status.": ["config", "unverified", "verified", "failed", "disabled", "tombstoned"],
   "dataSources.origins.": ["config", "admin"],
   "audit.actions.": ["sign_in", "sign_in_refused", "forbidden", "grant_added", "grant_revoked", "session_ended", "privileges_changed",
-                     "review_decision", "glossary_term_added", "glossary_term_changed", "glossary_term_removed"],
+                     "review_decision", "glossary_term_added", "glossary_term_changed", "glossary_term_removed",
+                     "category_added", "category_changed", "category_retired", "object_category_set",
+                     "categories_proposed", "access_refused"],
   "review.reasons.": [...REASONS],
   "review.reasonHelp.": [...REASONS],
   "review.bands.": [...BANDS],
@@ -42,11 +45,16 @@ const DYNAMIC: Record<string, string[]> = {
   "review.empty.": ["open", "done", "stale"],
   "review.actions.": ["accept", "correct", "reject", "unused"],
   "review.actionHelp.": ["accept", "correct", "reject", "unused"],
-  "review.fields.": ["business_name", "entity", "unit"],
+  "review.fields.": ["business_name", "entity", "unit", "personal"],
   "review.directions.": ["supports", "contradicts"],
   "review.hintSources.": ["fk", "llm", "sme"],
   "review.hintStatuses.": ["confirmed", "inferred", "rejected", "refuted", "stale"],
   "review.lineage.kinds.": ["pass_through", "computed", "unresolved"],
+  "chat.confidence.": ["high", "medium", "low"],
+  "chat.stages.": [...STAGES],
+  "chat.kinds.": ["cannot_answer", "failed", "refused"],
+  "queries.statuses.": ["ok", "rejected", "refused", "error", "timeout", "lock_timeout"],
+  "audit.refusalCodes.": ["forbidden", "personal_data"],
 };
 
 describe("locale keys", () => {

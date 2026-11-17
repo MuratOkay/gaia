@@ -47,7 +47,7 @@ class QueryStore:
     async def record(
         self, *, data_source_id: uuid.UUID, snapshot_id: uuid.UUID | str, guard: GuardResult,
         execution: ExecutionResult | None, origin: str, question: str | None = None,
-        parent_id: uuid.UUID | None = None, attempt: int = 1,
+        parent_id: uuid.UUID | None = None, attempt: int = 1, asked_by: str | None = None,
     ) -> QueryRun:
         status = "rejected" if not guard.ok else (execution.status if execution else "error")
         run = QueryRun(
@@ -55,6 +55,7 @@ class QueryStore:
             snapshot_id=uuid.UUID(str(snapshot_id)),
             semantic_versions=await self.semantic_versions(data_source_id, guard.tables),
             parent_id=parent_id, attempt=attempt, origin=origin, question=question,
+            asked_by=asked_by,
             dialect=guard.dialect, submitted_sql=guard.submitted,
             executed_sql=guard.sql if guard.ok else None,
             guard=guard.as_dict(), status=status,
@@ -69,7 +70,8 @@ class QueryStore:
         return run
 
     async def record_answer(self, answer: Answer, *, data_source_id: uuid.UUID,
-                            snapshot_id: uuid.UUID | str, origin: str) -> list[QueryRun]:
+                            snapshot_id: uuid.UUID | str, origin: str,
+                            asked_by: str | None = None) -> list[QueryRun]:
         """One run per attempt, chained by ``parent_id`` (repairs, 4C), each with the
         model call that wrote its SQL; every model call also goes to ``audit.llm_call``."""
         from gaia.db.repositories.semantics_store import SemanticsStore
@@ -80,7 +82,8 @@ class QueryStore:
             run = await self.record(
                 data_source_id=data_source_id, snapshot_id=snapshot_id, guard=attempt.guard,
                 execution=attempt.execution, origin=origin, question=answer.question,
-                parent_id=parent.id if parent else None, attempt=attempt.number)
+                parent_id=parent.id if parent else None, attempt=attempt.number,
+                asked_by=asked_by)
             run.model = attempt.calls[-1].model if attempt.calls else None
             run.prompt_tokens = sum(c.usage.prompt_tokens for c in attempt.calls)
             run.completion_tokens = sum(c.usage.completion_tokens for c in attempt.calls)

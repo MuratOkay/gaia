@@ -34,17 +34,18 @@ from pathlib import Path
 
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from gaia.access.policy import OPERATOR, build_access_guard, policy_for_login, restrict_index
 from gaia.core.config import Settings, get_settings
 from gaia.db.engine import dispose_engine, get_engine
 from gaia.db.repositories.query_store import QueryStore, match_option
 from gaia.llm.base import LLMError
 from gaia.query.ask import Answer, AskSettings, answer_dict, ask
-from gaia.query.guard import build_guard, row_limit
+from gaia.query.guard import row_limit
 from gaia.query.planner import SqlPlan
 from gaia.query.retrieval_store import load_retrieval_index
 
 ROOT = Path(__file__).resolve().parents[4]
-EXIT = {"answered": 0, "clarify": 4, "cannot_answer": 5, "failed": 3}
+EXIT = {"answered": 0, "clarify": 4, "cannot_answer": 5, "failed": 3, "refused": 6}
 
 
 def ask_settings(settings: Settings, target: str) -> AskSettings:
@@ -88,7 +89,12 @@ async def _run(args: argparse.Namespace) -> int:
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:
         async with factory() as session:
-            index = await load_retrieval_index(session, label, settings)
+            full_index = await load_retrieval_index(session, label, settings)
+            policy = OPERATOR
+            if args.as_login:  # answered as the chat would answer this person (5C)
+                policy = await policy_for_login(session, full_index, args.as_login,
+                                                args.directory)
+            index = restrict_index(full_index, policy)
             notes: list[str] = []
             hits = None
             if not args.no_vectors:
@@ -100,7 +106,7 @@ async def _run(args: argparse.Namespace) -> int:
                                           notes)
                 finally:
                     embedder.close()
-            guard = build_guard(settings, label, index.catalog)
+            guard = build_access_guard(settings, label, index, full_index.catalog, policy)
             store = QueryStore(session)
             clarifications = [("", c) for c in args.clarified or []]
             stored, preset = None, None
@@ -222,6 +228,8 @@ def _print(a: Answer, args: argparse.Namespace) -> None:
                   "--clarified '<your answer>'\"")
     elif a.status == "cannot_answer":
         print(f"cannot answer  : {a.reason}")
+    elif a.status == "refused":
+        print(f"refused        : {a.reason} ({a.refusal})")
     else:
         print(f"failed         : {a.reason}")
     if args.show_sql:
@@ -254,6 +262,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--no-vectors", action="store_true")
     parser.add_argument("--no-record", action="store_true")
     parser.add_argument("--replay", metavar="DIR")
+    parser.add_argument("--as", dest="as_login", metavar="LOGIN",
+                        help="answer as this person would be answered in the chat (5C)")
+    parser.add_argument("--directory", help="with --as: the person's directory")
     args = parser.parse_args(argv)
     if not args.question and not args.clarification:
         parser.error("give --question, or --clarification ID with --clarified")

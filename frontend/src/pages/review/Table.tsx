@@ -3,6 +3,7 @@ import { useTranslation } from "react-i18next";
 import { Link, useParams } from "react-router-dom";
 
 import { api, type TableMeaning, type TableReview } from "../../api/client";
+import { CategoryPanel } from "./CategoryPanel";
 import { Busy, ErrorNote, useLoad, when } from "../../components/util";
 import { Band, enc, MeaningStatus, Reasons, ReviewNav, splitList } from "./common";
 
@@ -79,6 +80,8 @@ export function TablePage() {
               </div>
             </form>
           ) : <p className="note">{t("review.noMeaning")}</p>}
+
+          <CategoryPanel ds={ds} table={data} onDone={reload} />
 
           <h2>{t("review.columns")}</h2>
           <table>

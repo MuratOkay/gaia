@@ -82,8 +82,17 @@ async def logout(request: Request, response: Response,
 
 
 @router.get("/me")
-async def me(who: Principal = Depends(principal)) -> dict[str, Any]:  # noqa: B008
-    return who.public()
+async def me(who: Principal = Depends(principal),  # noqa: B008
+             auth: AuthService = Depends(get_auth)) -> dict[str, Any]:  # noqa: B008
+    doc = who.public()
+    if who.effective.categories:  # names, not ids, for the screens (5C)
+        from gaia.auth.service import _category_names
+
+        async with auth.factory() as s:
+            doc["category_names"] = await _category_names(s, who.effective.categories)
+    else:
+        doc["category_names"] = []
+    return doc
 
 
 @router.post("/setup")

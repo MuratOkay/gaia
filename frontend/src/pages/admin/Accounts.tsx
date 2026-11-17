@@ -26,6 +26,7 @@ export function AccountTable({ rows }: { rows: AccountView[] }) {
             <td>
               {a.roles.map((r) => t(`role.${r}`)).join(", ") || <span className="muted">{t("accounts.noRole")}</span>}
               {a.sme_sources.length > 0 && <div className="muted">{t("accounts.smeOf", { sources: a.sme_sources.join(", ") })}</div>}
+              {!!a.categories?.length && <div className="muted">{t("accounts.reads", { categories: a.categories.join(", ") })}</div>}
               {a.conflicts.map((c) => <div key={c} className="warn">{c}</div>)}
             </td>
             <td>{a.pii_processor ? t("common.yes") : t("common.no")}</td>

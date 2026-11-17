@@ -18,14 +18,15 @@ describe("navigation follows the roles", () => {
   beforeEach(() => vi.spyOn(globalThis, "fetch").mockImplementation(async () => new Response("[]")));
   afterEach(() => vi.restoreAllMocks());
 
-  it("a user sees neither administration nor audit", () => {
+  it("a user sees the chat, and neither administration nor audit", () => {
     render(<MemoryRouter><Shell me={me(["user"])} onSignedOut={vi.fn()} /></MemoryRouter>);
-    expect(links()).toEqual(["Home"]);
+    expect(links()).toEqual(["Home", "Chat"]);
   });
 
   it("an administrator sees the administration", () => {
     render(<MemoryRouter><Shell me={me(["admin", "user"])} onSignedOut={vi.fn()} /></MemoryRouter>);
-    expect(links()).toEqual(["Home", "Data sources", "Directories", "Roles & grants", "Accounts"]);
+    expect(links()).toEqual(["Home", "Chat", "Queries", "Data sources", "Directories", "Data categories",
+                             "Roles & grants", "Accounts", "Runs"]);
   });
 
   it("an auditor sees the audit, and a page outside their role says so", () => {

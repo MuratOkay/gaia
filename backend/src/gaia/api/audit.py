@@ -10,6 +10,8 @@ Every endpoint needs the **auditor** role, which an administrator cannot hold (D
     GET /api/audit/events             the access log (?action=&since=&limit=)
     GET /api/audit/chain              is the hash chain intact; where it breaks
     GET /api/audit/connection-changes data sources added, changed, probed, removed (4F)
+    GET /api/audit/categories         each data category: its objects, who may read it (5C)
+    GET /api/audit/refusals           questions refused by need-to-know, with what they reached for
 
 The head hash in ``summary`` and ``chain`` is what makes the log tamper-evident beyond
 the database: an auditor who writes it down (a ticket, an e-mail) can later prove that
@@ -71,12 +73,15 @@ async def summary(_who: Principal = Depends(AUDITOR),  # noqa: B008
             AuthEvent.action == "sign_in", AuthEvent.detail["local"].astext == "true"))
         refused = await s.scalar(select(func.count()).select_from(AuthEvent).where(
             AuthEvent.action.in_(("sign_in_refused", "forbidden"))))
+        need_to_know = await s.scalar(select(func.count()).select_from(AuthEvent).where(
+            AuthEvent.action == "access_refused"))
     return {"accounts": len(accounts),
             "by_role": {r: sum(1 for a in accounts if r in a["roles"])
                         for r in ("user", "sme", "admin", "auditor")},
             "pii_processors": sum(1 for a in accounts if a["pii_processor"]),
             "conflicts": [f"{a['login']}: {c}" for a in accounts for c in a["conflicts"]],
             "local_sign_ins": local, "refusals": refused,
+            "questions_refused": need_to_know,
             "chain": {"ok": check.ok, "events": check.events, "head": check.head,
                       "broken_at": check.broken_at, "reason": check.reason}}
 
@@ -126,6 +131,30 @@ async def chain(_who: Principal = Depends(AUDITOR),  # noqa: B008
         check = await audit.verify_chain(s)
     return {"ok": check.ok, "events": check.events, "head": check.head,
             "broken_at": check.broken_at, "reason": check.reason}
+
+
+@router.get("/categories")
+async def categories(format: str | None = None,  # noqa: A002
+                     _who: Principal = Depends(AUDITOR),  # noqa: B008
+                     auth: AuthService = Depends(get_auth)):  # noqa: B008
+    from gaia.access.categories import CategoryService
+
+    rows = await CategoryService(auth.factory).report(await auth.accounts())
+    return _out(rows, format, "categories")
+
+
+@router.get("/refusals")
+async def refusals(format: str | None = None, limit: int = 500,  # noqa: A002
+                   _who: Principal = Depends(AUDITOR),  # noqa: B008
+                   auth: AuthService = Depends(get_auth)):  # noqa: B008
+    async with auth.factory() as s:
+        rows = [{"at": e.at, "actor": e.actor, "subject": e.subject,
+                 "code": (e.detail or {}).get("code"),
+                 "reached_for": (e.detail or {}).get("reached_for") or []}
+                for e in (await s.scalars(select(AuthEvent).where(
+                    AuthEvent.action == "access_refused").order_by(AuthEvent.seq.desc())
+                    .limit(max(1, min(limit, 10_000))))).all()]
+    return _out(rows, format, "refusals")
 
 
 @router.get("/connection-changes")

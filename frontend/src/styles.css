@@ -93,3 +93,43 @@ table.compact input { width: 100%; box-sizing: border-box; }
 details { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 0.4rem 0.8rem; margin: 0.4rem 0; }
 details > summary { cursor: pointer; font-weight: 600; }
 pre { white-space: pre-wrap; word-break: break-word; background: #f4f6f8; padding: 0.5rem; }
+
+/* chat (5D) */
+.chat { display: grid; grid-template-columns: 16rem minmax(0, 1fr); gap: 1.2rem; align-items: start; }
+@media (max-width: 800px) { .chat { grid-template-columns: 1fr; } }
+.conversations { display: flex; flex-direction: column; gap: 0.5rem; }
+.conversations ul { list-style: none; padding: 0; margin: 0; }
+.conversations li { padding: 0.35rem 0.4rem; border-radius: 4px; }
+.conversations li.current { background: #e6eef5; }
+.conversation { display: flex; flex-direction: column; gap: 0.6rem; min-height: 60vh; }
+.turns { display: flex; flex-direction: column; gap: 0.7rem; }
+.turn { border-radius: 8px; padding: 0.6rem 0.9rem; max-width: 100%; }
+.turn.user { align-self: flex-end; background: var(--accent); color: #fff; max-width: 75%; }
+.turn.user p { margin: 0; white-space: pre-wrap; }
+.turn.assistant { background: #fff; border: 1px solid var(--line); }
+.turn.refused { border-color: var(--warn); }
+.turn.failed { border-color: var(--danger); }
+.turn .narrative { margin: 0.6rem 0 0.3rem; }
+.answer-foot { display: flex; gap: 1rem; align-items: baseline; flex-wrap: wrap; }
+.answer-foot details { flex: 1; }
+.result { max-height: 26rem; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+.result table { margin: 0; }
+.result thead th { position: sticky; top: 0; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.masked { color: var(--muted); letter-spacing: 0.1em; }
+.confidence button { font-weight: 600; }
+.confidence-high button { color: var(--ok); }
+.confidence-medium button { color: var(--warn); }
+.confidence-low button { color: var(--danger); }
+.options { display: flex; flex-direction: column; gap: 0.35rem; padding-left: 1.2rem; }
+button.option { background: #fff; color: var(--accent); text-align: left; }
+.stage { margin: 0.3rem 0 0; }
+.composer { position: sticky; bottom: 0; background: var(--bg); padding: 0.5rem 0; }
+.composer textarea { width: 100%; box-sizing: border-box; }
+.sql pre { max-height: 24rem; overflow: auto; }
+ul.plain { list-style: none; padding: 0; margin: 0; }
+.query-refused, .query-rejected, .query-error, .query-timeout { background: #ffebe9; color: var(--danger); }
+.query-ok { background: #dafbe1; color: var(--ok); }
+.placement-confirmed { background: #dafbe1; color: var(--ok); }
+.placement-proposed { background: #fff4d6; color: var(--warn); }
+.card.current { border-color: var(--accent); }

@@ -442,8 +442,9 @@ class AuthConfig(BaseModel):
     # its own lockout policy too: Gaia's stops guessing before it)
     max_failed_sign_ins: int = 5
     lockout_minutes: int = 15
-    # Gaia roles that may use the chat until need-to-know exists (5C adds "user")
-    chat_roles: list[str] = Field(default_factory=lambda: ["admin", "sme"])
+    # Gaia roles that may use the chat — each person only within their data categories
+    # (need-to-know, 5C); an auditor chats only if also granted "user"
+    chat_roles: list[str] = Field(default_factory=lambda: ["user", "sme", "admin"])
 
 
 class Settings(BaseModel):

@@ -10,7 +10,10 @@ and guard, and records the result (``record_answer``). Statuses:
   than guess), with the question to ask and options;
 * ``cannot_answer`` — the data is not there, with the reason;
 * ``failed`` — no valid query within ``query.max_repair_attempts`` repairs, or the
-  model gave no usable answer; every attempt and why it failed is kept.
+  model gave no usable answer; every attempt and why it failed is kept;
+* ``refused`` — need-to-know (5C): the statement reached for data the person may not
+  read, or used personal data they may only see masked. Never repaired, never run; the
+  reason given names nothing (``refusal`` keeps the code).
 
 A repair continues the same conversation: the model's previous answer, then what
 went wrong — the guard's findings, or the database's error, or the timeout.
@@ -121,6 +124,8 @@ class Answer:
     best_guess: GuardResult | None = None  # the guard on the default option's SQL (D61)
     preset_used: bool = False
     personal_columns: set[int] = field(default_factory=set)  # result columns of personal data
+    masked: bool = False  # need-to-know (5C): personal data masked for this person
+    refusal: str | None = None  # forbidden | personal_data (5C)
     reason: str | None = None
     attempts: list[Attempt] = field(default_factory=list)
     calls: list[CallRecord] = field(default_factory=list)  # every model call, in order
@@ -297,6 +302,15 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
         tell("checking", attempt=number)
         attempt = Attempt(number, plan.sql or "", guard.check(plan.sql or ""), calls=calls)
         answer.attempts.append(attempt)
+        refused = next((v.code for v in attempt.guard.errors
+                        if v.code in ("forbidden", "personal_data")), None)
+        if refused is not None:  # need-to-know (5C): never repaired, never run
+            from gaia.access.policy import refusal_message
+
+            attempt.problem = refused
+            answer.status, answer.refusal = "refused", refused
+            answer.reason = refusal_message(refused)
+            return _done(answer, started)
         if attempt.guard.ok:
             tell("running", attempt=number)
             attempt.execution = execute(target, attempt.guard, row_limit=settings.row_limit,
@@ -331,9 +345,12 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
                 for c in o.columns if c.personal}
     answer.personal_columns = {i for i, (_n, base) in enumerate(final.guard.outputs)
                                if base and base.lower() in personal}
-    hidden = set() if settings.raw_values_to_model else set(answer.personal_columns)
+    answer.masked = index.mask_personal
+    hidden = set() if settings.raw_values_to_model and not index.mask_personal \
+        else set(answer.personal_columns)
     tell("result", columns=answer.columns, rows=answer.rows,
-         row_cap_reached=answer.row_cap_reached)
+         row_cap_reached=answer.row_cap_reached,
+         personal_columns=sorted(answer.personal_columns), masked=answer.masked)
     tell("narrating")
     answer.narrative, narr_calls, error = narrate(
         llm, model=settings.model, question=question, interpretation=plan.interpretation,
@@ -361,11 +378,15 @@ def answer_dict(a: Answer, *, with_sql: bool = False, reveal_guess: bool = False
     guess's interpretation and assumptions — is left out unless ``reveal_guess``: D61
     keeps it from the user so the choice is theirs (5.0, T5). It stays on the server, in
     ``chat.clarification``."""
-    from gaia.query.answerer import _cell
+    from gaia.query.answerer import HIDDEN, _cell
 
+    mask = a.personal_columns if a.masked else set()
     doc: dict[str, Any] = {
         "question": a.question, "status": a.status, "narrative": a.narrative,
-        "columns": a.columns, "rows": [[_cell(v) for v in r] for r in a.rows],
+        "columns": a.columns,
+        "rows": [[HIDDEN if i in mask else _cell(v) for i, v in enumerate(r)] for r in a.rows],
+        "personal_columns": sorted(a.personal_columns), "masked": a.masked,
+        "refusal": a.refusal,
         "row_cap_reached": a.row_cap_reached, "interpretation": a.interpretation,
         "assumptions": a.assumptions, "uncertain": a.uncertain,
         "confidence": a.confidence.__dict__ if a.confidence else None,

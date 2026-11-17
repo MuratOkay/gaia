@@ -90,3 +90,36 @@ async def test_only_the_sme_of_a_data_source_reviews_it(api, fake_llm, fake_embe
         decided = (await s.scalars(sa.select(AuthEvent).where(
             AuthEvent.action == "review_decision"))).all()
     assert [(e.actor, e.detail["action"]) for e in decided] == [("akaya", "correct")]
+    # 5E: the runs behind these meanings, read-only, for the administrator
+    async with await _client(app) as deniz:
+        await _login(deniz, "dyilmaz", PASSWORDS["dyilmaz"])
+        runs = (await deniz.get("/api/runs?data_source=demo_pg")).json()
+    assert runs["reasoning"] and runs["reasoning"][0]["tables_reasoned"] > 0
+    assert runs["profiling"] and runs["profiling"][0]["status"]
+    assert [t["data_source"] for t in runs["totals"]] == ["demo_pg"]
+    assert runs["totals"][0]["llm_calls"] > 0
+    # 5C: the SME says what a table's data is, and whether a column is personal data
+    from gaia.access.categories import CategoryService
+
+    await CategoryService(factory).add("Finance", actor="admin", keywords=["finance"])
+    async with await _client(app) as ayse:
+        await _login(ayse, "akaya", PASSWORDS["akaya"])
+        h = {"X-CSRF-Token": ayse.cookies.get("gaia_csrf")}
+        page = (await ayse.get(f"/api/review/demo_pg/tables/{status.table_id}")).json()
+        assert page["category"] is None and [c["name"] for c in page["categories"]] == [
+            "Finance"]
+        r = await ayse.post(f"/api/review/demo_pg/tables/{status.table_id}/category",
+                            headers=h, json={"category": "Nope"})
+        assert r.status_code == 400
+        r = await ayse.post(f"/api/review/demo_pg/tables/{status.table_id}/category",
+                            headers=h, json={"category": "Finance", "note": "invoices"})
+        assert r.status_code == 200 and r.json()["source"] == "sme"
+        page = (await ayse.get(f"/api/review/demo_pg/tables/{status.table_id}")).json()
+        assert page["category"]["name"] == "Finance" and page["category"]["decided_by"] == "akaya"
+        notes = await _col(factory, "crm.customer_notes", "note")
+        r = await ayse.post(f"/api/review/demo_pg/columns/{notes.id}/decision", headers=h,
+                            json={"action": "correct", "changes": {"personal": True}})
+        assert r.status_code == 200 and r.json()["meaning"]["personal"] is True
+        r = await ayse.post(f"/api/review/demo_pg/columns/{notes.id}/decision", headers=h,
+                            json={"action": "correct", "changes": {"personal": "maybe"}})
+        assert r.status_code == 400

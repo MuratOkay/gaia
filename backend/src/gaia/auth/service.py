@@ -53,6 +53,7 @@ from gaia.db.models.auth import (
     PRIVILEGES,
     Account,
     AccountRole,
+    Category,
     Directory,
     DirectoryRole,
     Grant,
@@ -161,20 +162,10 @@ class AuthService:
             Directory.status == "verified").order_by(Directory.name))).all())
 
     async def _held(self, s: AsyncSession, account_id: uuid.UUID) -> list[Held]:
-        rows = await s.execute(
-            select(Grant.privilege, Grant.data_source_id, DirectoryRole.name)
-            .outerjoin(DirectoryRole, DirectoryRole.id == Grant.directory_role_id)
-            .where(Grant.revoked_at.is_(None))
-            .where((Grant.account_id == account_id) | Grant.directory_role_id.in_(
-                select(AccountRole.directory_role_id).where(AccountRole.account_id == account_id)))
-            .where(DirectoryRole.gone_at.is_(None) | Grant.account_id.is_not(None)))
-        return [Held(p, str(ds) if ds else None, f"role {role}" if role else "account")
-                for p, ds, role in rows.all()]
+        return await held_grants(s, account_id)
 
     async def effective_for(self, s: AsyncSession, account: Account) -> Effective:
-        if account.is_local:
-            return effective([], local=True)
-        return effective(await self._held(s, account.id))
+        return await effective_of(s, account)
 
     async def _apply_directory_user(self, s: AsyncSession, row: Directory, user: DirectoryUser,
                                     account: Account | None = None) -> Account:
@@ -774,14 +765,23 @@ class AuthService:
                     directory_role_id: uuid.UUID | None = None,
                     role: tuple[str, str] | None = None,
                     account: tuple[str | None, str] | None = None,
-                    data_source: str | None = None, note: str | None = None) -> dict[str, Any]:
+                    data_source: str | None = None, note: str | None = None,
+                    category: str | None = None) -> dict[str, Any]:
         if privilege not in PRIVILEGES:
             raise AuthError(f"unknown privilege {privilege!r} ({', '.join(PRIVILEGES)})")
         if (privilege == "sme") != bool(data_source):
             raise AuthError("sme is granted per data source (and only sme is)")
+        if (privilege == "category") != bool(category):
+            raise AuthError("a category grant names its category (and only it does)")
         async with self.factory() as s:
             r, a = await self._subject(s, directory_role_id=directory_role_id, role=role,
                                        account=account)
+            cat_id = None
+            if category:
+                cat = await _category(s, category)
+                if cat is None or cat.retired_at is not None:
+                    raise AuthError(f"no category {category!r}")
+                cat_id = cat.id
             ds_id = None
             if data_source:
                 ds = await s.scalar(select(DataSource).where(DataSource.name == data_source))
@@ -792,19 +792,22 @@ class AuthService:
                 else (Grant.account_id == a.id)
             same_source = Grant.data_source_id.is_(None) if ds_id is None \
                 else (Grant.data_source_id == ds_id)
+            same_category = Grant.category_id.is_(None) if cat_id is None \
+                else (Grant.category_id == cat_id)
             existing = await s.scalar(select(Grant).where(
                 Grant.revoked_at.is_(None), Grant.privilege == privilege, same_subject,
-                same_source))
+                same_source, same_category))
             if existing is not None:
                 raise AuthError("this grant exists already")
             g = Grant(privilege=privilege, directory_role_id=r.id if r else None,
                       account_id=a.id if a else None, data_source_id=ds_id,
-                      granted_by=actor, granted_at=self.now(), note=note)
+                      category_id=cat_id, granted_by=actor, granted_at=self.now(), note=note)
             s.add(g)
             await s.flush()
             view = await _grant_view(s, g)
             await audit.record(s, "grant_added", actor=actor, subject=view["subject"],
                                detail={"privilege": privilege, "data_source": data_source,
+                                       "category": view["category"],
                                        "grant_id": str(g.id), "note": note})
             await s.commit()
             return view
@@ -819,7 +822,7 @@ class AuthService:
             view = await _grant_view(s, g)
             await audit.record(s, "grant_revoked", actor=actor, subject=view["subject"],
                                detail={"privilege": g.privilege, "grant_id": str(g.id),
-                                       "note": note})
+                                       "category": view["category"], "note": note})
             await s.commit()
             return view
 
@@ -843,13 +846,37 @@ class AuthService:
                 directory = await s.get(Directory, a.directory_id) if a.directory_id else None
                 eff = await self.effective_for(s, a)
                 names = await _source_names(s, eff.sme_sources)
+                cats = await _category_names(s, eff.categories)
                 out.append({"login": a.login, "directory": directory.name if directory else None,
                             "local": a.is_local, "display_name": a.display_name,
                             "email": a.email, "enabled": a.enabled,
                             "last_sign_in_at": a.last_sign_in_at, "synced_at": a.synced_at,
                             "directory_roles": list(roles),
-                            **eff.to_json(), "sme_sources": names})
+                            **eff.to_json(), "sme_sources": names,
+                            "categories": cats, "category_ids": sorted(eff.categories)})
             return out
+
+
+async def held_grants(s: AsyncSession, account_id: uuid.UUID) -> list[Held]:
+    """The grants that apply to an account now: its own, and its directory roles' (as last
+    read from the directory)."""
+    rows = await s.execute(
+        select(Grant.privilege, Grant.data_source_id, DirectoryRole.name, Grant.category_id)
+        .outerjoin(DirectoryRole, DirectoryRole.id == Grant.directory_role_id)
+        .where(Grant.revoked_at.is_(None))
+        .where((Grant.account_id == account_id) | Grant.directory_role_id.in_(
+            select(AccountRole.directory_role_id).where(AccountRole.account_id == account_id)))
+        .where(DirectoryRole.gone_at.is_(None) | Grant.account_id.is_not(None)))
+    return [Held(p, str(ds) if ds else None, f"role {role}" if role else "account",
+                 str(cat) if cat else None)
+            for p, ds, role, cat in rows.all()]
+
+
+async def effective_of(s: AsyncSession, account: Account) -> Effective:
+    """What an account may do now, from the metadata store alone (no directory call)."""
+    if account.is_local:
+        return effective([], local=True)
+    return effective(await held_grants(s, account.id))
 
 
 def _directory_view(row: Directory) -> dict[str, Any]:
@@ -872,6 +899,23 @@ async def _source_names(s: AsyncSession, ids) -> list[str]:
     return sorted(rows.all())
 
 
+async def _category(s: AsyncSession, ref: str) -> Category | None:
+    """A category by id or by name (case-insensitive)."""
+    try:
+        return await s.get(Category, uuid.UUID(str(ref)))
+    except ValueError:
+        return await s.scalar(select(Category).where(
+            func.lower(Category.name) == str(ref).strip().lower()))
+
+
+async def _category_names(s: AsyncSession, ids) -> list[str]:
+    if not ids:
+        return []
+    rows = await s.scalars(select(Category.name).where(
+        Category.id.in_([uuid.UUID(str(i)) for i in ids])))
+    return sorted(rows.all())
+
+
 async def _grant_view(s: AsyncSession, g: Grant) -> dict[str, Any]:
     if g.directory_role_id:
         r = await s.get(DirectoryRole, g.directory_role_id)
@@ -882,8 +926,10 @@ async def _grant_view(s: AsyncSession, g: Grant) -> dict[str, Any]:
         d = await s.get(Directory, a.directory_id) if a and a.directory_id else None
         subject = f"account {d.name + '/' if d else ''}{a.login if a else '?'}"
     ds = await s.get(DataSource, g.data_source_id) if g.data_source_id else None
+    cat = await s.get(Category, g.category_id) if g.category_id else None
     return {"id": str(g.id), "privilege": g.privilege, "subject": subject,
-            "data_source": ds.name if ds else None, "granted_by": g.granted_by,
+            "data_source": ds.name if ds else None, "category": cat.name if cat else None,
+            "granted_by": g.granted_by,
             "granted_at": g.granted_at, "note": g.note, "revoked_by": g.revoked_by,
             "revoked_at": g.revoked_at}
 

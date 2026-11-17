@@ -36,6 +36,9 @@ These stages exist and work:
 | **Profile** | `make profile` | Evidence from the data (Phase 3A): column profiles, value-type detections, cross-column identities, view lineage and aliases, join candidates; `make profile-tests` later tests the model's claims |
 | **Reason** | `make reason` | A business meaning per table and column, with evidence, alternatives and an honest score (Phase 3B: scored from an evidence ledger) |
 | **Review queue** | `make review` | What the SME should look at first, and why |
+| **Chat** (Phase 5D) | the web UI, **Chat** | Questions answered in the browser, streamed: the table first, then the explanation; clarifications as choices; the confidence with its reasons |
+| **Need-to-know** (Phase 5C) | the web UI, **Data categories**; `make access` | Every object in one data category; people read only the categories granted to them; personal data masked unless they are a PII processor |
+| **Queries, runs** (Phase 5D, 5E) | the web UI, **Queries**, **Runs** | The SQL behind answers (SMEs, administrators, auditors); what ran and what it cost |
 | **SME review** (Phase 5B) | the web UI, **Review** | An SME's decisions on what Gaia understood — accept, correct (also what a code's values mean), reject, not used; join proposals; a glossary. Signed, kept by re-reasoning, used at once when questions are answered |
 | **Embed** | (inside `make reason`) | 1024-dimension vectors for retrieval in Phase 4 |
 | **Query** (Phase 4A) | `make query`, `make query-check` | One SQL statement validated by the SQL guard and run read-only, recorded in `chat.query_run` — the path every generated query will take |
@@ -58,8 +61,9 @@ in Phase 4 so far: the SQL guard and the read-only executor (4A), retrieval (4B)
 answering (4C), golden runs (4D), the chat API (4E), data sources added at runtime
 (4F) — Phase 4 is complete (golden run on `demo_pg`: 100 % executable, 97 % correct). Phase 5
 so far: sign-in through the company directory (AD/LDAP, Entra ID), roles, administration and
-audit, the web UI's first screens (5A, 5A.2), and the SME review (5B). Not built yet:
-need-to-know (5C), the chat screen (5D).
+audit, the web UI's first screens (5A, 5A.2), the SME review (5B), need-to-know (5C), the chat
+screen (5D) and a read-only runs view (5E) — Phase 5 is built; its host verification is
+OWNER_VERIFICATION §25.
 
 Since Phase 4C **Gaia answers questions** from the command line (`make ask`). Read the
 confidence and the "unconfirmed" lines of every answer: the confidence is a heuristic until
@@ -415,11 +419,12 @@ What someone may do in Gaia comes from **grants** an administrator makes:
 
 | Gaia role / permission | Lets someone |
 |---|---|
-| `user` | ask questions (the chat; open to users once need-to-know exists, 5C) |
+| `user` | ask questions (the chat), within their data categories |
 | `sme` (per data source) | review what Gaia understood about that data source (5B); ask |
 | `admin` | connect data sources and directories, grant and revoke; ask. Never review |
 | `auditor` | read the audit reports. Never an administrator too |
-| `pii_processor` | see personal data unmasked in answers (5C) |
+| `pii_processor` | see personal data unmasked in answers, and filter or group by it (5C) |
+| `category` (per category) | read the objects of that data category (5C) — nothing is readable until granted |
 
 **First time:** the one local account, `gaia-admin`, is for setup and emergencies.
 
@@ -482,6 +487,59 @@ host name of the redirect URI (`localhost`, not `127.0.0.1`, in development).
   (Audit), with CSV downloads.
 * **From a script**, sign in with `POST /api/auth/login` and send the `X-CSRF-Token` header
   (the value of the `gaia_csrf` cookie) with every request that changes something.
+
+### Need-to-know: data categories (`make access`, Phase 5C)
+
+Every table and view belongs to **one data category** — a business domain such as Sales,
+Finance or HR. A person may read an object only if a category grant covers it (to one of their
+directory roles, or to them); **nothing is readable until granted**, administrators included,
+and an object without a category is readable by nobody.
+
+```bash
+make access TARGET=sales_pg ARGS="from-schemas"    # a first set: one category per schema
+make access ARGS="add Finance --keywords finance,invoice,ledger --description 'money'"
+make access TARGET=sales_pg ARGS="propose"         # Gaia places every object it can
+make access TARGET=sales_pg ARGS="objects"         # each object, its category, who decided
+make access TARGET=sales_pg ARGS="place hr.payroll HR --note 'payroll is HR'"
+make access ARGS="suggestions"                     # directory roles -> categories (grants nothing)
+make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"
+make access TARGET=sales_pg ARGS="policy akaya"    # what akaya may read there
+```
+
+The same in the web UI: *Data categories* (the categories, each object's category, "Let Gaia
+propose") and *Roles & grants* (privilege "data category"). Gaia proposes by matching an
+object's schema, name and meaning against each category's name and keywords; a view that reads
+one category's objects gets that category; a tie proposes nothing. **An SME confirms** what an
+object's data is on the review screen's table page; a proposal never replaces a confirmation.
+
+* **A view** is readable only with its own category *and* what its columns come from — a view
+  is no way around a category.
+* **Personal data** (detected, or stated by an SME: *Personal data: yes / no* when correcting a
+  column) is shown unmasked only to PII processors. Anyone else sees it masked, and may count
+  it or ask whether there is a value — never filter, group, sort or calculate with it.
+* **What the asker is told**: a question that needs data outside their categories is not
+  answered ("This needs data your role does not cover…"), without naming that data; the
+  auditor sees what it reached for (*Refused questions*).
+* The command line (`make ask`, `make golden`) is the operator's and reads everything; add
+  `--as LOGIN` to answer exactly as the chat answers that person.
+
+### The chat (the web UI, Phase 5D)
+
+*Chat* → a data source (only those the person may read something in) → a question in their own
+words. The answer streams in: what Gaia is doing, **the table as soon as it exists**, then the
+explanation. Under it: the **confidence** as *high / medium / low* — click it for the reasons
+(a percentage comes only after Phase 6 calibrates it) — and *How I read the question* (the
+interpretation, the assumptions, the meanings not yet confirmed by an expert). A question Gaia
+cannot settle comes back as a choice: click an option, or answer in your own words, or tick
+"ask something new instead". A follow-up ("and in November?") is read with the conversation.
+A conversation reopened later shows each table as kept (at most `chat.keep_rows` rows,
+personal data masked).
+
+**The SQL** behind an answer is never shown to someone who only chats (P4-2). SMEs
+(for the data sources they review), administrators and auditors find it under *Queries* —
+every attempt, the guard's verdict, the SQL with a *Copy* button — and SMEs and administrators
+get *Show the SQL* under their own answers. *Runs* (administrators, auditors) lists the
+reasoning and profiling runs with their model calls and cost.
 
 ### Reviewing as an SME (the web UI, Phase 5B)
 
@@ -1081,8 +1139,8 @@ State these honestly when showing Gaia to anyone:
 | **Profiling is bounded, not free** | Small tables (≤ ~100 MB) are read once per column for exact distinct counts; the run reports pages and time. Not built: statistics histograms, fan-out tests, profiling of computed view columns |
 | **Slow LLM provider** | A wide bundle can take ~12 min; `llm.timeout_s` is 1800 s and read timeouts retry once. Re-assessed on provider change |
 | **`thinking` is not in the skip key** | Toggling it does not upgrade existing answers without `--force`; the default path always uses thinking |
-| **Targets come from config** | Several targets can be configured and selected with `--target`; admin-supplied connections are a Phase 4 item (OUTLINE §24) |
-| **No question answering yet** | Phases 4–5 build SQL generation and the chat UI |
+| **Targets come from config or the admin screen** | Configured targets, and data sources added at runtime (Phase 4F) |
+| **Need-to-know is per object** | One data category per table or view; no row-level rules and no column-level categories (a table mixing audiences needs a view per audience). Gaia's category proposal matches names and keywords — weak on schemas like `dbo`, which is why every placement is shown and confirmed by people |
 | **SME review: what is not there yet** | The review screens exist since 5B. Not yet: adding a join no model proposed (only proposals are reviewed), and a table cannot be rejected as a whole (its columns can); "questions that used it" matches the column's name in the SQL until 5C records what a query read |
 | **Two dialects** | SQL Server and PostgreSQL (catalog, read-only probe, profiling, reasoning). SQL Server profiling awaits its first run on the owner's host; further engines stay in Phase 7 |
 

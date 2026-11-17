@@ -23,7 +23,8 @@ in the hash-chained ``audit.auth_event`` (D70).
     GET    /api/admin/accounts                          who, their directory roles, what they may do
     GET    /api/admin/grants?include_revoked=true
     POST   /api/admin/grants                            {"privilege", "directory_role_id" | "login"
-                                                         [+ "directory"], "data_source"?, "note"?}
+                                                         [+ "directory"], "data_source"?,
+                                                         "category"? (5C), "note"?}
     DELETE /api/admin/grants/{id}                       revoke (kept, dated, signed)
     GET    /api/admin/local-account                     the break-glass account's state
 """
@@ -144,6 +145,7 @@ class NewGrant(BaseModel):
     login: str | None = None
     directory: str | None = None
     data_source: str | None = None
+    category: str | None = None  # privilege "category" (5C): its name or id
     note: str | None = None
 
 
@@ -227,7 +229,8 @@ async def add_grant(body: NewGrant, who: Principal = Depends(ADMIN),  # noqa: B0
     account = (body.directory, body.login) if body.login else None
     return await _auth(auth.grant(body.privilege, actor=who.login,
                                   directory_role_id=body.directory_role_id, account=account,
-                                  data_source=body.data_source, note=body.note))
+                                  data_source=body.data_source, note=body.note,
+                                  category=body.category))
 
 
 @router.delete("/grants/{grant_id}")

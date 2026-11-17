@@ -3,6 +3,9 @@
 Gaia roles: ``user`` (asks), ``sme`` (reviews the data sources it is granted for, asks),
 ``admin`` (administers, asks, never reviews), ``auditor`` (reads the audit reports).
 One permission: ``pii_processor`` (sees personal data unmasked, D69; applied in 5C).
+Data categories (5C, D74): each ``category`` grant lets the person read the objects of
+that category; nothing is readable until granted. A category grant alone does not let
+anyone sign in — a Gaia role does.
 
 **Separation of duties.** An administrator cannot review (owner, P5-6) and cannot audit
 their own work (D70). When grants would make someone both, the administrator role stays
@@ -32,6 +35,7 @@ class Held:
     privilege: str
     data_source_id: str | None = None
     via: str = "account"  # "account", or the directory role's name
+    category_id: str | None = None
 
 
 @dataclass
@@ -39,6 +43,7 @@ class Effective:
     roles: set[str] = field(default_factory=set)
     sme_sources: set[str] = field(default_factory=set)  # data source ids (str)
     pii_processor: bool = False
+    categories: set[str] = field(default_factory=set)  # category ids (str) readable
     conflicts: list[str] = field(default_factory=list)
     via: dict[str, list[str]] = field(default_factory=dict)  # privilege -> where from
 
@@ -55,6 +60,7 @@ class Effective:
     def to_json(self) -> dict[str, Any]:
         return {"roles": sorted(self.roles, key=_ROLE_ORDER.get),
                 "sme_sources": sorted(self.sme_sources), "pii_processor": self.pii_processor,
+                "categories": sorted(self.categories),
                 "conflicts": self.conflicts, "via": self.via}
 
     @classmethod
@@ -63,6 +69,7 @@ class Effective:
         return cls(roles=set(doc.get("roles") or []),
                    sme_sources=set(doc.get("sme_sources") or []),
                    pii_processor=bool(doc.get("pii_processor")),
+                   categories=set(doc.get("categories") or []),
                    conflicts=list(doc.get("conflicts") or []),
                    via=dict(doc.get("via") or {}))
 
@@ -72,6 +79,11 @@ def effective(held: Iterable[Held], *, local: bool = False) -> Effective:
         return Effective(roles={"admin"}, via={"admin": ["the local account"]})
     out = Effective()
     for h in held:
+        if h.privilege == "category":
+            if h.category_id:
+                out.categories.add(str(h.category_id))
+                out.via.setdefault(f"category:{h.category_id}", []).append(h.via)
+            continue
         out.via.setdefault(h.privilege, []).append(h.via)
         if h.privilege == "pii_processor":
             out.pii_processor = True

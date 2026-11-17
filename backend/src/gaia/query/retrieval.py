@@ -230,6 +230,9 @@ class IndexedColumn:
     range: tuple[str, str] | None = None  # min, max for dates and numbers
     is_key: bool = False
     personal: bool = False  # a detector found personal data: values stay local (D24)
+    # need-to-know (5C): personal data this person may only see masked — shown or counted,
+    # never filtered, grouped, sorted or computed with
+    show_only: bool = False
 
     @property
     def reasoned(self) -> bool:
@@ -291,6 +294,8 @@ class RetrievalIndex:
     snapshot_id: str | None = None
     # business terms SMEs defined (5B): (term, definition, synonyms)
     glossary: list[tuple[str, str, list[str]]] = field(default_factory=list)
+    # need-to-know (5C): personal data is masked for this person (not a PII processor)
+    mask_personal: bool = False
 
     def __post_init__(self) -> None:
         self._lex_columns: _BM25 | None = None
@@ -445,6 +450,9 @@ def retrieve(index: RetrievalIndex, question: str, *, vector_hits: list[VectorHi
         matches[okey].append(Match("lexical", f"object ({', '.join(matched)})"))
 
     if vector_hits:
+        # only what this index holds (a person's restricted index, 5C, drops the rest)
+        vector_hits = [h for h in vector_hits if h.obj in index.objects and (
+            h.column is None or index.objects[h.obj].column(h.column) is not None)]
         ranked_cols = [(h.obj, h.column) for h in vector_hits if h.column]
         ranked_objs = [h.obj for h in vector_hits if not h.column]
         for key, rrf in _rrf(ranked_cols, s.rrf_k).items():
@@ -763,6 +771,9 @@ def _column_line(ctx: SchemaContext, obj: IndexedObject, c: IndexedColumn,
         line += f"; {c.value_note}"
     if c.range:
         line += f"; range {c.range[0]} .. {c.range[1]}"
+    if c.show_only:  # need-to-know (5C): only for people who are not PII processors
+        line += ("; PERSONAL DATA, masked for this user: select it as it is or count it, "
+                 "never filter, join, group, sort or compute with it")
     return line
 
 

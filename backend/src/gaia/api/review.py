@@ -11,6 +11,7 @@ D68); an administrator never is one. Decisions are signed with the SME's login.
     GET  /api/review/{ds}/tables                       every table, with what waits in each
     GET  /api/review/{ds}/tables/{table_id}            the table's meaning and its columns
     POST /api/review/{ds}/tables/{table_id}/decision   {"action": "accept"|"correct", …}
+    POST /api/review/{ds}/tables/{table_id}/category   {"category", "note"?}: what the data is (5C)
     POST /api/review/{ds}/join-hints/{hint_id}/decision  {"action": "confirm"|"reject", "note"?}
     GET  /api/review/{ds}/glossary
     POST /api/review/{ds}/glossary                     {"term", "definition", "synonyms"?}
@@ -49,6 +50,11 @@ class TableDecision(BaseModel):
     action: str
     note: str | None = None
     changes: dict[str, Any] | None = None
+
+
+class CategoryDecision(BaseModel):
+    category: str = Field(min_length=1)
+    note: str | None = None
 
 
 class HintDecision(BaseModel):
@@ -168,6 +174,21 @@ async def decide_table(data_source: str, table_id: uuid.UUID, body: TableDecisio
                        review: ReviewService = Depends(get_review)) -> dict[str, Any]:  # noqa: B008
     return await _run(review.decide_table(data_source, table_id, body.action, r,
                                           note=body.note, changes=body.changes))
+
+
+@router.post("/{data_source}/tables/{table_id}/category")
+async def decide_category(data_source: str, table_id: uuid.UUID, body: CategoryDecision,
+                          r: Reviewer = Depends(reviewer_of),  # noqa: B008
+                          auth: AuthService = Depends(get_auth)) -> dict[str, Any]:  # noqa: B008
+    """The SME states what the object's data is (5C): its category, confirmed. Who may see
+    that category stays the administrator's decision (D70)."""
+    from gaia.access.categories import CategoryError, CategoryService
+
+    try:
+        return await CategoryService(auth.factory).assign(
+            data_source, table_id, body.category, actor=r.login, source="sme", note=body.note)
+    except CategoryError as exc:
+        raise HTTPException(400, str(exc)) from None
 
 
 @router.post("/{data_source}/join-hints/{hint_id}/decision")

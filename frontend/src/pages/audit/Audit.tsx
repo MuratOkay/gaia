@@ -15,6 +15,10 @@ function AuditNav() {
       <NavLink to="/audit/pii">{t("audit.pii")}</NavLink>
       <NavLink to="/audit/grants">{t("audit.grants")}</NavLink>
       <NavLink to="/audit/events">{t("audit.events")}</NavLink>
+      <NavLink to="/audit/categories">{t("audit.categories")}</NavLink>
+      <NavLink to="/audit/refusals">{t("audit.refusalsNav")}</NavLink>
+      <NavLink to="/queries">{t("nav.queries")}</NavLink>
+      <NavLink to="/runs">{t("nav.runs")}</NavLink>
     </nav>
   );
 }
@@ -52,6 +56,7 @@ export function AuditSummaryPage() {
               <tr><th>{t("audit.piiProcessors")}</th><td>{data.pii_processors}</td></tr>
               <tr><th>{t("audit.localSignIns")}</th><td>{data.local_sign_ins}</td></tr>
               <tr><th>{t("audit.refusals")}</th><td>{data.refusals}</td></tr>
+              <tr><th>{t("audit.questionsRefused")}</th><td>{data.questions_refused ?? 0}</td></tr>
             </tbody>
           </table>
           {data.conflicts.length > 0 && (
@@ -159,7 +164,9 @@ export function AuditEvents() {
           {["sign_in", "sign_in_refused", "forbidden", "grant_added", "grant_revoked", "directory_added",
             "directory_changed", "directory_probed", "directory_synced", "local_password_set",
             "local_setup_code_issued", "privileges_changed", "session_ended", "review_decision",
-            "glossary_term_added", "glossary_term_changed", "glossary_term_removed"].map((a) => (
+            "glossary_term_added", "glossary_term_changed", "glossary_term_removed", "category_added",
+            "category_changed", "category_retired", "object_category_set", "categories_proposed",
+            "access_refused"].map((a) => (
             <option key={a} value={a}>{t(`audit.actions.${a}`)}</option>
           ))}
         </select>
@@ -178,6 +185,62 @@ export function AuditEvents() {
               <td>{t(`audit.actions.${e.action}`, { defaultValue: e.action })}</td>
               <td>{e.subject ?? ""}</td>
               <td><code className="small">{JSON.stringify(e.detail)}</code></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+export function AuditCategories() {
+  const { t } = useTranslation();
+  const { data, error, loading } = useLoad(() =>
+    api<{ category: string; retired: boolean; objects: string[]; holders: string[] }[]>("/api/audit/categories"));
+  return (
+    <section>
+      <AuditNav />
+      <h1>{t("audit.categoriesTitle")}</h1>
+      <p className="muted">{t("audit.categoriesIntro")}</p>
+      <Csv path="/api/audit/categories" />
+      <Busy loading={loading} />
+      <ErrorNote error={error} />
+      <table>
+        <thead><tr><th>{t("categories.category")}</th><th>{t("categories.objects")}</th><th>{t("audit.holders")}</th></tr></thead>
+        <tbody>
+          {data?.map((c) => (
+            <tr key={c.category} className={c.retired ? "revoked" : undefined}>
+              <td><strong>{c.category}</strong></td>
+              <td>{c.objects.length ? <ul className="plain">{c.objects.map((o) => <li key={o}>{o}</li>)}</ul> : "—"}</td>
+              <td>{c.holders.length ? <ul className="plain">{c.holders.map((h) => <li key={h}>{h}</li>)}</ul> : <span className="muted">{t("audit.nobody")}</span>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+export function AuditRefusals() {
+  const { t, i18n } = useTranslation();
+  const { data, error, loading } = useLoad(() =>
+    api<{ at: string; actor: string | null; subject: string | null; code: string | null; reached_for: string[] }[]>("/api/audit/refusals"));
+  return (
+    <section>
+      <AuditNav />
+      <h1>{t("audit.refusalsTitle")}</h1>
+      <p className="muted">{t("audit.refusalsIntro")}</p>
+      <Csv path="/api/audit/refusals" />
+      <Busy loading={loading} />
+      <ErrorNote error={error} />
+      <table>
+        <thead><tr><th>{t("audit.when")}</th><th>{t("audit.who")}</th><th>{t("audit.subject")}</th><th>{t("audit.why")}</th><th>{t("audit.reachedFor")}</th></tr></thead>
+        <tbody>
+          {data?.map((r, i) => (
+            <tr key={i}>
+              <td>{when(r.at, i18n.language)}</td><td>{r.actor ?? "—"}</td><td>{r.subject}</td>
+              <td>{r.code ? t(`audit.refusalCodes.${r.code}`, { defaultValue: r.code }) : "—"}</td>
+              <td>{r.reached_for.join(", ")}</td>
             </tr>
           ))}
         </tbody>

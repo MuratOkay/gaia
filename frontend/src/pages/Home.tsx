@@ -18,6 +18,11 @@ export function Home({ me }: { me: Me }) {
           </li>
         ))}
       </ul>
+      {me.roles.some((r) => r === "user" || r === "sme" || r === "admin") && (
+        me.category_names?.length
+          ? <p className="note">{t("home.categories", { names: me.category_names.join(", ") })}</p>
+          : <p className="note warn">{t("home.noCategories")}</p>
+      )}
       {me.pii_processor && <p className="note">{t("home.pii")}</p>}
       {me.local && <p className="note warn">{t("home.local")}</p>}
       {me.conflicts.map((c) => (

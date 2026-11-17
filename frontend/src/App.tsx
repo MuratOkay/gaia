@@ -4,12 +4,15 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-do
 
 import { api, type Me, type Role, SIGNED_OUT_EVENT } from "./api/client";
 import { Accounts } from "./pages/admin/Accounts";
+import { Categories } from "./pages/admin/Categories";
 import { DataSources } from "./pages/admin/DataSources";
 import { Directories } from "./pages/admin/Directories";
 import { Grants } from "./pages/admin/Grants";
-import { AuditAccess, AuditEvents, AuditGrants, AuditPii, AuditSummaryPage } from "./pages/audit/Audit";
+import { AuditAccess, AuditCategories, AuditEvents, AuditGrants, AuditPii, AuditRefusals, AuditSummaryPage } from "./pages/audit/Audit";
+import { ChatPage } from "./pages/chat/Chat";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
+import { Queries, QueryPage, Runs } from "./pages/queries/Queries";
 import { ColumnPage } from "./pages/review/Column";
 import { ReviewGlossary } from "./pages/review/Glossary";
 import { ReviewQueue } from "./pages/review/Queue";
@@ -54,13 +57,17 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
         <strong className="brand">{t("app.name")}</strong>
         <nav aria-label={t("nav.label")}>
           <NavLink to="/" end>{t("nav.home")}</NavLink>
+          {has("user", "sme", "admin") && <NavLink to="/chat">{t("nav.chat")}</NavLink>}
           {has("sme") && <NavLink to="/review">{t("nav.review")}</NavLink>}
+          {has("sme", "admin") && <NavLink to="/queries">{t("nav.queries")}</NavLink>}
           {has("admin") && (
             <>
               <NavLink to="/admin/data-sources">{t("nav.dataSources")}</NavLink>
               <NavLink to="/admin/directories">{t("nav.directories")}</NavLink>
+              <NavLink to="/admin/categories">{t("nav.categories")}</NavLink>
               <NavLink to="/admin/grants">{t("nav.grants")}</NavLink>
               <NavLink to="/admin/accounts">{t("nav.accounts")}</NavLink>
+              <NavLink to="/runs">{t("nav.runs")}</NavLink>
             </>
           )}
           {has("auditor") && <NavLink to="/audit">{t("nav.audit")}</NavLink>}
@@ -74,6 +81,14 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
       <main>
         <Routes>
           <Route path="/" element={<Home me={me} />} />
+          <Route path="/chat" element={<Only when={has("user", "sme", "admin")}><ChatPage me={me} /></Only>} />
+          <Route path="/chat/:id" element={<Only when={has("user", "sme", "admin")}><ChatPage me={me} /></Only>} />
+          <Route path="/queries" element={<Only when={has("sme", "admin", "auditor")}><Queries /></Only>} />
+          <Route path="/queries/:id" element={<Only when={has("sme", "admin", "auditor")}><QueryPage /></Only>} />
+          <Route path="/runs" element={<Only when={has("admin", "auditor")}><Runs /></Only>} />
+          <Route path="/admin/categories" element={<Only when={has("admin")}><Categories /></Only>} />
+          <Route path="/audit/categories" element={<Only when={has("auditor")}><AuditCategories /></Only>} />
+          <Route path="/audit/refusals" element={<Only when={has("auditor")}><AuditRefusals /></Only>} />
           <Route path="/admin/data-sources" element={<Only when={has("admin")}><DataSources /></Only>} />
           <Route path="/admin/directories" element={<Only when={has("admin")}><Directories /></Only>} />
           <Route path="/admin/grants" element={<Only when={has("admin")}><Grants /></Only>} />

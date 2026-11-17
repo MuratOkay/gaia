@@ -64,6 +64,12 @@ MATRIX = [  # (method, path, who may: set of logins)
     ("GET", "/api/meta", {"dyilmaz"}),
     ("GET", "/api/review", {"akaya"}),  # an SME (5B); never the administrator
     ("GET", "/api/review/demo_pg/queue", {"akaya"}),
+    ("GET", "/api/admin/categories", {"dyilmaz"}),  # 5C: the administrator decides
+    ("GET", "/api/admin/category-suggestions", {"dyilmaz"}),
+    ("GET", "/api/audit/categories", {"bdemir"}),
+    ("GET", "/api/audit/refusals", {"bdemir"}),
+    ("GET", "/api/queries", {"akaya", "dyilmaz", "bdemir"}),  # 5D: never a plain user
+    ("GET", "/api/runs", {"dyilmaz", "bdemir"}),  # 5E
     ("GET", "/api/audit/summary", {"bdemir"}),
     ("GET", "/api/audit/access", {"bdemir"}),
     ("GET", "/api/audit/events", {"bdemir"}),
@@ -191,3 +197,94 @@ async def test_the_local_account_is_set_up_with_a_one_time_code(api):
         me = await _login(client, "gaia-admin", "Local-Admin-Pass-1")
         assert me["local"] and me["roles"] == ["admin"]
         assert (await client.get("/api/admin/local-account")).json()["password_set"] is True
+
+
+@pytest.mark.asyncio
+async def test_categories_are_granted_like_any_right(api):
+    """5C: the administrator defines a category and grants it to a directory role; the
+    person's session carries it, the auditor sees who holds it, and a plain user may not
+    read the SQL of answers."""
+    app, auth, _factory = api
+    async with await _client(app) as admin, await _client(app) as auditor:
+        await _login(admin, "dyilmaz", PASSWORDS["dyilmaz"])
+        await _login(auditor, "bdemir", PASSWORDS["bdemir"])
+        h = {"X-CSRF-Token": admin.cookies.get("gaia_csrf")}
+        r = await admin.post("/api/admin/categories", headers=h, json={
+            "name": "Finance", "description": "money", "keywords": ["finance", "invoice"]})
+        assert r.status_code == 201 and r.json()["keywords"] == ["finance", "invoice"]
+        assert (await admin.post("/api/admin/categories", headers=h,
+                                 json={"name": "finance"})).status_code == 400
+        roles = (await admin.get("/api/admin/directories/acme/roles")).json()
+        finance = next(x for x in roles if x["name"] == "GAIA-Finance")
+        suggested = (await admin.get("/api/admin/category-suggestions")).json()
+        assert {"role": "GAIA-Finance", "categories": ["Finance"]}.items() <= next(
+            x for x in suggested if x["role"] == "GAIA-Finance").items()
+        r = await admin.post("/api/admin/grants", headers=h, json={
+            "privilege": "category", "category": "Finance",
+            "directory_role_id": finance["id"]})
+        assert r.status_code == 201 and r.json()["category"] == "Finance"
+        bad = await admin.post("/api/admin/grants", headers=h, json={
+            "privilege": "category", "directory_role_id": finance["id"]})
+        assert bad.status_code == 400
+        report = (await auditor.get("/api/audit/categories")).json()
+        holders = next(x for x in report if x["category"] == "Finance")["holders"]
+        assert any(x.startswith("akaya (role GAIA-Finance") for x in holders)
+    async with await _client(app) as ayse, await _client(app) as star:
+        await _login(ayse, "akaya", PASSWORDS["akaya"])
+        me = (await ayse.get("/api/auth/me")).json()
+        assert me["category_names"] == ["Finance"] and len(me["categories"]) == 1
+        await _login(star, "e*star", PASSWORDS["e*star"])  # a user, and nothing else
+        assert (await star.get("/api/queries")).status_code == 403
+        assert (await star.get("/api/runs")).status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_the_sql_of_answers_is_for_smes_admins_and_auditors(api):
+    """5D (P5-7, D70): an SME sees the queries of the data sources they review, with the
+    SQL and the guard's verdict; an administrator and an auditor all of them."""
+    from datetime import UTC, datetime
+
+    from gaia.db.models.catalog import DataSource
+    from gaia.db.models.catalog import SnapshotRecord as Snapshot
+    from gaia.db.models.chat import QueryRun
+
+    app, _auth, factory = api
+    async with factory() as s:
+        demo = await s.scalar(sa.select(DataSource).where(DataSource.name == "demo_pg"))
+        other = DataSource(name="other_ds", dialect="postgres", database_name="other")
+        s.add(other)
+        await s.flush()
+        ids = {}
+        for ds in (demo, other):
+            snap = Snapshot(data_source_id=ds.id, structure_hash="x", data_hash="x",
+                            captured_at=datetime.now(UTC), document={})
+            s.add(snap)
+            await s.flush()
+            first = QueryRun(data_source_id=ds.id, snapshot_id=snap.id, origin="api",
+                             question=f"how many in {ds.name}?", asked_by="e*star",
+                             dialect="postgres", submitted_sql="SELECT * FROM x",
+                             guard={"errors": [{"code": "star", "message": "…"}]},
+                             status="rejected")
+            s.add(first)
+            await s.flush()
+            s.add(QueryRun(data_source_id=ds.id, snapshot_id=snap.id, origin="api",
+                           question=f"how many in {ds.name}?", asked_by="e*star",
+                           dialect="postgres", submitted_sql="SELECT count(*) FROM x",
+                           executed_sql="SELECT count(*) FROM x LIMIT 1000", guard={},
+                           status="ok", parent_id=first.id, attempt=2, row_count=1))
+            ids[ds.name] = first.id
+        await s.commit()
+    async with await _client(app) as ayse, await _client(app) as deniz:
+        await _login(ayse, "akaya", PASSWORDS["akaya"])  # SME of demo_pg
+        await _login(deniz, "dyilmaz", PASSWORDS["dyilmaz"])
+        mine = (await ayse.get("/api/queries")).json()
+        assert {q["data_source"] for q in mine["items"]} == {"demo_pg"} and mine["total"] == 2
+        one = (await ayse.get(f"/api/queries/{ids['demo_pg']}")).json()
+        assert one["submitted_sql"] == "SELECT * FROM x" and one["errors"][0]["code"] == "star"
+        assert [a["attempt"] for a in one["attempts"]] == [1, 2]
+        assert one["attempts"][1]["executed_sql"].endswith("LIMIT 1000")
+        assert (await ayse.get(f"/api/queries/{ids['other_ds']}")).status_code == 404
+        everything = (await deniz.get("/api/queries?asked_by=e*star")).json()
+        assert everything["total"] == 4
+        ok = (await deniz.get("/api/queries?status=ok")).json()
+        assert {q["status"] for q in ok["items"]} == {"ok"}

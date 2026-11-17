@@ -37,9 +37,17 @@ VALUABLE = ("SELECT c.customer_code, sum(o.total_amount) AS total_amount FROM sa
 
 
 # The chat endpoints need a signed-in person with a chat role (Phase 5A); these tests are
-# about the chat, so one is given. Conversations belong to this account.
-TESTER = Principal(uuid.UUID(int=7), "tester", "Tester", None, False, "acme",
-                   Effective(roles={"admin"}))
+# about the chat, so one is given — holding every data category and the PII-processor
+# permission (5C: test_need_to_know_pg.py is about everyone else). Conversations belong to
+# this account.
+async def _tester(factory) -> Principal:
+    from _access import categorize
+
+    cats = await categorize(factory)
+    return Principal(uuid.UUID(int=7), "tester", "Tester", None, False, "acme",
+                     Effective(roles={"admin"}, categories=set(cats.values()),
+                               pii_processor=True))
+
 
 def plan(sql=None, decision="answer", interpretation="what it computes", **kw):
     return json.dumps({"decision": decision, "interpretation": interpretation,
@@ -124,7 +132,8 @@ async def test_chat_api(pg_session_factory):
     app = FastAPI()
     app.include_router(router)
     app.state.chat = service
-    app.dependency_overrides[require_chat] = lambda: TESTER  # sign-in: test_auth_api_pg.py
+    who = await _tester(factory)
+    app.dependency_overrides[require_chat] = lambda: who  # sign-in: test_auth_api_pg.py
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gaia") as client:
         r = await client.get("/api/data-sources")
@@ -258,7 +267,8 @@ async def test_a_slow_model_gets_keepalives(pg_session_factory, monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.state.chat = service
-    app.dependency_overrides[require_chat] = lambda: TESTER  # sign-in: test_auth_api_pg.py
+    who = await _tester(pg_session_factory)
+    app.dependency_overrides[require_chat] = lambda: who  # sign-in: test_auth_api_pg.py
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                  base_url="http://gaia") as client:
         cid = (await client.post("/api/conversations", json={"data_source": "demo_pg"})

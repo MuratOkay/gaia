@@ -251,7 +251,10 @@ async def test_the_admin_api_needs_a_signed_in_administrator(pg_session_factory,
         assert r.status_code == 400 and "config/gaia.yaml" in r.json()["detail"]
         listing = (await client.get("/api/admin/data-sources")).text
         assert password not in listing and '"api_ro"' in listing
-        sources = {d["name"]: d for d in (await client.get("/api/data-sources")).json()}
+        # need-to-know (5C): the local administrator holds no data category, so the chat
+        # lists nothing for them; the operator's view lists every data source
+        assert (await client.get("/api/data-sources")).json() == []
+        sources = {d["name"]: d for d in await app.state.chat.data_sources()}
         assert sources["api_ro"]["status"] == "verified"
         assert sources["api_ro"]["usable"] is False  # verified, but not introspected yet
         assert sources["demo_pg"]["usable"] is True

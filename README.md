@@ -18,13 +18,16 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 > auditor) and the PII-processor permission, one local break-glass account, server-side
 > sessions, a hash-chained access audit with the auditor's reports, and the first **web UI**
 > (`make dev-web`) — and **5A.2, sign-in with Microsoft Entra ID**, pass on the owner's host
-> (698 tests); **5B, the SME review** — the queue, everything Gaia knows about a column, and
-> decisions (accept, correct incl. what a code's values mean, reject, not used) that survive
-> re-reasoning and reach the SQL generator, plus a glossary — is built and verified in the
-> sandbox. Next: need-to-know (5C). Every API endpoint except `/health` and sign-in needs a
-> session.
+> (698 tests). Built since, and verified in the sandbox: **5B, the SME review** (decisions that
+> survive re-reasoning and reach the SQL generator, a glossary), **5C, need-to-know** (data
+> categories granted to directory roles; every answer only from the asker's categories,
+> enforced in retrieval and in the SQL guard; personal data masked for anyone who is not a PII
+> processor), **5D, the chat screen** (streamed answers, clarifications, the SQL for SMEs,
+> administrators and auditors) and **5E, a read-only runs view** — Phase 5 is complete pending
+> one combined host run with a real AD/LDAP and Entra ID. Every API endpoint except `/health`
+> and sign-in needs a session.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22–§24 for builds D68, D71, D73). See
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§25: the combined Phase 5 run on build D75). See
 > [PHASES.md](PHASES.md).
 
 ---
@@ -316,8 +319,9 @@ Key decisions already fixed:
 | `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
 | `make review` | the SME review queue, highest priority first (`TARGET=...`); decisions are taken in the web UI, **Review** (5B) |
+| `make access` | 5C: data categories — `from-schemas`, `propose`, `objects`, `place OBJ CAT`, `suggestions`, `policy LOGIN` (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
-| `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events), administration (`/api/admin`), audit (`/api/audit`) — a session is needed since 5A |
+| `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
 | `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |
@@ -350,6 +354,6 @@ runs (4D, done), the API (4E, done) and data-source management (4F). The 99 colu
 **Phase 5** (approved 2026-11-17) runs in stages: 5.0 triage fixes (built) →
 5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles; built) →
 5A.2 Entra ID (built) → 5B SME
-review (built) → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
-and the SQL guard) → 5D the chat screen → 5E a read-only runs view; scheduling runs and
+review (built) → 5C need-to-know (built) (data categories granted to directory roles, enforced in retrieval
+and the SQL guard) → 5D the chat screen (built) → 5E a read-only runs view (built); scheduling runs and
 switching models from the admin screen are proposed for later (PHASES, Phase 5).

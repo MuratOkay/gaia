@@ -114,6 +114,7 @@ async def load_retrieval_index(session, data_source: str, settings: Settings) ->
         for c in t.columns:
             crec = cols_by_name.get(c.name)
             sem = column_sems.get(crec.id) if crec is not None else None
+            stated_personal = sem.personal if sem is not None else None  # an SME's word (5C)
             if sem is not None and (sem.band in _EXCLUDED_BANDS
                                     or sem.status in _EXCLUDED_STATUSES or sem.unused):
                 sem = None  # R2: every non-abstain meaning — this one is not used
@@ -126,6 +127,10 @@ async def load_retrieval_index(session, data_source: str, settings: Settings) ->
             personal = (stype in PERSONAL_TYPES) or (summary is not None and any(
                 d.semantic_type in PERSONAL_TYPES and d.match_rate >= _PERSONAL_MIN_RATE
                 for d in summary.detectors))
+            if stated_personal is not None:
+                personal = stated_personal
+                if personal and not raw:
+                    values, note = [], "personal data: values not shown"
             obj.columns.append(IndexedColumn(
                 name=c.name, data_type=c.data_type, ordinal=c.ordinal,
                 business_name=sem.business_name if sem else None,

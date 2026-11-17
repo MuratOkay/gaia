@@ -60,7 +60,7 @@ from gaia.semantics.schemas import ROLES
 __all__ = ["ACTIONS", "ReviewError", "ReviewNotFound", "ReviewService"]
 
 ACTIONS = ("accept", "correct", "reject", "unused")
-EDITABLE = ("business_name", "purpose", "role", "entity", "unit", "synonyms")
+EDITABLE = ("business_name", "purpose", "role", "entity", "unit", "synonyms", "personal")
 TABLE_EDITABLE = ("business_name", "purpose", "grain", "entity", "synonyms")
 _SKIP = {"id", "version", "is_current", "created_at", "search_vector", "reviewed_by",
          "reviewed_at", "review_note"}
@@ -296,6 +296,7 @@ class ReviewService:
                 ReviewItem.table_id == table.id, ReviewItem.status == "open"))).all()}
             return {
                 "data_source": ds.name, "id": str(table.id), "schema": table.schema_name,
+                **(await _category_of(s, table.id)),
                 "name": table.object_name, "kind": table.kind,
                 "rows": table.estimated_rows,
                 "meaning": None if tsem is None else {
@@ -662,6 +663,23 @@ class ReviewService:
 
 
 
+async def _category_of(s: AsyncSession, table_id: uuid.UUID) -> dict[str, Any]:
+    """The table's data category in force and the categories an SME may choose (5C)."""
+    from gaia.db.models.auth import Category, ObjectCategory
+
+    row = (await s.execute(select(ObjectCategory, Category).join(
+        Category, Category.id == ObjectCategory.category_id).where(
+        ObjectCategory.table_id == table_id, ObjectCategory.is_current.is_(True)))).first()
+    options = (await s.scalars(select(Category).where(Category.retired_at.is_(None))
+                               .order_by(func.lower(Category.name)))).all()
+    return {"category": None if row is None else {
+                "id": str(row[1].id), "name": row[1].name, "status": row[0].status,
+                "source": row[0].source, "decided_by": row[0].decided_by,
+                "decided_at": row[0].decided_at, "reason": row[0].reason},
+            "categories": [{"id": str(c.id), "name": c.name, "description": c.description}
+                           for c in options]}
+
+
 def _stale_decisions(data_source_id: uuid.UUID):
     """Columns whose latest SME decision went stale (their structure changed since) — current
     or already replaced by the machine's new meaning: either way a person has to look again."""
@@ -681,6 +699,10 @@ def _no_model():
 
 
 def _clean(key: str, value: Any) -> Any:
+    if key == "personal":  # 5C: True, False, or None (the detectors decide again)
+        if value is None or isinstance(value, bool):
+            return value
+        raise ReviewError("personal is true, false or null")
     if key == "synonyms":
         values = value if isinstance(value, list) else str(value or "").split(",")
         return [str(v).strip() for v in values if str(v).strip()]
@@ -744,7 +766,8 @@ def _meaning(sem: ColumnSemantic) -> dict[str, Any]:
         "alternatives": list(sem.alternatives or []), "self_confidence": sem.self_confidence,
         "critique": sem.critique, "semantic_type": sem.semantic_type,
         "claimed_semantic_type": sem.claimed_semantic_type, "coverage": sem.coverage,
-        "unused": sem.unused, "model": sem.model, "prompt_version": sem.prompt_version,
+        "unused": sem.unused, "personal": sem.personal, "model": sem.model,
+        "prompt_version": sem.prompt_version,
         "created_at": sem.created_at, "reviewed_by": sem.reviewed_by,
         "reviewed_at": sem.reviewed_at, "review_note": sem.review_note,
         "inherited_from": (sem.score_breakdown or {}).get("inherited_from"),

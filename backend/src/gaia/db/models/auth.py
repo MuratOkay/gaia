@@ -15,6 +15,17 @@ sessions. Schema ``auth`` (migration 0012).
 * ``session`` — server-side sessions (P5-8): only a hash of the token and of its CSRF
   token is stored; the privileges in force are kept with it and re-read from the
   directory every ``auth.recheck_minutes``.
+
+Need-to-know (Phase 5C, D74; migration 0015):
+
+* ``category`` — a data category (a business domain: Sales, Finance, HR …) the
+  administrator defines; ``keywords`` help Gaia propose it for objects.
+* ``object_category`` — what an object's data *is*: one category per table or view,
+  proposed by Gaia, confirmed by an SME (or set by an administrator); the current row
+  per object is the one in force. Keyed by the catalog's table id, so re-reasoning never
+  touches it.
+* ``access_grant`` with privilege ``category`` — a directory role or an account may read
+  the objects of that category. Nothing is readable until granted (deny by default).
 """
 
 from __future__ import annotations
@@ -24,7 +35,7 @@ from datetime import datetime
 from typing import Any
 
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from gaia.db.models.base import Base
@@ -32,7 +43,9 @@ from gaia.db.models.catalog import new_uuid
 
 S = "auth"
 APP_ROLES = ("user", "sme", "admin", "auditor")
-PRIVILEGES = (*APP_ROLES, "pii_processor")
+PRIVILEGES = (*APP_ROLES, "pii_processor", "category")
+OBJECT_CATEGORY_STATUSES = ("proposed", "confirmed")
+OBJECT_CATEGORY_SOURCES = ("gaia", "sme", "admin")
 DIRECTORY_KINDS = ("ldap", "entra")
 DIRECTORY_STATUSES = ("unverified", "verified", "failed", "disabled")
 ROLE_SOURCES = ("group", "attribute", "ou")
@@ -142,6 +155,51 @@ class AccountRole(Base):
                                               server_default=_now())
 
 
+class Category(Base):
+    __tablename__ = "category"
+    __table_args__ = (
+        sa.Index("uq_category_name", sa.text("lower(name)"), unique=True),
+        {"schema": S},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    name: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    description: Mapped[str | None] = mapped_column(sa.Text)
+    keywords: Mapped[list[str]] = mapped_column(ARRAY(sa.Text), nullable=False, default=list)
+    created_by: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
+                                                 server_default=_now())
+    retired_by: Mapped[str | None] = mapped_column(sa.Text)
+    retired_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+
+
+class ObjectCategory(Base):
+    __tablename__ = "object_category"
+    __table_args__ = (
+        sa.Index("uq_object_category_current", "table_id", unique=True,
+                 postgresql_where=sa.text("is_current")),
+        sa.Index("ix_object_category_source", "data_source_id", "is_current"),
+        _in("status", OBJECT_CATEGORY_STATUSES, "status"),
+        _in("source", OBJECT_CATEGORY_SOURCES, "source"),
+        {"schema": S},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    data_source_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.data_sources.id", ondelete="CASCADE"), nullable=False)
+    table_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.tables.id", ondelete="CASCADE"), nullable=False)
+    category_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey(f"{S}.category.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    reason: Mapped[str | None] = mapped_column(sa.Text)
+    decided_by: Mapped[str | None] = mapped_column(sa.Text)
+    decided_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
+                                                 server_default=_now())
+    is_current: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=True)
+
+
 class Grant(Base):
     __tablename__ = "access_grant"
     __table_args__ = (
@@ -150,6 +208,8 @@ class Grant(Base):
                            name="one_subject"),
         sa.CheckConstraint("(privilege = 'sme') = (data_source_id IS NOT NULL)",
                            name="sme_per_data_source"),
+        sa.CheckConstraint("(privilege = 'category') = (category_id IS NOT NULL)",
+                           name="category_grant"),
         sa.Index("ix_grant_current_role", "directory_role_id",
                  postgresql_where=sa.text("revoked_at IS NULL")),
         sa.Index("ix_grant_current_account", "account_id",
@@ -165,6 +225,8 @@ class Grant(Base):
         sa.ForeignKey(f"{S}.account.id", ondelete="CASCADE"))
     data_source_id: Mapped[uuid.UUID | None] = mapped_column(
         sa.ForeignKey("catalog.data_sources.id", ondelete="CASCADE"))
+    category_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey(f"{S}.category.id", ondelete="CASCADE"))
     granted_by: Mapped[str] = mapped_column(sa.Text, nullable=False)
     granted_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
                                                  server_default=_now())

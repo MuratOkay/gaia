@@ -119,6 +119,9 @@ class GuardResult:
     # the statement's output columns and the base column each one shows as is
     # (``schema.object.column``), None when computed — for masking personal data
     outputs: list[tuple[str, str | None]] = field(default_factory=list)
+    # need-to-know (5C): what a ``forbidden`` statement reached for — for the audit only,
+    # never for the person who asked
+    forbidden: list[str] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
@@ -132,6 +135,7 @@ class GuardResult:
             "tables": self.tables,
             "joins": [j.__dict__ for j in self.joins],
             "row_limit": self.row_limit, "limit_injected": self.limit_injected,
+            **({"forbidden": self.forbidden} if self.forbidden else {}),
         }
 
 
@@ -143,6 +147,9 @@ class SqlGuardBase:
     read: str = ""  # sqlglot dialect
     functions: frozenset[str] = frozenset()  # allowed function names, lower case
     denied_function_classes: frozenset[str] = frozenset()
+    # need-to-know (5C): ``*`` is expanded by the database, not by the guard — refused when
+    # the catalog is a person's restricted one
+    forbid_star: bool = False
 
     def __init__(self, catalog: GuardCatalog, *, row_limit: int = 1000,
                  unverified_joins: str = "reject") -> None:
@@ -165,6 +172,8 @@ class SqlGuardBase:
         result.errors += self._structure(tree)
         if result.errors:
             return result
+        if self.forbid_star:
+            result.errors += _stars(tree, self.read)
         result.errors += self.dialect_checks(tree)
         result.errors += self._functions(tree)
         result.errors += self._resolve_tables(tree, result)
@@ -179,6 +188,10 @@ class SqlGuardBase:
         self._check_joins(qualified, result)
         if result.errors:
             return result
+        if self.catalog.show_only:
+            result.errors += _show_only(qualified, self.catalog.show_only)
+            if result.errors:
+                return result
         result.outputs = _outputs(qualified)
         tree, result.row_limit, result.limit_injected = self.apply_limit(tree)
         rendered = tree.sql(dialect=self.read, pretty=True)
@@ -413,6 +426,73 @@ class SqlGuardBase:
 
 
 GENERATED = "<generated>"  # a column of a table function or a VALUES list
+
+
+def _stars(tree: exp.Expression, read: str) -> list[Violation]:
+    """``*`` and ``t.*`` outside ``COUNT(*)``."""
+    for star in tree.find_all(exp.Star):
+        parent = star.parent
+        if isinstance(parent, exp.Count):
+            continue
+        return [Violation("star", "name the columns instead of * (it would also return "
+                                  "columns this person may not read)")]
+    return []
+
+
+def _show_only(qualified: exp.Expression, show_only: set[str]) -> list[Violation]:
+    """Personal data a person may see only masked (5C): a reference to such a column is
+    allowed as an output column (of the query, a CTE or a derived table — its use further
+    out is checked where it is used), inside ``COUNT(…)``, or tested with ``IS [NOT] NULL``
+    (whether there is a value, not what it is); anywhere else — a filter, a
+    join, a grouping, an ordering, a window, an expression, a subquery in a condition — it
+    would reveal what the mask hides."""
+    try:
+        scopes = traverse_scope(qualified)
+    except SqlglotError:
+        return [Violation("unresolved", "the statement could not be analysed")]
+    for scope in scopes:
+        select = scope.expression
+        aliases: set[str] = set()
+        if isinstance(select, exp.Select):
+            for projection in select.expressions:
+                inner = projection.this if isinstance(projection, exp.Alias) else projection
+                if isinstance(inner, exp.Column):
+                    base = _resolve(scope, inner)[0]
+                    if base and base.lower() in show_only:
+                        aliases.add(projection.alias_or_name.lower())
+        for column in scope.columns:
+            if column.table:
+                base, outer = None, scope
+                while outer is not None:  # a correlated reference reads an outer source
+                    if column.table in outer.sources:
+                        base = _resolve(outer, column)[0]
+                        break
+                    outer = outer.parent
+                if not base or base.lower() not in show_only:
+                    continue
+            elif column.name.lower() not in aliases:
+                continue  # an unqualified name: an output alias, if anything
+            if _shown_or_counted(column, scope):
+                continue
+            return [Violation("personal_data",
+                              "personal data may only be shown (masked) or counted here: "
+                              f"{column.sql()[:60]}")]
+    return []
+
+
+def _shown_or_counted(column: exp.Column, scope: Scope) -> bool:
+    parent = column.parent
+    if isinstance(parent, exp.Is) and isinstance(parent.expression, exp.Null):
+        return True  # whether there is a value at all ("has an e-mail") reveals no value
+    if isinstance(parent, exp.Distinct):
+        parent = parent.parent
+    if isinstance(parent, exp.Count):
+        return True
+    if isinstance(parent, exp.Alias):
+        parent = parent.parent
+    projection = isinstance(parent, exp.Select) and parent is scope.expression and (
+        column in parent.expressions or column.parent in parent.expressions)
+    return projection and not scope.is_subquery
 
 
 def _resolve(scope: Scope, column: exp.Column, depth: int = 0) -> tuple[str | None, bool]:

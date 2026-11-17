@@ -119,6 +119,10 @@ admin-user: ## 5A: the one local account (gaia-admin): set its password (ARGS="s
 auth: ## 5A: directories, grants, accounts, the audit chain (ARGS="directory list | grant … | accounts | audit-check")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.auth $(ARGS)
 
+.PHONY: access
+access: ## 5C: data categories (TARGET=...; ARGS="categories | from-schemas | propose | objects | place OBJ CAT | policy LOGIN")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.access $(TARGET_ARG) $(ARGS)
+
 .PHONY: datasource
 datasource: ## 4F: data sources added at runtime (ARGS="list | add … | probe NAME | update | disable | enable | remove | rotate-key")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.datasource $(ARGS)
