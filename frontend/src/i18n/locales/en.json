@@ -1,5 +1,7 @@
 {
-  "app": { "name": "Gaia" },
+  "app": {
+    "name": "Gaia"
+  },
   "common": {
     "error": "Something went wrong",
     "loading": "Loading…",
@@ -23,7 +25,12 @@
     "disabled": "disabled",
     "tombstoned": "removed"
   },
-  "role": { "user": "user", "sme": "SME", "admin": "administrator", "auditor": "auditor" },
+  "role": {
+    "user": "user",
+    "sme": "SME",
+    "admin": "administrator",
+    "auditor": "auditor"
+  },
   "privilege": {
     "user": "user — asks questions",
     "sme": "SME — reviews a data source",
@@ -43,7 +50,9 @@
     "failed": "Sign-in failed. Check your user name and password; if they are right, your account may have no Gaia role yet — ask your administrator.",
     "unavailable": "Gaia cannot be reached right now.",
     "nothing": "No way to sign in is set up yet. An administrator sets the local account's password on the server (make admin-user).",
-    "haveCode": "I have a setup code for the local administrator"
+    "haveCode": "I have a setup code for the local administrator",
+    "microsoft": "Sign in with Microsoft ({{name}})",
+    "or": "or"
   },
   "setup": {
     "title": "Set up the local administrator",
@@ -87,7 +96,10 @@
     "dialect": "Database",
     "where": "Server, database, login",
     "origin": "Added by",
-    "origins": { "config": "configuration", "admin": "an administrator" },
+    "origins": {
+      "config": "configuration",
+      "admin": "an administrator"
+    },
     "probed": "Last proven read-only",
     "probe": "Probe",
     "host": "Host",
@@ -111,10 +123,13 @@
     "sync": "Read users and roles",
     "confirmDisable": "Disable {{name}}? Everyone signed in through it is signed out.",
     "add": "Connect a directory",
-    "addIntro": "Active Directory or another LDAP server. Entra ID follows in step 5A.2.",
+    "addIntro": "Active Directory or another LDAP server, or Microsoft Entra ID.",
     "name": "Name",
     "flavor": "Kind",
-    "flavors": { "ad": "Active Directory", "openldap": "OpenLDAP / other LDAP" },
+    "flavors": {
+      "ad": "Active Directory",
+      "openldap": "OpenLDAP / other LDAP"
+    },
     "urls": "Server addresses (ldaps://…, comma-separated)",
     "startTls": "ldap:// with StartTLS",
     "tlsVerify": "Verify the server certificate (leave on outside tests)",
@@ -128,15 +143,35 @@
     "roles": "Roles",
     "rolesIntro": "How Gaia reads someone's roles from the directory. You then grant Gaia roles to these directory roles, or to single people.",
     "roleKind": "Read roles from",
-    "roleKinds": { "group": "group membership", "attribute": "a user attribute", "ou": "the organisational unit" },
+    "roleKinds": {
+      "group": "group membership",
+      "attribute": "a user attribute",
+      "ou": "the organisational unit"
+    },
     "groupBase": "Groups under (optional: the base DN)",
     "groupFilter": "Which groups are roles (optional filter)",
     "nested": "Follow nested groups",
     "nestedStrategy": "How",
-    "strategies": { "client": "step by step (any LDAP server)", "ad_in_chain": "in one query (Active Directory)" },
+    "strategies": {
+      "client": "step by step (any LDAP server)",
+      "ad_in_chain": "in one query (Active Directory)"
+    },
     "attribute": "Attribute (e.g. department, title, employeeType)",
     "ouBase": "OUs below (optional: where people are)",
-    "addButton": "Connect"
+    "addButton": "Connect",
+    "kind": "Directory",
+    "kinds": {
+      "ldap": "Active Directory / LDAP",
+      "entra": "Microsoft Entra ID"
+    },
+    "entraIntro": "Register an app in Entra ID (App registrations): a Web redirect URI — the callback below — a client secret, and the Microsoft Graph application permissions User.Read.All and GroupMember.Read.All with admin consent. People then sign in at Microsoft; Gaia never sees their password.",
+    "tenantId": "Tenant ID (or the tenant's domain)",
+    "clientId": "Application (client) ID",
+    "clientSecret": "Client secret",
+    "redirectUri": "Redirect URI (as registered; empty: this site's)",
+    "userFilterOdata": "Which users to read (optional OData filter)",
+    "namePrefix": "Only groups whose name starts with",
+    "securityOnly": "Security groups only"
   },
   "grants": {
     "title": "Roles & grants",

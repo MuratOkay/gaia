@@ -408,8 +408,8 @@ record names you by `$USER`.
 
 ### Sign-in and access (`make admin-user`, `make auth`, Phase 5A)
 
-People sign in with their company directory account (Active Directory / LDAP over TLS; Entra
-ID follows). Gaia never keeps their passwords: the directory checks them at every sign-in.
+People sign in with their company directory account (Active Directory / LDAP over TLS, or
+Microsoft Entra ID). Gaia never keeps their passwords: the directory checks them at every sign-in.
 What someone may do in Gaia comes from **grants** an administrator makes:
 
 | Gaia role / permission | Lets someone |
@@ -450,6 +450,23 @@ make auth ARGS="revoke <grant id> --note 'moved team'"
 make auth ARGS="accounts"                    # who may do what now, conflicts included
 make auth ARGS="audit-check"                 # is the access audit intact; its head hash
 ```
+
+**Microsoft Entra ID** instead of (or beside) AD/LDAP (5A.2): register an app in Entra (a Web
+redirect URI `http(s)://<where the web UI is>/api/auth/oidc/callback`, a client secret, the
+Graph application permissions `User.Read.All` and `GroupMember.Read.All` with admin consent —
+OWNER_VERIFICATION §23c has the clicks), fill `infra/auth/entra-example.json` in, and:
+
+```bash
+make auth ARGS="directory add corp --kind entra --settings ../infra/auth/corp.json"   # the secret
+make auth ARGS="directory probe corp"        # discovery, keys, credentials, users, roles
+make auth ARGS="directory sync corp"
+make auth ARGS="grant user --role corp/GAIA-Finance"
+```
+
+People then click **Sign in with Microsoft** — their password and MFA stay with Microsoft.
+Roles come from Entra groups (by a name prefix, nested groups included, security groups only by
+default) or from one user attribute (`department`, `jobTitle`, …). Open the web UI under the
+host name of the redirect URI (`localhost`, not `127.0.0.1`, in development).
 
 * **No role, no entry.** A person without any grant — directly or through a directory role —
   cannot sign in, and hears only "sign-in failed", as for a wrong password; the audit keeps the

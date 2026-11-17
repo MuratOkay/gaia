@@ -17,10 +17,11 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 > with the company's **Active Directory / LDAP**, four Gaia roles (user, SME, administrator,
 > auditor) and the PII-processor permission, one local break-glass account, server-side
 > sessions, a hash-chained access audit with the auditor's reports, and the first **web UI**
-> (`make dev-web`) — are built and verified in the sandbox; next: Entra ID (5A.2), then SME
-> review (5B). Every API endpoint except `/health` and sign-in needs a session now.
+> (`make dev-web`) — pass on the owner's host (685 tests); **5A.2, sign-in with Microsoft
+> Entra ID**, is built and verified in the sandbox. Next: SME review (5B). Every API endpoint
+> except `/health` and sign-in needs a session.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22 for build D68). See
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22–§23 for builds D68, D71). See
 > [PHASES.md](PHASES.md).
 
 ---
@@ -345,7 +346,7 @@ runs (4D, done), the API (4E, done) and data-source management (4F). The 99 colu
 (condition N-C). SME review moves forward into Phase 5 (roadmap R1).
 **Phase 5** (approved 2026-11-17) runs in stages: 5.0 triage fixes (built) →
 5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles; built) →
-5A.2 Entra ID → 5B SME
+5A.2 Entra ID (built) → 5B SME
 review → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
 and the SQL guard) → 5D the chat screen → 5E a read-only runs view; scheduling runs and
 switching models from the admin screen are proposed for later (PHASES, Phase 5).

@@ -198,3 +198,30 @@ class Session(Base):
     revoked_reason: Mapped[str | None] = mapped_column(sa.Text)
     ip: Mapped[str | None] = mapped_column(sa.Text)
     user_agent: Mapped[str | None] = mapped_column(sa.Text)
+
+
+class PendingLogin(Base):
+    """A sign-in started with an OpenID Connect provider (Entra ID, 5A.2) and not finished
+    yet: single use, ``auth.oidc_minutes`` long. ``state`` and the browser binding are kept
+    as hashes; the PKCE verifier encrypted with the master key (D65), bound to this row."""
+
+    __tablename__ = "pending_login"
+    __table_args__ = (
+        sa.UniqueConstraint("state_hash", name="uq_pending_login_state"),
+        sa.Index("ix_pending_login_expires", "expires_at"),
+        {"schema": S},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    directory_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey(f"{S}.directory.id", ondelete="CASCADE"), nullable=False)
+    state_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    binding_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    nonce: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    verifier: Mapped[bytes] = mapped_column(sa.LargeBinary, nullable=False)
+    verifier_key_id: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    ip: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
+                                                 server_default=_now())
+    expires_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))

@@ -33,6 +33,8 @@ dependencies = [
     # Phase 5A: Active Directory / LDAP(S) sign-in; the local account's password (D68)
     "ldap3>=2.9",
     "argon2-cffi>=23.1",
+    # Phase 5A.2: Entra ID — validating the ID token (RS256 against the tenant's keys)
+    "pyjwt[crypto]>=2.8",
     # Cache + jobs
     "redis>=5.1",
     "arq>=0.26",

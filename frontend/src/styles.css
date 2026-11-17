@@ -64,3 +64,5 @@ tr.revoked td:last-child { text-decoration: none; }
 .status-failed { background: #ffebe9; color: var(--danger); }
 .status-disabled, .status-tombstoned { background: #eaeef2; color: var(--muted); }
 .grant-control { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }
+button.microsoft { width: 100%; margin: 0.3rem 0; background: #fff; color: var(--fg); border-color: #8c8c8c; }
+.or { text-align: center; margin: 0.4rem 0; }

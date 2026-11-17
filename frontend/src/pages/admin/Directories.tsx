@@ -4,7 +4,10 @@ import { useTranslation } from "react-i18next";
 import { api, type DirectoryView } from "../../api/client";
 import { Busy, Checks, ErrorNote, Status, useLoad, when } from "../../components/util";
 
-const EMPTY = {
+export const ENTRA_ATTRIBUTES = ["department", "jobTitle", "employeeType", "companyName", "officeLocation"];
+
+export const EMPTY = {
+  kind: "ldap",
   name: "",
   urls: "ldaps://",
   start_tls: false,
@@ -24,7 +27,31 @@ const EMPTY = {
   attribute: "department",
   ou_base: "",
   password: "",
+  // Entra ID (5A.2)
+  tenant_id: "",
+  client_id: "",
+  redirect_uri: "",
+  entra_role_kind: "group",
+  name_prefix: "GAIA-",
+  security_only: true,
+  entra_attribute: "department",
+  user_filter_odata: "",
 };
+
+// The form -> the settings the API validates (gaia.auth.entra.EntraSettings).
+export function toEntraSettings(f: typeof EMPTY, origin: string): Record<string, unknown> {
+  const blank = (v: string) => (v.trim() ? v.trim() : undefined);
+  const role = f.entra_role_kind === "group"
+    ? { kind: "group", name_prefix: blank(f.name_prefix), security_only: f.security_only }
+    : { kind: "attribute", attribute: f.entra_attribute };
+  return {
+    tenant_id: f.tenant_id.trim(),
+    client_id: f.client_id.trim(),
+    redirect_uri: blank(f.redirect_uri) ?? `${origin}/api/auth/oidc/callback`,
+    user_filter: blank(f.user_filter_odata),
+    role_source: role,
+  };
+}
 
 // What the form holds -> the settings the API validates (gaia.auth.ldap.LdapSettings).
 export function toSettings(f: typeof EMPTY): Record<string, unknown> {
@@ -76,9 +103,15 @@ export function Directories() {
     event.preventDefault();
     setActionError(null);
     try {
+      const entra = form.kind === "entra";
       await api("/api/admin/directories", {
         method: "POST",
-        body: { name: form.name.trim(), kind: "ldap", settings: toSettings(form), password: form.password },
+        body: {
+          name: form.name.trim(),
+          kind: form.kind,
+          settings: entra ? toEntraSettings(form, window.location.origin) : toSettings(form),
+          password: form.password,
+        },
       });
       setForm(EMPTY);
       await reload();
@@ -91,7 +124,7 @@ export function Directories() {
     value: String(form[key]),
     onChange: (e: { target: { value: string } }) => setForm({ ...form, [key]: e.target.value }),
   });
-  const flag = (key: "start_tls" | "tls_verify" | "nested") => ({
+  const flag = (key: "start_tls" | "tls_verify" | "nested" | "security_only") => ({
     checked: form[key],
     onChange: (e: { target: { checked: boolean } }) => setForm({ ...form, [key]: e.target.checked }),
   });
@@ -128,7 +161,52 @@ export function Directories() {
       <h2>{t("directories.add")}</h2>
       <p className="muted">{t("directories.addIntro")}</p>
       <form className="grid" onSubmit={add} aria-label={t("directories.add")}>
+        <label>
+          {t("directories.kind")}
+          <select {...text("kind")}>
+            <option value="ldap">{t("directories.kinds.ldap")}</option>
+            <option value="entra">{t("directories.kinds.entra")}</option>
+          </select>
+        </label>
         <label>{t("directories.name")}<input {...text("name")} required /></label>
+        {form.kind === "entra" ? (
+          <>
+            <p className="muted wide">{t("directories.entraIntro")}</p>
+            <label className="wide">{t("directories.tenantId")}<input {...text("tenant_id")} required /></label>
+            <label className="wide">{t("directories.clientId")}<input {...text("client_id")} required /></label>
+            <label>{t("directories.clientSecret")}<input type="password" autoComplete="new-password" {...text("password")} required /></label>
+            <label className="wide">
+              {t("directories.redirectUri")}
+              <input {...text("redirect_uri")} placeholder={`${window.location.origin}/api/auth/oidc/callback`} />
+            </label>
+            <label className="wide">{t("directories.userFilterOdata")}<input {...text("user_filter_odata")} placeholder="accountEnabled eq true" /></label>
+            <fieldset className="wide">
+              <legend>{t("directories.roles")}</legend>
+              <p className="muted">{t("directories.rolesIntro")}</p>
+              <label>
+                {t("directories.roleKind")}
+                <select {...text("entra_role_kind")}>
+                  <option value="group">{t("directories.roleKinds.group")}</option>
+                  <option value="attribute">{t("directories.roleKinds.attribute")}</option>
+                </select>
+              </label>
+              {form.entra_role_kind === "group" ? (
+                <>
+                  <label>{t("directories.namePrefix")}<input {...text("name_prefix")} /></label>
+                  <label className="check"><input type="checkbox" {...flag("security_only")} />{t("directories.securityOnly")}</label>
+                </>
+              ) : (
+                <label>
+                  {t("directories.attribute")}
+                  <select {...text("entra_attribute")}>
+                    {ENTRA_ATTRIBUTES.map((a) => <option key={a} value={a}>{a}</option>)}
+                  </select>
+                </label>
+              )}
+            </fieldset>
+          </>
+        ) : (
+        <>
         <label>
           {t("directories.flavor")}
           <select {...text("flavor")}>
@@ -178,6 +256,8 @@ export function Directories() {
             <label>{t("directories.ouBase")}<input {...text("ou_base")} /></label>
           )}
         </fieldset>
+        </>
+        )}
         <button type="submit">{t("directories.addButton")}</button>
       </form>
     </section>

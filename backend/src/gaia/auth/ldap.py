@@ -288,9 +288,10 @@ class LdapDirectory:
         finally:
             self._close(conn)
 
-    def lookup(self, login: str) -> DirectoryUser | None:
+    def lookup(self, login: str, external_id: str | None = None) -> DirectoryUser | None:
         """The person as the directory sees them now (the service account only): for the
-        re-check of an open session."""
+        re-check of an open session. (``external_id`` is for providers that look people up by
+        a stable id; LDAP finds them by login.)"""
         conn = self._service()
         try:
             entry = self._find(conn, login)

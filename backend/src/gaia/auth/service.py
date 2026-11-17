@@ -56,6 +56,7 @@ from gaia.db.models.auth import (
     Directory,
     DirectoryRole,
     Grant,
+    PendingLogin,
 )
 from gaia.db.models.auth import Session as SessionRow
 from gaia.db.models.catalog import DataSource
@@ -76,9 +77,10 @@ class AuthError(RuntimeError):
 class SignInRefused(AuthError):  # noqa: N818 - the public message is deliberately vague
     """The one public answer to a refused sign-in; ``reason`` is for the audit only."""
 
-    def __init__(self, reason: str) -> None:
+    def __init__(self, reason: str, actor: str | None = None) -> None:
         super().__init__(REFUSED)
         self.reason = reason
+        self.actor = actor  # who, when the directory had already identified them
 
 
 class NotSignedIn(AuthError):  # noqa: N818
@@ -124,7 +126,11 @@ DirectoryFactory = Callable[[Directory, str], Any]  # (row, service password) ->
 def default_directory_factory(row: Directory, password: str):
     if row.kind == "ldap":
         return LdapDirectory(LdapSettings.model_validate(row.settings), password)
-    raise AuthError(f"directory kind {row.kind!r} is not available yet (Entra ID: step 5A.2)")
+    if row.kind == "entra":
+        from gaia.auth.entra import EntraDirectory, EntraSettings
+
+        return EntraDirectory(EntraSettings.model_validate(row.settings), password)
+    raise AuthError(f"unknown directory kind {row.kind!r}")
 
 
 class AuthService:
@@ -221,27 +227,110 @@ class AuthService:
             try:
                 principal = await self._sign_in(s, login, password, directory, ip)
             except SignInRefused as exc:
-                await s.rollback()
-                await audit.record(s, "sign_in_refused", actor=login.lower() or None,
-                                   subject=directory, detail={"reason": exc.reason}, ip=ip)
-                await s.commit()
+                await self._refused(s, exc.actor or login.lower() or None, directory, exc, ip)
                 raise
-            token, csrf = new_token(), new_token()
-            now = self.now()
-            row = SessionRow(token_hash=token_hash(token), csrf_hash=token_hash(csrf),
-                             account_id=principal.account_id,
-                             privileges=principal.effective.to_json(), created_at=now,
-                             last_seen_at=now, rechecked_at=now,
-                             expires_at=now + timedelta(hours=self.cfg.session_max_hours),
-                             ip=ip, user_agent=(user_agent or "")[:300] or None)
-            s.add(row)
-            await s.flush()
-            principal.session_id = row.id
-            await audit.record(s, "sign_in", actor=principal.login, subject=principal.directory,
-                               detail={"local": principal.local,
-                                       **principal.effective.to_json()}, ip=ip)
+            return await self._open_session(s, principal, ip, user_agent, method="password")
+
+    async def _refused(self, s: AsyncSession, actor: str | None, directory: str | None,
+                       exc: SignInRefused, ip: str | None) -> None:
+        await s.rollback()
+        await audit.record(s, "sign_in_refused", actor=actor, subject=directory,
+                           detail={"reason": exc.reason}, ip=ip)
+        await s.commit()
+
+    async def _open_session(self, s: AsyncSession, principal: Principal, ip: str | None,
+                            user_agent: str | None, *, method: str
+                            ) -> tuple[Principal, str, str]:
+        token, csrf = new_token(), new_token()
+        now = self.now()
+        row = SessionRow(token_hash=token_hash(token), csrf_hash=token_hash(csrf),
+                         account_id=principal.account_id,
+                         privileges=principal.effective.to_json(), created_at=now,
+                         last_seen_at=now, rechecked_at=now,
+                         expires_at=now + timedelta(hours=self.cfg.session_max_hours),
+                         ip=ip, user_agent=(user_agent or "")[:300] or None)
+        s.add(row)
+        await s.flush()
+        principal.session_id = row.id
+        await audit.record(s, "sign_in", actor=principal.login, subject=principal.directory,
+                           detail={"local": principal.local, "method": method,
+                                   **principal.effective.to_json()}, ip=ip)
+        await s.commit()
+        return principal, token, csrf
+
+    # -- OpenID Connect: Entra ID (5A.2) ---------------------------------------------------
+    async def oidc_start(self, directory: str, *, ip: str | None = None) -> tuple[str, str]:
+        """(the URL to send the browser to, the browser-binding token for its cookie).
+
+        The binding ties the sign-in to the browser that started it: a callback arriving
+        in another browser (someone else's code, login CSRF) is refused."""
+        async with self.factory() as s:
+            row = await s.scalar(select(Directory).where(Directory.name == directory))
+            if row is None or row.kind != "entra" or row.status != "verified":
+                raise AuthError(f"no usable Entra ID directory {directory!r}")
+            state, binding, nonce, verifier = new_token(), new_token(), new_token(), new_token()
+            pending = PendingLogin(id=uuid.uuid4(), directory_id=row.id,
+                                   state_hash=token_hash(state), binding_hash=token_hash(binding),
+                                   nonce=nonce, verifier=b"", verifier_key_id="", ip=ip,
+                                   created_at=self.now(),
+                                   expires_at=self.now() + timedelta(
+                                       minutes=self.cfg.oidc_minutes))
+            pending.verifier, pending.verifier_key_id = encrypt(verifier, _aad(pending.id))
+            provider = self._provider(row)
+            try:
+                url = await asyncio.to_thread(provider.authorize_url, state=state, nonce=nonce,
+                                              verifier=verifier)
+            except DirectoryError as exc:
+                raise AuthError(str(exc)) from None
+            s.add(pending)
+            # expired attempts are of no use to anyone: cleared as new ones start
+            await s.execute(PendingLogin.__table__.delete().where(
+                PendingLogin.expires_at < self.now() - timedelta(days=1)))
             await s.commit()
-            return principal, token, csrf
+            return url, binding
+
+    async def oidc_finish(self, *, state: str | None, code: str | None, binding: str | None,
+                          error: str | None = None, ip: str | None = None,
+                          user_agent: str | None = None) -> tuple[Principal, str, str, str]:
+        """(principal, session token, CSRF token, where the browser goes next) — or
+        :class:`SignInRefused` with the real reason in the audit."""
+        async with self.factory() as s:
+            pending = await s.scalar(select(PendingLogin).where(
+                PendingLogin.state_hash == token_hash(state or "")))
+            row = await s.get(Directory, pending.directory_id) if pending else None
+            name = row.name if row else None
+            try:
+                if pending is None or row is None:
+                    raise SignInRefused("unknown or already used sign-in state")
+                if pending.used_at is not None:
+                    raise SignInRefused("this sign-in was already completed (a replay)")
+                pending.used_at = self.now()
+                await s.commit()  # single use, whatever follows
+                if pending.expires_at <= self.now():
+                    raise SignInRefused("the sign-in took too long (expired)")
+                if not same_token(binding, pending.binding_hash):
+                    raise SignInRefused("the sign-in came back to another browser")
+                if error:
+                    raise SignInRefused(f"Microsoft refused: {error[:200]}")
+                if not code:
+                    raise SignInRefused("no authorization code")
+                if row.status != "verified":
+                    raise SignInRefused(f"directory {row.name} is {row.status}")
+                verifier = decrypt(bytes(pending.verifier), pending.verifier_key_id,
+                                   _aad(pending.id))
+                try:
+                    user = await asyncio.to_thread(self._provider(row).redeem, code,
+                                                   verifier=verifier, nonce=pending.nonce)
+                except DirectoryError as exc:
+                    raise SignInRefused(f"directory {row.name}: {exc}") from None
+                principal = await self._admit(s, row, user)
+            except SignInRefused as exc:
+                await self._refused(s, exc.actor, name, exc, ip)
+                raise
+            after = str((row.settings or {}).get("after_sign_in") or "/")
+            principal, token, csrf = await self._open_session(s, principal, ip, user_agent,
+                                                              method="oidc")
+            return principal, token, csrf, after
 
     async def _locked(self, s: AsyncSession, account: Account | None) -> None:
         if account is not None and account.locked_until and account.locked_until > self.now():
@@ -275,11 +364,12 @@ class AuthService:
             return Principal(account.id, account.login, account.display_name, None, True, None,
                              effective([], local=True))
 
-        rows = await self._usable_directories(s)
+        # a password goes only to an LDAP directory; Entra ID signs in at Microsoft (5A.2)
+        rows = [r for r in await self._usable_directories(s) if r.kind == "ldap"]
         if directory is not None:
             rows = [r for r in rows if r.name == directory]
         if len(rows) != 1:
-            raise SignInRefused("no usable directory" if not rows
+            raise SignInRefused("no usable directory for a password" if not rows
                                 else "several directories: name one")
         row = rows[0]
         existing = await s.scalar(select(Account).where(
@@ -292,16 +382,25 @@ class AuthService:
             raise SignInRefused(f"directory {row.name}: {exc}") from None
         if user is None:
             await self._failed(s, existing, "wrong password or unknown login")
+        return await self._admit(s, row, user)
+
+    async def _admit(self, s: AsyncSession, row: Directory, user: DirectoryUser) -> Principal:
+        """The same rules for every directory once it has vouched for the person."""
         # the account is kept even when the sign-in is refused below: the administrator
         # then sees who tried, with their directory roles, and can grant (or not)
         account = await self._apply_directory_user(s, row, user)
         await s.commit()
         if not user.enabled:
-            raise SignInRefused("disabled in the directory")
-        await self._locked(s, account)  # the same person by another spelling of the login
+            raise SignInRefused("disabled in the directory", account.login)
+        try:
+            await self._locked(s, account)  # the same person by another spelling of the login
+        except SignInRefused as exc:
+            exc.actor = account.login
+            raise
         eff = await self.effective_for(s, account)
         if not eff.can_sign_in:
-            raise SignInRefused("no Gaia role (no grant to the account or its directory roles)")
+            raise SignInRefused("no Gaia role (no grant to the account or its directory roles)",
+                                account.login)
         account.failed_sign_ins, account.last_sign_in_at = 0, self.now()
         return Principal(account.id, account.login, account.display_name, account.email,
                          False, row.name, eff)
@@ -347,7 +446,8 @@ class AuthService:
             await self._end(s, row, "directory disabled")
             raise NotSignedIn("the directory is disabled")
         try:
-            user = await asyncio.to_thread(self._provider(directory).lookup, account.login)
+            user = await asyncio.to_thread(self._provider(directory).lookup, account.login,
+                                           account.external_id)
         except (DirectoryError, AuthError) as exc:
             if now - row.rechecked_at >= 2 * timedelta(minutes=self.cfg.recheck_minutes):
                 await self._end(s, row, f"directory unreachable: {exc}")
@@ -476,7 +576,12 @@ class AuthService:
             except ValueError as exc:
                 raise AuthError(f"directory settings: {exc}") from None
         if kind == "entra":
-            raise AuthError("Entra ID directories arrive in step 5A.2")
+            from gaia.auth.entra import EntraSettings
+
+            try:
+                return EntraSettings.model_validate(settings).model_dump(exclude_none=True)
+            except ValueError as exc:
+                raise AuthError(f"directory settings: {exc}") from None
         raise AuthError(f"unknown directory kind {kind!r} (ldap | entra)")
 
     async def add_directory(self, name: str, kind: str, settings: dict[str, Any],
@@ -597,7 +702,8 @@ class AuthService:
         async with self.factory() as s:
             rows = await self._usable_directories(s)
             local = await self._local(s)
-            return {"directories": [{"name": r.name, "kind": r.kind} for r in rows],
+            return {"directories": [{"name": r.name, "kind": r.kind} for r in rows],  # entra:
+                    # a "sign in with Microsoft" button (GET /api/auth/oidc/start?directory=…)
                     "local": bool(self.cfg.local_admin_enabled and local and local.enabled
                                   and local.password_hash),
                     "local_setup_pending": bool(local and local.setup_code_expires_at

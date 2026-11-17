@@ -435,6 +435,8 @@ class AuthConfig(BaseModel):
     cookie_secure: bool = False
     # the one local account (D68): its one-time setup code lives this long
     setup_code_minutes: int = 30
+    # Entra ID (5A.2): how long a sign-in started at Microsoft may take to come back
+    oidc_minutes: int = 10
     local_admin_enabled: bool = True
     # failed sign-ins before an account is locked for lockout_minutes (the directory has
     # its own lockout policy too: Gaia's stops guessing before it)

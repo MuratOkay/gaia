@@ -3,7 +3,7 @@ import { MemoryRouter } from "react-router-dom";
 
 import type { Me, Role } from "../api/client";
 import { Shell } from "../App";
-import { toSettings } from "../pages/admin/Directories";
+import { EMPTY, toEntraSettings, toSettings } from "../pages/admin/Directories";
 
 function me(roles: Role[]): Me {
   return { login: "x", display_name: "X", email: null, local: false, directory: "acme", roles,
@@ -38,6 +38,7 @@ describe("navigation follows the roles", () => {
 describe("the directory form", () => {
   it("maps onto the settings the API validates", () => {
     const settings = toSettings({
+      ...EMPTY,
       name: "acme", urls: "ldaps://dc1, ldaps://dc2", start_tls: false, tls_verify: true, ca_file: "",
       flavor: "ad", bind_dn: " cn=svc,dc=acme ", base_dn: "dc=acme", user_base: "", user_filter: "",
       login_attribute: "", role_kind: "attribute", group_base: "", group_filter: "", nested: true,
@@ -50,5 +51,19 @@ describe("the directory form", () => {
       role_source: { kind: "attribute", attribute: "department" },
     });
     expect(JSON.stringify(settings)).not.toContain("password");
+  });
+});
+
+describe("the Entra ID form", () => {
+  it("maps onto the settings the API validates, with the callback of this site", () => {
+    const settings = toEntraSettings({ ...EMPTY, kind: "entra", name: "corp", tenant_id: " t-1 ", client_id: "c-1",
+                                       password: "secret", name_prefix: "GAIA-" }, "http://localhost:5173");
+    expect(settings).toEqual({
+      tenant_id: "t-1", client_id: "c-1", redirect_uri: "http://localhost:5173/api/auth/oidc/callback",
+      user_filter: undefined, role_source: { kind: "group", name_prefix: "GAIA-", security_only: true },
+    });
+    expect(JSON.stringify(settings)).not.toContain("secret");
+    expect(toEntraSettings({ ...EMPTY, entra_role_kind: "attribute", entra_attribute: "jobTitle" }, "x").role_source)
+      .toEqual({ kind: "attribute", attribute: "jobTitle" });
   });
 });

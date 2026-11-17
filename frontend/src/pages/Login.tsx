@@ -16,14 +16,23 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
   const [setupMode, setSetupMode] = useState(false);
 
   useEffect(() => {
+    // back from Microsoft after a refused sign-in (Entra ID, 5A.2)
+    if (new URLSearchParams(window.location.search).get("signin") === "failed") {
+      setError(t("login.failed"));
+      window.history.replaceState(null, "", window.location.pathname);
+    }
     api<SignInOptions>("/api/auth/options")
       .then((o) => {
         setOptions(o);
-        setSource(o.directories[0]?.name ?? (o.local ? LOCAL : ""));
+        const ldap = o.directories.filter((d) => d.kind !== "entra");
+        setSource(ldap[0]?.name ?? (o.local ? LOCAL : ""));
         setSetupMode(o.local_setup_pending && !o.local);
       })
       .catch(() => setError(t("login.unavailable")));
   }, [t]);
+
+  const passwordDirectories = options?.directories.filter((d) => d.kind !== "entra") ?? [];
+  const microsoft = options?.directories.filter((d) => d.kind === "entra") ?? [];
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -47,17 +56,27 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
   if (setupMode) return <LocalSetup onDone={() => { setSetupMode(false); setSource(LOCAL); }} onCancel={() => setSetupMode(false)} />;
 
   const nothing = options && !options.directories.length && !options.local;
+  const passwords = passwordDirectories.length > 0 || !!options?.local;
   return (
     <main className="login">
       <h1>{t("app.name")}</h1>
       <p className="muted">{t("login.intro")}</p>
       {nothing && <p className="note">{t("login.nothing")}</p>}
+      {microsoft.map((d) => (
+        <button key={d.name} type="button" className="microsoft"
+                onClick={() => window.location.assign(`/api/auth/oidc/start?directory=${encodeURIComponent(d.name)}`)}>
+          {t("login.microsoft", { name: d.name })}
+        </button>
+      ))}
+      {microsoft.length > 0 && passwords && <p className="muted or">{t("login.or")}</p>}
+      {microsoft.length > 0 && !passwords && error && <p className="error" role="alert">{error}</p>}
+      {passwords && (
       <form onSubmit={submit} aria-label={t("login.title")}>
-        {options && (options.directories.length > 1 || (options.directories.length > 0 && options.local)) && (
+        {options && (passwordDirectories.length > 1 || (passwordDirectories.length > 0 && options.local)) && (
           <label>
             {t("login.directory")}
             <select value={source} onChange={(e) => setSource(e.target.value)}>
-              {options.directories.map((d) => (
+              {passwordDirectories.map((d) => (
                 <option key={d.name} value={d.name}>{d.name}</option>
               ))}
               {options.local && <option value={LOCAL}>{t("login.localAccount")}</option>}
@@ -79,6 +98,7 @@ export function Login({ onSignedIn }: { onSignedIn: (me: Me) => void }) {
         {error && <p className="error" role="alert">{error}</p>}
         <button type="submit" disabled={busy || !!nothing}>{busy ? t("common.wait") : t("login.submit")}</button>
       </form>
+      )}
       {options?.local_setup_pending && (
         <button type="button" className="link" onClick={() => setSetupMode(true)}>{t("login.haveCode")}</button>
       )}

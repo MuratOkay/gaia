@@ -1,0 +1,9 @@
+{
+  "tenant_id": "<your tenant id, or the tenant's domain, e.g. corp.onmicrosoft.com>",
+  "client_id": "<the app registration's Application (client) ID>",
+  "redirect_uri": "http://localhost:5173/api/auth/oidc/callback",
+  "after_sign_in": "/",
+  "user_filter": "accountEnabled eq true",
+  "role_source": {"kind": "group", "name_prefix": "GAIA-", "security_only": true},
+  "timeout_s": 10
+}

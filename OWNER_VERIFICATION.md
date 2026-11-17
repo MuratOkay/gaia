@@ -20,8 +20,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D68 (5A)` — step 5.0 (the triage fixes, D67) and step 5A
-  (sign-in, roles, administration, audit); what to run: §22.*
+  there. *Latest build: `2026-11-17 · D71 (5A.2)` — 5.0 and 5A (§22, being run) and 5A.2,
+  sign-in with Microsoft Entra ID (§23).*
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. **§22 is the next run**: the new build, its tests, and 5A
@@ -86,7 +86,7 @@ What I read first when it arrives: `20_golden_pg.out` (the Phase 4 gate), then
 | L7 | **The golden run of `demo_pg` with the configured model** — the Phase 4 acceptance numbers | §18b | the Phase 4 gate | **done**: executable **100 %**, correct **97 %** (29/30) |
 | L8 | A clarification answered by you, and its record (D61) | §18c | nothing | **done** (`agrees`); the answer's own output is missing from the file |
 | L9 | The chat API with the configured model: a question, a follow-up, a clarification | §19 | nothing | **done**: every item as expected |
-| L10 | A data source added at runtime: master key, add, probe, use (4F) | §20 | nothing | open (not run yet); the 4F tests: §21 T1 |
+| L10 | A data source added at runtime: master key, add, probe, use (4F) | §20 | nothing | **closed**: the 4F lifecycle test passed on your host with your real passwords (§22a); the manual §20b is optional |
 
 Done on 2026-11-16: D52 refinements accepted; gates 3.0, 3A (PostgreSQL), 3B ticked;
 Phase 4 approved (4A first).
@@ -118,6 +118,7 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 20 | Phase 4F: the master key, a data source added at runtime; the run plan's tracks | metadata DB, `demo_pg` | 10 min (+ the tracks) |
 | 21 | Triage of the D65 outputs (2026-11-17): findings, the runs still wanted, three questions | metadata DB, `demo_pg`, Ollama; `sql1` for S4/S6 | ~30 min + answers |
 | 22 | Build D68: 5.0 (triage fixes) and 5A (sign-in, roles, administration, audit); the 3C report; a real directory | metadata DB, `demo_pg`, Docker (a test AD), the LLM gateway (22b, 2 min) | ~1 h |
+| 23 | Build D71: 5A.2 — sign-in with Microsoft Entra ID; the golden run's spread | an Entra tenant you can register an app in; the LLM gateway (23b, ~4 min) | ~45 min |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -1599,12 +1600,12 @@ env | grep -c '^GAIA_TEST_'     # must print 3: the §9 exports, in THIS shell (
 (make stamp; make web-install; make web-test; make web-build) > verification/22_web.out 2>&1
 ```
 
-- [ ] `22_migrate.out`: `0010 -> 0011, Clarification options …` and `0011 -> 0012, Identity and
-      access …`
-- [ ] `22_tests.out`: `gaia build 2026-11-17 · D68 (5A)` and **685 passed, 0 skipped** (sandbox:
+- [x] `22_migrate.out`: `0010 -> 0011, Clarification options …` and `0011 -> 0012, Identity and
+      access …` *(D68, git `ef2064a`)*
+- [x] `22_tests.out`: `gaia build 2026-11-17 · D68 (5A)` and **685 passed, 0 skipped** (sandbox:
       675 passed, 10 skipped — 8 SQL Server live, 2 Ollama). This includes T1's two 4F tests with
-      your real passwords
-- [ ] `22_web.out`: `14 passed`, then `✓ built`
+      your real passwords *(exactly: 685 passed — **T1 closed**)*
+- [x] `22_web.out`: `14 passed`, then `✓ built`
 
 ### 22b · 5.0 on your host (no LLM except the last step)
 
@@ -1618,17 +1619,29 @@ env | grep -c '^GAIA_TEST_'     # must print 3: the §9 exports, in THIS shell (
   > verification/22_golden_pg.out 2>&1
 ```
 
-- [ ] the first `ask` asks back; its options need not start with the one Gaia prefers
-- [ ] the second **answers** (ten customers) with `answers the open clarification …` (T6)
-- [ ] `make clarifications` ends with a `position:` line
+- [x] the first `ask` asks back; its options need not start with the one Gaia prefers *(its
+      choice was shown 4th)*
+- [x] the second **answers** (ten customers) with `answers the open clarification …` (T6)
+- [ ] `make clarifications` ends with a `position:` line *(not printed — my expectation was wrong:
+      the line counts answers given as an option's number, and this one was your own words.
+      Nothing to fix)*
 - [ ] the golden run — ~72 new calls, since the prompt gained a sentence (T6), ~2 minutes — stays
       at **≥ 97 % correct, 100 % executable**; in "What Gaia asked", Gaia's choice is no longer
-      always option 1
+      always option 1 *(D68: **100 % executable, 90 % correct** (27/30) — above the 70 % target,
+      below the previous 97 %; positions now 1–4. New misses: **o06** answered without asking
+      (last run that slip was o05's: one per run, another question each time) and **o02** wrong
+      after its clarification — the hardest question, right last time. With one run each, noise
+      and the new prompt sentence cannot be told apart: §23b measures it (two fresh runs, ~4 min))*
 - [ ] optional, the lock (T2): start `make reason TARGET=demo_pg ARGS="--force --schema hr"` (4
       calls) and, while it runs, `make rescore TARGET=demo_pg` in another terminal: the second
       prints `REFUSED: another reasoning or re-scoring run holds 'demo_pg'`
 
 ### 22c · A data source added at runtime (L10, still open from §20b)
+
+*2026-11-17: `20_datasource.out` holds only the password prompt — the block stopped there
+(probably `read -rs` waiting inside the redirected subshell). Not needed any more: the same
+lifecycle, with your real passwords, is `test_a_data_source_from_onboarding_to_removal`, which
+passed on your host (§22a). **L10 closed by the test**; the manual run stays optional.*
 
 §20b as written. New since 5A: each change of a data source is recorded with its actor — your
 OS user from the CLI, the administrator's login from the admin screen
@@ -1731,6 +1744,118 @@ infra/auth/samba-ad-test.sh down               # when done
       (more events since)
 - [ ] send `22_5a_cli.out`, `22_5a_after.out` and anything in the UI that looked wrong (a
       screenshot is fine)
+
+---
+
+## 23 · Build D71: 5A.2 — sign-in with Microsoft Entra ID
+
+What is new (PHASES, "5A.2 results", D71): an Entra ID directory beside (or instead of) AD/LDAP.
+People click **Sign in with Microsoft**. Microsoft checks their password and MFA; Gaia
+validates the ID token it gets back. Roles come from Microsoft Graph — groups by a name prefix
+(nested membership included), or a user attribute — and so do the 15-minute re-check and the
+sync. Grants, the local account, the audit and the auditor's reports are unchanged. Also
+migration `0013` (`auth.pending_login`: a sign-in that went to Microsoft and has not come back
+yet — single use, 10 minutes, tied to the browser that started it).
+
+§22d and §22e (running / waiting) are unchanged by this build: run them on D71 or D68 alike.
+
+### 23a · Setup and tests
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make venv) > verification/23_venv.out 2>&1                       # new: pyjwt
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/23_migrate.out 2>&1
+(make stamp; make test) > verification/23_tests.out 2>&1
+(make stamp; make web-install; make web-test; make web-build) > verification/23_web.out 2>&1
+```
+
+- [ ] `23_migrate.out`: `0012 -> 0013, Sign-in with Microsoft Entra ID …`
+- [ ] `23_tests.out`: `gaia build 2026-11-17 · D71 (5A.2)` and **698 passed, 0 skipped**
+      (sandbox: 688 passed, 10 skipped)
+- [ ] `23_web.out`: `17 passed`, then `✓ built`
+
+### 23b · The golden run's spread (why 90 % after 97 %?)
+
+Two fresh runs of the same build. A new directory each time, so nothing is replayed; ~2 minutes
+and ~73 calls each:
+
+```bash
+for run in a b; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d71$run") \
+    > verification/23_golden_$run.out 2>&1
+done
+```
+
+- [ ] send both files. Read with §22b's run, three runs of one build show how much the model
+      varies from run to run. If all three sit near 90 %, the sentence added for T6 costs
+      something and I look at it again; if they scatter between 90 and 97 %, it was noise
+- [ ] in each, which ambiguous question (if any) was answered without asking
+
+### 23c · An Entra ID directory (the main item)
+
+Any Entra tenant in which you may register an app and grant admin consent will do. A free
+Azure account comes with one, and a test tenant is better than the company's production one.
+
+**In the Entra admin center** (entra.microsoft.com):
+
+1. *Applications → App registrations → New registration*: name `Gaia (test)`; *Accounts in this
+   organizational directory only*; Redirect URI: platform **Web**,
+   `http://localhost:5173/api/auth/oidc/callback`.
+2. *Certificates & secrets → New client secret*: copy its **Value** (shown once).
+3. *API permissions → Add a permission → Microsoft Graph → Application permissions*:
+   **User.Read.All** and **GroupMember.Read.All** → *Grant admin consent*.
+4. *Overview*: note the **Application (client) ID** and the **Directory (tenant) ID**.
+5. *Groups*: security groups `GAIA-Admins`, `GAIA-Finance`, `GAIA-HR`, and `Team-HR` **as a member of
+   `GAIA-HR`** (nesting); a Microsoft 365 group `GAIA-Mail` (not security: must not count).
+   *Users*: four test users — one in GAIA-Admins, one in GAIA-Finance, one in Team-HR only, one
+   in no GAIA group; block sign-in for a fifth (*Account enabled: No*) in GAIA-Finance.
+
+**Then** `cp infra/auth/entra-example.json infra/auth/corp.json`, fill in the two ids, and — with
+`make dev-api` and `make dev-web` running, `GAIA_AUTH_RECHECK_MINUTES=1` exported before `make
+dev-api`:
+
+```bash
+(make stamp
+ make auth ARGS="directory add corp --kind entra --settings ../infra/auth/corp.json"   # the secret
+ make auth ARGS="directory probe corp"
+ make auth ARGS="directory sync corp"
+ make auth ARGS="directory roles corp"
+ make auth ARGS="grant admin --role corp/GAIA-Admins"
+ make auth ARGS="grant user --role corp/GAIA-Finance"
+ make auth ARGS="grant auditor --role corp/GAIA-HR"
+ make auth ARGS="accounts"
+) > verification/23_entra_cli.out 2>&1
+```
+
+- [ ] `probe`: `[PASS]` transport, discovery (the issuer with your tenant id), keys, credentials,
+      users, roles (`3 group(s) named GAIA…, security groups only`)
+- [ ] `sync` and `roles`: GAIA-Admins, GAIA-Finance, GAIA-HR (not GAIA-Mail); the Team-HR user
+      counts in GAIA-HR; the blocked user is `disabled_in_directory`
+
+In the browser — **http://localhost:5173**, not 127.0.0.1: the cookies belong to the host name the
+redirect URI uses. One private window per test user:
+
+1. **Sign in with Microsoft (corp)** → Microsoft's page (MFA if your tenant asks for it) → back in
+   Gaia, signed in. The admin user sees the admin pages; the GAIA-HR user (through Team-HR) sees
+   Audit.
+2. The user in no GAIA group: back on Gaia's sign-in page with "Sign-in failed"; the auditor's
+   Events say `no Gaia role`. The blocked user is stopped by Microsoft itself; if they get through
+   anyway, Gaia says `disabled in the directory`.
+3. **Re-check**: with the Finance user signed in, remove them from GAIA-Finance in Entra; within a
+   minute or two their next click lands on the sign-in page (Graph may take a minute to show the
+   change).
+4. **The same callback twice**: after a successful sign-in, use the browser's Back button to the
+   `…/oidc/callback?code=…` address and reload it: "Sign-in failed"; the Events say `a replay`.
+
+```bash
+(make stamp; make auth ARGS="accounts"; make auth ARGS="audit-check") > verification/23_entra_after.out 2>&1
+```
+
+- [ ] send `23_entra_cli.out`, `23_entra_after.out`, and whatever Microsoft or Gaia showed that looked
+      wrong (a screenshot is fine). Then delete the client secret in Entra if the app stays.
+
+Not covered yet: a tenant where people have more groups than a token can carry — irrelevant here,
+since Gaia reads groups from Graph, never from the token.
 
 ---
 

@@ -1785,3 +1785,10 @@ only: whoever can run that command already controls Gaia, and an e-mail recovery
 mailbox the weakest point of the most powerful account. The access audit is hash-chained. Its
 head hash, written down by the auditor outside Gaia, proves later that nothing before it was
 rewritten. The chain alone proves that only against changes made through the application.
+
+**Entra ID (5A.2, D71).** The person signs in at Microsoft (OpenID Connect with PKCE); Gaia
+checks the ID token against the tenant's published keys. It then asks Microsoft Graph, with the
+app's own credentials, who the person is and which groups they are in. Token claims are not
+used for that: they carry ids without names, stop at about 200 groups, and cannot be
+re-checked fifteen minutes later, whereas Graph can — so an Entra directory behaves exactly as
+an LDAP one does for sync, re-check, grants and audit.

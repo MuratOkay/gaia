@@ -127,7 +127,7 @@ async def test_a_directory_from_connection_to_roles(world):
     with pytest.raises(AuthError, match="clear-text"):
         await svc.update_directory("acme", actor="tester",
                                    settings={"urls": ["ldap://dc1.acme.test"]})
-    with pytest.raises(AuthError, match="5A.2"):
+    with pytest.raises(AuthError, match="directory settings"):  # Entra ID since 5A.2
         await svc.add_directory("entra", "entra", {}, "x", actor="tester")
 
 

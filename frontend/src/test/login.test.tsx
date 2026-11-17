@@ -59,4 +59,25 @@ describe("the sign-in screen", () => {
     expect(await screen.findByRole("heading", { name: "Set up the local administrator" })).toBeInTheDocument();
     expect(screen.getByLabelText("Setup code")).toBeInTheDocument();
   });
+
+  it("offers Microsoft for an Entra ID directory, without a password form", async () => {
+    mockApi({ directories: [{ name: "corp", kind: "entra" }], local: false, local_setup_pending: false },
+            () => new Response("{}", { status: 500 }));
+    const assign = vi.fn();
+    vi.stubGlobal("location", { ...window.location, assign, search: "", pathname: "/" });
+    render(<Login onSignedIn={vi.fn()} />);
+    await userEvent.click(await screen.findByRole("button", { name: "Sign in with Microsoft (corp)" }));
+    expect(assign).toHaveBeenCalledWith("/api/auth/oidc/start?directory=corp");
+    expect(screen.queryByLabelText("Password")).toBeNull();
+    vi.unstubAllGlobals();
+  });
+
+  it("says so when Microsoft sent the browser back refused", async () => {
+    window.history.pushState(null, "", "/?signin=failed");
+    mockApi({ directories: [{ name: "corp", kind: "entra" }], local: false, local_setup_pending: false },
+            () => new Response("{}"));
+    render(<Login onSignedIn={vi.fn()} />);
+    expect(await screen.findByRole("alert")).toHaveTextContent("Sign-in failed.");
+    expect(window.location.search).toBe("");  // the marker does not stay in the address bar
+  });
 });

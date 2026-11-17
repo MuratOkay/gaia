@@ -8,7 +8,8 @@ The local account — setup and break-glass; the only account Gaia keeps a passw
 
 Directories, roles and grants (the admin screen does the same):
 
-    make auth ARGS="directory add acme --settings infra/auth/acme.json"   # password prompted
+    make auth ARGS="directory add acme --settings ../infra/auth/acme.json"   # password prompted
+    make auth ARGS="directory add corp --kind entra --settings ../infra/auth/entra-example.json"
     make auth ARGS="directory probe acme"            # "test connection"
     make auth ARGS="directory sync acme"             # every user and role, now
     make auth ARGS="directory list | roles acme | update acme --settings f.json | disable acme"
@@ -117,9 +118,9 @@ async def _run(args: argparse.Namespace) -> int:
                 settings_doc = _settings_arg(args)
                 if settings_doc is None:
                     raise SystemExit("--settings FILE.json (or --settings-json '…') is needed")
+                what = "client secret" if args.kind == "entra" else "service account password"
                 v = await svc.add_directory(args.name, args.kind, settings_doc,
-                                            _secret(args.password_env,
-                                                    "service account password"), actor=actor)
+                                            _secret(args.password_env, what), actor=actor)
                 _print_directory(v)
                 print(f"  next: make auth ARGS='directory probe {args.name}'")
             elif a == "update":
