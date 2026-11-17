@@ -202,8 +202,11 @@ class DeepSeekClient:
                 continue
 
             if response.status_code != 200:
+                # A refusal (4xx) is not retried, so its reason must travel with it
+                # (2026-11-17 triage, T4: B-P-nt's "http 400" said nothing more).
+                reason = _refusal_reason(response)
                 raise LLMError(
-                    f"http {response.status_code}",
+                    f"http {response.status_code}" + (f": {reason}" if reason else ""),
                     status=response.status_code,
                     body=response.text[:1000],
                 )
@@ -262,3 +265,24 @@ def build_client(config: LLMConfig) -> DeepSeekClient:
             "use 'deepseek' (Ollama is the embeddings provider only)"
         )
     return DeepSeekClient(config)
+
+
+def _refusal_reason(response: httpx.Response) -> str:
+    """The gateway's own words for a refusal: ``error.message`` of an OpenAI-style body,
+    else the start of the body; one line, at most 200 characters."""
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = None
+    message = ""
+    if isinstance(payload, dict):
+        err = payload.get("error")
+        if isinstance(err, dict):
+            message = str(err.get("message") or err.get("code") or "")
+        elif isinstance(err, str):
+            message = err
+        else:
+            message = str(payload.get("message") or payload.get("detail") or "")
+    if not message:
+        message = response.text or ""
+    return " ".join(message.split())[:200]

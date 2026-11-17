@@ -112,6 +112,14 @@ async def _run(args: argparse.Namespace) -> int:
                 if not args.clarified:
                     print("give your answer with --clarified", file=sys.stderr)
                     return 1
+            elif args.clarified and args.question:
+                # No id: the answer is to the clarification this question last got, if one
+                # is open — so its question travels with the answer (5.0, T6).
+                stored = await store.latest_open_clarification(index.data_source_id,
+                                                               args.question)
+                if stored is not None:
+                    notes.append(f"answers the open clarification {stored.id}")
+            if stored is not None:
                 args.question = stored.question
                 said = args.clarified[0]
                 chosen = match_option(said, stored.options)

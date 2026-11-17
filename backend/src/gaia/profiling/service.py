@@ -29,7 +29,6 @@ interrupted run keeps what it finished.
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import math
 import re
@@ -42,10 +41,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gaia.core.config import Settings, TargetConfig
+from gaia.db.locks import DataSourceLock
 from gaia.db.models.profiling import ProfileRun
 from gaia.db.models.semantics import ColumnSemantic, JoinHint
 from gaia.db.repositories.profile_store import ProfileStore
@@ -168,34 +168,12 @@ def default_profiler(target: TargetConfig, settings: Settings):
     return registry.profiler(target.dialect, target=target, budget=settings.profiling.budget)
 
 
-def _lock_key(data_source_id: uuid.UUID) -> int:
-    digest = hashlib.sha256(f"gaia-profiling:{data_source_id}".encode()).digest()
-    return int.from_bytes(digest[:8], "big", signed=True)
-
-
-class _Lock:
-    """Session-level advisory lock on a dedicated metadata connection."""
-
-    def __init__(self, session: AsyncSession, data_source_id: uuid.UUID) -> None:
-        self.engine = session.bind
-        self.key = _lock_key(data_source_id)
-        self.conn = None
-
-    async def __aenter__(self) -> _Lock:
-        self.conn = await self.engine.connect()
-        got = await self.conn.scalar(text("SELECT pg_try_advisory_lock(:k)"), {"k": self.key})
-        await self.conn.commit()
-        if not got:
-            await self.conn.close()
-            raise ProfilingError("another profiling run holds the lock for this data source")
-        return self
-
-    async def __aexit__(self, *exc: Any) -> None:
-        try:
-            await self.conn.scalar(text("SELECT pg_advisory_unlock(:k)"), {"k": self.key})
-            await self.conn.commit()
-        finally:
-            await self.conn.close()
+def _Lock(session: AsyncSession, data_source_id: uuid.UUID) -> DataSourceLock:  # noqa: N802
+    """One profiling run per data source (D33), the key profiling has always used."""
+    return DataSourceLock(
+        session, data_source_id, "profiling", error=ProfilingError,
+        message="another profiling run holds the lock for this data source",
+    )
 
 
 class _TargetThread:

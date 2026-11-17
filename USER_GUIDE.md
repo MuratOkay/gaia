@@ -43,6 +43,7 @@ These stages exist and work:
 | **Chat API** (Phase 4E) | `make dev-api` | Conversations over HTTP: questions answered as server-sent events, clarifications and follow-ups as the next message |
 | **Data sources** (Phase 4F) | `make datasource` | Databases added at runtime, password encrypted, usable only once proven read-only; then `TARGET=<name>` everywhere |
 | **Ask** (Phase 4C) | `make ask` | A business question answered: a table and a narrative, or a clarifying question — with what was computed, the assumptions, the unconfirmed meanings relied on, and a confidence |
+| **Sign-in and access** (Phase 5A) | `make admin-user`, `make auth`, `make dev-web` | People sign in with their company directory account; an administrator grants Gaia roles (user, SME, administrator, auditor) and the PII-processor permission; every decision audited; the first web UI (administration, audit) |
 
 Targets: SQL Server (`demo_mssql`, still the config default) and PostgreSQL
 (`demo_pg`, a synthetic development target). Every stage works on both; choose
@@ -54,11 +55,14 @@ block a delivery.
 Built but still being run: the Phase 3 evaluation (3C, `make evaluate*`). Built
 in Phase 4 so far: the SQL guard and the read-only executor (4A), retrieval (4B),
 answering (4C), golden runs (4D), the chat API (4E), data sources added at runtime
-(4F). Not built yet: the web UI (Phase 5).
+(4F) — Phase 4 is complete (golden run on `demo_pg`: 100 % executable, 97 % correct). Phase 5
+so far: sign-in through the company directory, roles, administration and audit, and the web
+UI's first screens (5A). Not built yet: the review screens (5B), need-to-know (5C), the chat
+screen (5D).
 
-Since Phase 4C **Gaia answers questions** from the command line (`make ask`). How often
-the answers are right is what Phase 4D measures; until then, read the confidence and the
-"unconfirmed" lines of every answer.
+Since Phase 4C **Gaia answers questions** from the command line (`make ask`). Read the
+confidence and the "unconfirmed" lines of every answer: the confidence is a heuristic until
+Phase 6 calibrates it.
 
 ---
 
@@ -332,7 +336,10 @@ they reach it as `[hidden]`. `--replay DIR` answers from files (tests; recorded 
 
 ### The chat API (`make dev-api`, Phase 4E)
 
-`make dev-api` serves the API on `127.0.0.1:8000` (no login yet, P5-1 — keep it local).
+`make dev-api` serves the API on `127.0.0.1:8000` (keep it local until it is behind TLS, P5-9).
+Since Phase 5A every endpoint below needs a session with a chat role (`auth.chat_roles`:
+administrators and SMEs until need-to-know, 5C) — see "Sign-in and access" below — and a
+conversation belongs to whoever started it.
 
 | Endpoint | Does |
 |---|---|
@@ -348,7 +355,10 @@ soon as it exists) → one of `answer`, `clarification`, `cannot_answer`, `faile
 stored) → `done`. Lines starting with `:` are keep-alives.
 
 ```bash
-curl -sN -X POST 127.0.0.1:8000/api/conversations/$CID/messages \
+curl -s -c jar -H 'content-type: application/json' \
+     -d '{"login": "akaya", "password": "…"}' 127.0.0.1:8000/api/auth/login     # a session
+CSRF=$(awk '/gaia_csrf/ {print $7}' jar)
+curl -sN -b jar -H "X-CSRF-Token: $CSRF" -X POST 127.0.0.1:8000/api/conversations/$CID/messages \
      -H 'content-type: application/json' -d '{"content": "Top 5 shops performing best last year."}'
 ```
 
@@ -393,9 +403,67 @@ record names you by `$USER`.
   again); the rest of the store is unaffected. To change it: put the old key in
   `GAIA_MASTER_KEY_PREVIOUS`, a new one (`make master-key`) in `GAIA_MASTER_KEY`, run
   `make datasource ARGS="rotate-key"`, then remove the previous key.
-* **Over HTTP**, `/api/admin/data-sources` (add, list, change, probe, remove) exists but is
-  off — `datasources.admin_api: true` switches it on. Leave it off while the API has no
-  login (Phase 5).
+* **Over HTTP and in the web UI** (Phase 5A), `/api/admin/data-sources` does the same for a
+  signed-in administrator; the audit names the administrator's login.
+
+### Sign-in and access (`make admin-user`, `make auth`, Phase 5A)
+
+People sign in with their company directory account (Active Directory / LDAP over TLS; Entra
+ID follows). Gaia never keeps their passwords: the directory checks them at every sign-in.
+What someone may do in Gaia comes from **grants** an administrator makes:
+
+| Gaia role / permission | Lets someone |
+|---|---|
+| `user` | ask questions (the chat; open to users once need-to-know exists, 5C) |
+| `sme` (per data source) | review what Gaia understood about that data source (5B); ask |
+| `admin` | connect data sources and directories, grant and revoke; ask. Never review |
+| `auditor` | read the audit reports. Never an administrator too |
+| `pii_processor` | see personal data unmasked in answers (5C) |
+
+**First time:** the one local account, `gaia-admin`, is for setup and emergencies.
+
+```bash
+make admin-user                          # its password, asked twice (≥ 12 characters)
+make admin-user ARGS=setup-code          # or: a one-time code to set it on the sign-in screen
+make dev-api                             # and in a second terminal: make dev-web
+                                         # then http://127.0.0.1:5173
+```
+
+**A directory** (the admin screen "Directories", or the command line). Write its settings in a
+JSON file like `infra/auth/acme-samba.json`: the server URLs (`ldaps://…`, or `ldap://…` with
+`"start_tls": true` — never clear text), the service account's DN (it only reads), where
+people are, and **how roles are read**: group membership (`"kind": "group"`, nesting
+followed), a user attribute (`"kind": "attribute", "attribute": "department"`) or the OU
+(`"kind": "ou"`).
+
+```bash
+make auth ARGS="directory add acme --settings ../infra/auth/acme.json"   # the password is asked
+make auth ARGS="directory probe acme"        # test the connection: transport, bind, users, roles
+make auth ARGS="directory sync acme"         # read every user and role now
+make auth ARGS="directory roles acme"        # the distinct roles, with members
+make auth ARGS="grant admin --role acme/GAIA-Admins"
+make auth ARGS="grant user --role acme/GAIA-Finance"
+make auth ARGS="grant sme --user acme/akaya --data-source sales_pg"
+make auth ARGS="grant auditor --role acme/Internal-Audit"
+make auth ARGS="grants"                      # --all: revoked ones too
+make auth ARGS="revoke <grant id> --note 'moved team'"
+make auth ARGS="accounts"                    # who may do what now, conflicts included
+make auth ARGS="audit-check"                 # is the access audit intact; its head hash
+```
+
+* **No role, no entry.** A person without any grant — directly or through a directory role —
+  cannot sign in, and hears only "sign-in failed", as for a wrong password; the audit keeps the
+  real reason.
+* **Sessions** end after 30 minutes without activity or 8 hours at most. Every 15 minutes the
+  directory is asked again, so someone disabled there, or left without a Gaia role, is signed
+  out within that time.
+* **Five wrong passwords** lock an account for 15 minutes in Gaia (before the directory's
+  own lockout counts them).
+* **Everything is audited** in `audit.auth_event`: append-only and hash-chained, so an edit in
+  the database shows (`make auth ARGS=audit-check`). The auditor sees it in the web UI
+  (Audit), with CSV downloads.
+* **From a script**, sign in with `POST /api/auth/login` and send the `X-CSRF-Token` header
+  (the value of the `gaia_csrf` cookie) with every request that changes something.
 
 ### Golden runs (`make golden`, Phase 4D)
 

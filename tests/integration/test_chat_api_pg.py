@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 import os
+import uuid
 
 import httpx
 import pytest
 import sqlalchemy as sa
 from fastapi import FastAPI
-
 from gaia.api.chat import ChatService, router
+from gaia.auth.deps import require_chat
+from gaia.auth.privileges import Effective
+from gaia.auth.service import Principal
 from gaia.db.models.chat import Clarification, Message
 from gaia.llm.base import LLMResponse, Usage
 from gaia.profiling.service import ProfileOptions, run_profiling
@@ -31,6 +34,12 @@ VALUABLE = ("SELECT c.customer_code, sum(o.total_amount) AS total_amount FROM sa
             "WHERE o.status <> 'cancelled' GROUP BY c.customer_code "
             "ORDER BY total_amount DESC LIMIT 20")
 
+
+
+# The chat endpoints need a signed-in person with a chat role (Phase 5A); these tests are
+# about the chat, so one is given. Conversations belong to this account.
+TESTER = Principal(uuid.UUID(int=7), "tester", "Tester", None, False, "acme",
+                   Effective(roles={"admin"}))
 
 def plan(sql=None, decision="answer", interpretation="what it computes", **kw):
     return json.dumps({"decision": decision, "interpretation": interpretation,
@@ -115,6 +124,7 @@ async def test_chat_api(pg_session_factory):
     app = FastAPI()
     app.include_router(router)
     app.state.chat = service
+    app.dependency_overrides[require_chat] = lambda: TESTER  # sign-in: test_auth_api_pg.py
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://gaia") as client:
         r = await client.get("/api/data-sources")
@@ -154,13 +164,17 @@ async def test_chat_api(pg_session_factory):
         assert "Conversation so far:\n- User: " + q1 in sent
         assert "Computed: Top three store cities by order amount, December 2025" in sent
 
-        # a clarification, answered with the number of Gaia's own option (D61)
+        # a clarification, answered with the number of Gaia's own option (D61). The options
+        # are shown in a seeded, shuffled order, and Gaia's choice is not sent (5.0, T5)
         ev = await say(q3)
         clar = dict(ev)["clarification"]
-        assert clar["clarification"]["options"][0] == "total order amount, all time"
-        assert "default" in clar["clarification"] and clar["clarification"]["id"]
+        shown = clar["clarification"]["options"]
+        assert sorted(shown) == ["number of orders", "total order amount, all time"]
+        assert "default" not in clar["clarification"] and clar["clarification"]["id"]
+        assert clar["best_guess"] is None and clar["interpretation"] is None
+        assert not clar["assumptions"]
         calls_before = sum(1 for p, _m in model.requests if p == "generation")
-        ev = await say("1")
+        ev = await say(str(shown.index("total order amount, all time") + 1))
         assert dict(ev)["message"]["kind"] == "clarification_answer"
         reply = dict(ev)["answer"]
         assert len(reply["rows"]) == 20 and reply["question"] == q3
@@ -225,9 +239,8 @@ async def test_chat_api(pg_session_factory):
 async def test_a_slow_model_gets_keepalives(pg_session_factory, monkeypatch):
     import time
 
-    from test_profiling_pg import _introspect, _settings
-
     import gaia.api.chat as chat_module
+    from test_profiling_pg import _introspect, _settings
 
     monkeypatch.setattr(chat_module, "KEEPALIVE_S", 0.05)
     await _introspect(pg_session_factory)
@@ -245,6 +258,7 @@ async def test_a_slow_model_gets_keepalives(pg_session_factory, monkeypatch):
     app = FastAPI()
     app.include_router(router)
     app.state.chat = service
+    app.dependency_overrides[require_chat] = lambda: TESTER  # sign-in: test_auth_api_pg.py
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                  base_url="http://gaia") as client:
         cid = (await client.post("/api/conversations", json={"data_source": "demo_pg"})

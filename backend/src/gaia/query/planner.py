@@ -21,6 +21,8 @@ question without asking.
 
 from __future__ import annotations
 
+import hashlib
+import random
 from datetime import date
 from typing import Literal
 
@@ -34,6 +36,8 @@ __all__ = [
     "Clarification",
     "SqlPlan",
     "check_plan",
+    "present",
+    "shown_order",
     "generation_messages",
     "repair_message",
 ]
@@ -59,6 +63,34 @@ class Clarification(BaseModel):
         if self.default is None or not 0 <= self.default < len(self.options):
             return None
         return self.options[self.default]
+
+
+def shown_order(question: str, options: list[str]) -> list[int]:
+    """The order a clarification's options are shown in: a permutation of the model's
+    order, seeded by the question and the options (5.0, T5).
+
+    On the host the model put its own choice first in 13 of 13 clarifications; shown in
+    that order, the first option *is* Gaia's choice, which D61 keeps from the user so the
+    agreement it measures is not pulled towards it. Seeded rather than random: a replayed
+    run shows the same order, and tests are deterministic — while the position of Gaia's
+    choice no longer depends on anything the model decides."""
+    order = list(range(len(options)))
+    if len(order) < 2:
+        return order
+    seed = hashlib.sha256("\x1f".join([question, *options]).encode("utf-8")).digest()
+    random.Random(int.from_bytes(seed[:8], "big")).shuffle(order)  # noqa: S311 - not security
+    return order
+
+
+def present(clarification: Clarification, question: str) -> tuple[Clarification, list[int]]:
+    """A copy of ``clarification`` with its options in the shown order and ``default``
+    pointing at the same option; and the model's index of each shown option."""
+    order = shown_order(question, clarification.options)
+    shown = clarification.model_copy(deep=True)
+    shown.options = [clarification.options[i] for i in order]
+    if clarification.default is not None and 0 <= clarification.default < len(order):
+        shown.default = order.index(clarification.default)
+    return shown, order
 
 
 class SqlPlan(BaseModel):

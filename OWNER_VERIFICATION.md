@@ -20,12 +20,12 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-16 · D65 (4F)`; it contains every fix the open
-  items below were written for.*
+  there. *Latest build: `2026-11-17 · D68 (5A)` — step 5.0 (the triage fixes, D67) and step 5A
+  (sign-in, roles, administration, audit); what to run: §22.*
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
-* **2026-11-17: the D65 outputs are triaged — §21.** The Phase 4 gate numbers are in
-  (§18b: executable 100 %, correct 97 %). §21 lists what was confirmed, what was found, the
-  few runs still wanted and three questions for you.
+* **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
+  complete; Phase 5 is approved. **§22 is the next run**: the new build, its tests, and 5A
+  against a real directory.
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -68,20 +68,20 @@ What I read first when it arrives: `20_golden_pg.out` (the Phase 4 gate), then
 | S2 | D54 (neighbour control) on the counts: `line_count`, `units_sold`, `units` | §14c | D55 | **done** (D65, `14_profile_mssql.out`): all four `(not kept) (weak: dense integer key)`, neighbours 94–99 % | the 3A SQL Server note |
 | S3 | `dw.sales_wide` stays `partial` | §14c | D55 | **done — better than expected**: `profiled` (47 statements, 128 s); `dw.fact_web_activity` is now the one `partial` (one column scan timed out) | nothing unless it fails |
 | S4 | 4A on SQL Server: guarded queries on `nge_small`, refusals | §15c | D57 | open (not run yet) | T-SQL guard or executor; a bypass is **safety** |
-| S5 | 3C on `nge_small` (SQL Server data, LLM-bound): ~~resume B-C/B-P~~ **done 2026-11-16**; ~~N-C, N-P~~ **done**; B-P-nt, judge, audit, report | §13b–d | D55 | open — B-P-nt **incomplete** (7 calls `http 400`, §21 T4); a model change mid-run to check (§21 T3) | the 3C gate |
-| S6 | Retrieval on `nge_small`: correct the draft questions, then `make retrieval-eval` (reads only Gaia's store) | §16c | D59 | open (not run yet) | retrieval defaults; the golden set |
-| S7 | Questions answered on `nge_small` with the configured model | §17c | D60 | **done** (D65, `17_ask_mssql.out`): both answered in T-SQL, none failed; the 2024 question returned no rows — §21 Q2 | the T-SQL prompt rules; 4D on SQL Server |
+| S5 | 3C on `nge_small` (SQL Server data, LLM-bound): ~~resume B-C/B-P~~ **done 2026-11-16**; ~~N-C, N-P, B-P-nt, judge~~ **done**; audit, report | §13b–d, §22d | D55 | open — every condition answered and judged (§21f); the report and the owner's audit remain | the 3C gate |
+| S6 | Retrieval on `nge_small`: correct the draft questions, then `make retrieval-eval` (reads only Gaia's store) | §16c | D59 | **done** (D65, draft questions, words only): covered 90 %, connected 90 % | retrieval defaults; the golden set |
+| S7 | Questions answered on `nge_small` with the configured model | §17c | D60 | **done** (D65, `17_ask_mssql.out`): both answered in T-SQL, none failed; the empty 2024 answer is right (the data ends in 2016, §21f) | the T-SQL prompt rules; 4D on SQL Server |
 | S8 | The `nge_small` golden run, once its questions exist (P4-1) | §18d | D63 | waiting for the questions | the Phase 4 numbers on SQL Server |
 
 ### Other owner items
 
 | Id | What | Where | Blocks | Status (triage 2026-11-17, §21) |
 |---|---|---|---|---|
-| L1 | `demo_pg` semantics for every object (`make reason TARGET=demo_pg`) | §14d | Phase 4 step 4D (the golden run), not 4B/4C | **done**: 28/28 reasoned, `failed=0` — but the second run re-reasoned 24 tables (§21 T2, Q1) |
+| L1 | `demo_pg` semantics for every object (`make reason TARGET=demo_pg`) | §14d | Phase 4 step 4D (the golden run), not 4B/4C | **done**: 28/28 reasoned, `failed=0`; the doubled second run was two runs at once (Q1) — prevented since D67 |
 | L2 | 4A on your PostgreSQL 18 host: migrate, the example queries (the D48 hint join with your model's real hints) | §15b | nothing (verified on PostgreSQL 16 here) | **done**: every item as expected |
 | L3 | Decisions P4-1 … P4-9 (PHASES, Phase 4) | §15d | 4C/4D | settled except P4-1 for `nge_small` (asynchronous) |
 | L4 | Optional: a realistic PostgreSQL copy of `nge_small` | §14f | nothing | not requested |
-| L5 | Retrieval on `demo_pg` with your meanings and `bge-m3` (after L1 for the full picture) | §16b | nothing; its numbers set the retrieval defaults | open — the last Phase 4 acceptance number (a trial) |
+| L5 | Retrieval on `demo_pg` with your meanings and `bge-m3` (after L1 for the full picture) | §16b | nothing; its numbers set the retrieval defaults | **done**: 95 % / 95 % on words alone (Ollama was down) — the trial is met |
 | L6 | The first real-model answers on `demo_pg`: five golden questions and a clarification | §17b | nothing (optional since §18b, which covers it) | **done**: 3 of 4 numbers right (g07 wrong, as in §18b); the `--clarified` follow-up asked again (§21 T6) |
 | L7 | **The golden run of `demo_pg` with the configured model** — the Phase 4 acceptance numbers | §18b | the Phase 4 gate | **done**: executable **100 %**, correct **97 %** (29/30) |
 | L8 | A clarification answered by you, and its record (D61) | §18c | nothing | **done** (`agrees`); the answer's own output is missing from the file |
@@ -117,6 +117,7 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 19 | Phase 4E: migrate, tests, the chat API | LLM gateway, Ollama | 15 min |
 | 20 | Phase 4F: the master key, a data source added at runtime; the run plan's tracks | metadata DB, `demo_pg` | 10 min (+ the tracks) |
 | 21 | Triage of the D65 outputs (2026-11-17): findings, the runs still wanted, three questions | metadata DB, `demo_pg`, Ollama; `sql1` for S4/S6 | ~30 min + answers |
+| 22 | Build D68: 5.0 (triage fixes) and 5A (sign-in, roles, administration, audit); the 3C report; a real directory | metadata DB, `demo_pg`, Docker (a test AD), the LLM gateway (22b, 2 min) | ~1 h |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -1091,11 +1092,19 @@ last Phase 4 acceptance number (the retrieval trial). ~10 minutes; it needs Olla
       holds `legacy.tb_trx02` and `crm.customers` joined by
       `legacy.tb_trx02.f2 = crm.customers.customer_code (tested, inferred by the model)`; the
       meanings of `f2`, `f7` are your model's, with `(uncertain …)` where not accepted
-- [ ] `16_retrieval_pg.out`: two summary lines (with vectors, then without). The sandbox, with
+      *(2026-11-17: the join and the meanings are there — `f2 = customer_code (hint)`, "Customer
+      Code", "Transaction Amount"; but **Ollama was not running** (`Connection refused`), so the
+      ranking was by words only)*
+- [x] `16_retrieval_pg.out`: two summary lines (with vectors, then without). The sandbox, with
       meanings derived from names and no vectors, gave `covered 100% · connected 86% ·
       recall@5 91% · MRR 0.92`; with your meanings the two legacy questions should become `ok`
       (the `f2`, `f9` hints). Whatever the numbers, send both files: they set the retrieval
       defaults (and the proposed retrieval target, PHASES Phase 4 acceptance)
+      *(D65: **covered 95 % · connected 95 % · recall@5 95 % · MRR 0.96** — both lines words
+      only, Ollama being down; both legacy questions `ok`. The one miss: "How many order status
+      changes happen per day?" — `sales.order_events` ranked 7th with 6 objects kept. The
+      Phase 4 retrieval trial (≥ 90 / ≥ 80) is met as a lower bound. With Ollama running, the
+      same command measures the vectors' share — optional)*
 
 ### 16c · Retrieval on `nge_small` (S6)
 
@@ -1111,9 +1120,12 @@ seed the golden set, P4-1), then:
   > verification/16_retrieval_mssql.out 2>&1
 ```
 
-- [ ] it runs; most of `nge_small` has no meanings yet (only the 10 tables of the Phase 2
+- [x] it runs; most of `nge_small` has no meanings yet (only the 10 tables of the Phase 2
       scope are reasoned until §13d), so expect names-only retrieval elsewhere — the output
       says `(no meaning yet)` for those objects in `make retrieve … --context`
+      *(D65, `16_retrieval_mssql.out`: covered 90 % · connected 90 % · recall@5 80 % · MRR 0.82
+      on the draft questions, words only. The miss: "Sales by year from the data warehouse" —
+      `dw.dim_date` ranked 17th. The draft questions were run as written)*
 
 ---
 
@@ -1487,7 +1499,9 @@ took 2 minutes. PHASES and README are updated; the 3C consequence is T3.
 
 - [ ] `21_datasource_tests.out`: **2 passed**. If the superuser test still fails on `connect`,
       `GAIA_PG_TARGET_ADMIN_PASSWORD` in `.env` is not the container's superuser password
-- [ ] §16b's two files — with them the Phase 4 retrieval trial is decided
+      *(2026-11-17: **2 skipped** — the two test-database variables were not set in that shell,
+      so nothing ran. Carried to §22a, which runs the whole suite with them)*
+- [x] §16b's two files — with them the Phase 4 retrieval trial is decided *(95 % / 95 %: met)*
 - [ ] §15c: nothing in `90_`/`91_` reaches `execution :` (safety)
 
 Not now: B-P-nt (after T4's build), and judging/reporting 3C (after Q3 and the model count —
@@ -1528,6 +1542,196 @@ EOF
 * **Q3** — Is `deepseek-flash` the former `deepseek-v4.1-flash` under a new id, or a different
   model? When did you switch? (T3 and the documentation.)
 
+### 21f · Answers and what they settle (2026-11-17)
+
+* **Q1 — "Possibly: many terminals, late at night."** So T2 stands as a missing lock, not a
+  defect to reproduce. Fixed in build D67 (§22): a second writing run on the same data source
+  is refused before it plans.
+* **Q2 — `nge_small` ends on 2016-09-30** (`21_q2_mssql.out`: 1986-08-06 … 2016-09-30). The §17c
+  answer "no transactions in 2024" is **right**, and the narrative explained the empty result.
+  Nothing to fix.
+* **Q3 — the same model**: the new provider (the DeepSeek platform) names it `deepseek-flash`
+  and always serves the latest version. `21_evaluations_summary.out` shows where each answer
+  came from. B-C, B-P, N-C and N-P were answered **entirely** by `deepseek-v4.1-flash`
+  (2026-11-16, 11:00–17:00), so criteria 1 and 2 compare like with like. The last 12 answers of
+  B-P-nt (5 tables, 2 critiques, 21:00) and 46 of 49 judge calls came from `deepseek-flash` —
+  the same model by your answer. T3's fix still makes the report name the models, so a future
+  switch cannot go unnoticed.
+* **T4 — the 400s are gone.** B-P-nt is now complete (99 columns, nothing failed): the calls
+  refused on the old gateway succeeded on the new provider, so the refusal was the old
+  gateway's. The fix (D67: the gateway's reason travels with any refusal) stays, for the next
+  one.
+* **3C has been judged** (49 judge calls): `make evaluate-report` is the next step — §22d.
+
+---
+
+## 22 · Build D68: step 5.0 (the triage fixes) and step 5A (sign-in, roles, administration, audit)
+
+What is new (PHASES, Phase 5, "5.0 results" and "5A results"; D67–D70):
+
+* **5.0** — one reasoning or re-scoring run per data source (T2); the 3C report names the
+  models (T3); a refused LLM call says why (T4); clarification options in a shuffled, stored
+  order, and Gaia's choice never sent to a chat client (T5); `--clarified` without an id
+  answers the open clarification (T6); the `readonly_role.sql` fix (a fresh `pg-target-seed`
+  failed at the role step).
+* **5A** — people sign in with their **Active Directory / LDAP(S)** account; the administrator
+  chooses how roles are read (groups, an attribute, the OU) and grants the Gaia roles **user**,
+  **sme** (per data source), **admin**, **auditor** and the **PII processor** permission, to
+  directory roles or to single people. An admin cannot also be an SME or an auditor (the
+  grant is kept, not applied, and shown). The one local account `gaia-admin` (setup,
+  break-glass) is set up with `make admin-user`. Sessions are server-side: idle 30 min, 8 h at
+  most, re-checked against the directory every 15 min. Every access decision goes to a
+  **hash-chained audit**, and the **auditor** reads it as reports and CSV. Every API endpoint
+  except `/health` and sign-in now needs a session. A **web UI** (`make dev-web`, port 5173):
+  sign-in, data sources, directories, roles & grants, accounts, audit. Review (5B) and chat
+  (5D) screens come next. Chat over the API is open to `admin` and `sme` until need-to-know
+  (5C) exists.
+
+### 22a · Setup and tests (once)
+
+Node 22 and pnpm are on your host already (OUTLINE §2).
+
+```bash
+env | grep -c '^GAIA_TEST_'     # must print 3: the §9 exports, in THIS shell (T8)
+(make stamp; make venv) > verification/22_venv.out 2>&1                     # new: ldap3, argon2-cffi
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/22_migrate.out 2>&1
+(make stamp; make test) > verification/22_tests.out 2>&1
+(make stamp; make web-install; make web-test; make web-build) > verification/22_web.out 2>&1
+```
+
+- [ ] `22_migrate.out`: `0010 -> 0011, Clarification options …` and `0011 -> 0012, Identity and
+      access …`
+- [ ] `22_tests.out`: `gaia build 2026-11-17 · D68 (5A)` and **685 passed, 0 skipped** (sandbox:
+      675 passed, 10 skipped — 8 SQL Server live, 2 Ollama). This includes T1's two 4F tests with
+      your real passwords
+- [ ] `22_web.out`: `14 passed`, then `✓ built`
+
+### 22b · 5.0 on your host (no LLM except the last step)
+
+```bash
+(make stamp
+ make ask TARGET=demo_pg ARGS="--question 'Who are our best customers?' --as-of 2026-01-15"
+ make ask TARGET=demo_pg ARGS="--question 'Who are our best customers?' --clarified 'the ten customers with the highest order amount in 2025, cancelled orders excluded' --as-of 2026-01-15"
+ make clarifications TARGET=demo_pg
+) > verification/22_clarify.out 2>&1
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d68") \
+  > verification/22_golden_pg.out 2>&1
+```
+
+- [ ] the first `ask` asks back; its options need not start with the one Gaia prefers
+- [ ] the second **answers** (ten customers) with `answers the open clarification …` (T6)
+- [ ] `make clarifications` ends with a `position:` line
+- [ ] the golden run — ~72 new calls, since the prompt gained a sentence (T6), ~2 minutes — stays
+      at **≥ 97 % correct, 100 % executable**; in "What Gaia asked", Gaia's choice is no longer
+      always option 1
+- [ ] optional, the lock (T2): start `make reason TARGET=demo_pg ARGS="--force --schema hr"` (4
+      calls) and, while it runs, `make rescore TARGET=demo_pg` in another terminal: the second
+      prints `REFUSED: another reasoning or re-scoring run holds 'demo_pg'`
+
+### 22c · A data source added at runtime (L10, still open from §20b)
+
+§20b as written. New since 5A: each change of a data source is recorded with its actor — your
+OS user from the CLI, the administrator's login from the admin screen
+(`audit.connection_change`).
+
+### 22d · 3C: the report (S5)
+
+```bash
+(make stamp; make evaluate ARGS="--out evaluations/nge_small --table dbo.transactions --with-neighbours \
+   --condition B-C --condition B-P --condition N-C --condition N-P --condition B-P-nt") \
+  > verification/22_evaluate_nge.out 2>&1      # 0 new calls: re-writes results.json with the models
+(make stamp; make evaluate-report ARGS="--out evaluations/nge_small --labels verification/labels_nge_small.csv") \
+  > verification/22_report_nge.out 2>&1
+make evaluate-audit ARGS="--out evaluations/nge_small"   # then fill owner_meaning, and report again
+```
+
+- [ ] `22_evaluate_nge.out`: every condition `0 new call(s)`
+- [ ] `22_report_nge.out`: a **Models** section — B-C, B-P, N-C, N-P answered by
+      `deepseek-v4.1-flash` alone; B-P-nt by both ids, flagged (the same model, §21f) — and the
+      criteria. Send `22_report_nge.out`, and `evaluations/nge_small/report.md` if convenient:
+      it holds accuracies and column names, no data values
+
+### 22e · 5A against a real directory (the main item)
+
+Your company's test AD, if there is one, is the better test: read-only service account, LDAPS,
+and write `infra/auth/<name>.json` like `infra/auth/acme-samba.json`. Otherwise a throwaway
+Samba AD, with the same people and groups as the sandbox's offline directory
+(`infra/auth/samba-ad-test.sh` — **not run in the sandbox: no Docker there**. If a step fails,
+send its output):
+
+```bash
+infra/auth/samba-ad-test.sh up                 # ~2–4 min
+infra/auth/samba-ad-test.sh ca                 # writes infra/auth/acme-ca.pem
+echo '127.0.0.1 dc1.acme.test' | sudo tee -a /etc/hosts   # the certificate's name
+```
+
+Then, with `make dev-api` and `make dev-web` running (two terminals) and
+`GAIA_AUTH_RECHECK_MINUTES=1` exported before `make dev-api` (re-checks every minute instead of
+15, for step 5):
+
+```bash
+(make stamp
+ make admin-user ARGS=setup-code                      # the one-time code: use it in step 1
+ export SVC='Svc-Gaia-Passw0rd-1'
+ make auth ARGS="directory add acme --settings ../infra/auth/acme-samba.json --password-env SVC"
+ make auth ARGS="directory probe acme"
+ make auth ARGS="directory sync acme"
+ make auth ARGS="directory roles acme"
+ make auth ARGS="grant admin --role acme/GAIA-Admins"
+ make auth ARGS="grant user --role acme/GAIA-Finance"
+ make auth ARGS="grant pii_processor --role acme/GAIA-Finance --note 'test list'"
+ make auth ARGS="grant sme --user acme/akaya --data-source demo_pg"
+ make auth ARGS="grant auditor --role acme/GAIA-HR"
+ make auth ARGS="grant sme --user acme/dyilmaz --data-source demo_pg"   # a conflict, on purpose
+ make auth ARGS="accounts"
+) > verification/22_5a_cli.out 2>&1
+```
+
+- [ ] `probe`: four `[PASS]` lines — `transport` (LDAPS, certificate verified against the CA file),
+      `bind`, `users` (5 user(s)), `roles` (3 group(s))
+- [ ] `sync`: `users 5, roles 3`, `disabled_in_directory 1`; `roles`: GAIA-Admins 1, GAIA-Finance 3,
+      GAIA-HR 1 member(s) — bdemir counts through Team-HR (nesting)
+- [ ] `accounts`: dyilmaz `user, admin + PII` **and a conflict line** (sme not applied); akaya
+      `user, sme + PII (sme: demo_pg)`; bdemir `auditor`; enorole `no Gaia role`; cpasif
+      `DISABLED`
+
+In the browser, http://127.0.0.1:5173 — one private window per person (users' password
+`Test-Passw0rd-1`):
+
+1. **The local account.** "I have a setup code for the local administrator" → the code →
+   a password of ≥ 12 characters → sign in as the local administrator. Directories, Roles &
+   grants, Accounts show what the CLI did. The home page warns that this account is for
+   setup and emergencies.
+2. **dyilmaz** (administrator): the four admin pages; the conflict on the home page and in
+   Accounts. Revoke the `sme` grant of dyilmaz (a note for the auditor) — the conflict goes.
+3. **akaya** (user, SME, PII processor): Home only (review and chat screens come with 5B and
+   5D); the API answers her chat requests (`/api/data-sources` in the browser: 200).
+4. **bdemir** (auditor): Audit → summary (chain intact; **write the head hash down**), who may
+   do what, PII processors (akaya, cpasif, dyilmaz), grant history with the revocation of
+   step 2, events; download each CSV. Open `/admin/grants` by hand: "Your role does not
+   include this page."
+5. **Re-check.** With akaya signed in: `docker exec gaia-ad samba-tool user disable akaya`;
+   within about a minute her next click ends in the sign-in screen. Enable her again
+   (`… user enable akaya`).
+6. **Refusals.** enorole and cpasif: "Sign-in failed" (the same words as a wrong password);
+   the auditor's Events show `sign-in refused` with the real reasons (no Gaia role;
+   disabled).
+7. **AD's nesting rule** (optional): `make auth ARGS="directory update acme --settings-json
+   '{\"role_source\": {\"kind\": \"group\", \"group_base\": \"OU=Gaia,OU=Groups,DC=acme,DC=test\",
+   \"nested_strategy\": \"ad_in_chain\"}}'"`, then `directory probe acme` and `directory sync acme`:
+   the same three roles, bdemir still in GAIA-HR.
+
+```bash
+(make stamp; make auth ARGS="grants --all"; make auth ARGS="accounts"; make auth ARGS="audit-check") \
+  > verification/22_5a_after.out 2>&1
+infra/auth/samba-ad-test.sh down               # when done
+```
+
+- [ ] `audit-check`: `intact`, and the head equals the one the auditor wrote down — or is later
+      (more events since)
+- [ ] send `22_5a_cli.out`, `22_5a_after.out` and anything in the UI that looked wrong (a
+      screenshot is fine)
+
 ---
 
 ## Troubleshooting
@@ -1547,3 +1751,10 @@ EOF
 | views' lineage `unresolved: no definition` on SQL Server | the login lacks `VIEW DEFINITION` | `infra/sqlserver/001_readonly_login.sql` grants it; re-run that grant |
 | a test file fails with an `AssertionError` inside `pytest_asyncio` | it was run from `backend/` with a path | run through `make test ARGS=...` (from the repo root) |
 | `make measure` takes long | large tables, cold cache | it stops starting new work at `--max-minutes` (90); partial reports are still useful |
+| `REFUSED: another reasoning or re-scoring run holds '…'` | a second `make reason` / `make rescore` on the same data source (D67) | wait for the first; a crashed run releases the lock when its connection closes |
+| Sign-in: "Sign-in failed" for a right password | no Gaia role (no grant to the person or their directory roles), disabled in the directory, or locked after 5 failures (15 min) | the auditor's Events, or `audit.auth_event`, show the real reason (`sign_in_refused`) |
+| `directory probe`: `bind … directory unreachable` | address, port or TLS: the certificate's name must match the URL's host | `ca_file` for a private CA; a hosts entry for the certificate's name; `tls_verify: false` only for a test directory |
+| `directory probe`: `the service account's bind was refused` | `bind_dn` or its password | `make auth ARGS="directory update NAME --password"` |
+| Every API call answers 401 | no session (sign in), or the session expired (30 min idle, 8 h at most) | sign in again; from scripts, log in with `POST /api/auth/login` and send the `X-CSRF-Token` header on changes |
+| `missing or wrong CSRF token` | a POST/PATCH/DELETE without the `X-CSRF-Token` header (the value of the `gaia_csrf` cookie) | the web UI sends it; a script must too |
+| No way to sign in at all | no directory yet and no local password | `make admin-user` on the server (or `ARGS=setup-code` and the sign-in screen) |

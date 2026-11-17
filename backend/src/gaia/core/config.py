@@ -416,9 +416,32 @@ class DataSourcesConfig(BaseModel):
 
     # a stored data source is usable only if its read-only probe passed this recently
     reprobe_days: int = 30
-    # the admin endpoints (/api/admin/data-sources) write credentials: off until the API
-    # has authentication (P5-1); the CLI (make datasource) is the admin path meanwhile
+    # Before Phase 5A: the admin endpoints were off until the API had authentication.
+    # Since 5A they are guarded by the admin role and this key is no longer read.
     admin_api: bool = False
+
+
+class AuthConfig(BaseModel):
+    """Phase 5A: sign-in, sessions, roles (D68). Directories are stored in the metadata
+    store (``auth.directory``) by an administrator; only behaviour lives here."""
+
+    # server-side sessions (P5-8)
+    session_idle_minutes: int = 30
+    session_max_hours: int = 8
+    # the directory is asked again this often while a session lasts: a disabled account,
+    # or one that lost its Gaia role, is signed out within this time
+    recheck_minutes: int = 15
+    # cookies: Secure once the API is behind TLS (P5-9); SameSite=Strict always
+    cookie_secure: bool = False
+    # the one local account (D68): its one-time setup code lives this long
+    setup_code_minutes: int = 30
+    local_admin_enabled: bool = True
+    # failed sign-ins before an account is locked for lockout_minutes (the directory has
+    # its own lockout policy too: Gaia's stops guessing before it)
+    max_failed_sign_ins: int = 5
+    lockout_minutes: int = 15
+    # Gaia roles that may use the chat until need-to-know exists (5C adds "user")
+    chat_roles: list[str] = Field(default_factory=lambda: ["admin", "sme"])
 
 
 class Settings(BaseModel):
@@ -434,6 +457,7 @@ class Settings(BaseModel):
     retrieval: RetrievalConfig = Field(default_factory=RetrievalConfig)
     chat: ChatConfig = Field(default_factory=ChatConfig)
     datasources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
+    auth: AuthConfig = Field(default_factory=AuthConfig)
     unresolved_env: list[str] = Field(default_factory=list)
     # Unresolved placeholders per config section: "targets.<name>" for a
     # target, otherwise the top-level key ("llm", "embeddings", ...).

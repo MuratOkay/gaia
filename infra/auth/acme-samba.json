@@ -1,0 +1,16 @@
+{
+  "urls": ["ldaps://dc1.acme.test:6360"],
+  "flavor": "ad",
+  "tls_verify": true,
+  "ca_file": "../infra/auth/acme-ca.pem",
+  "bind_dn": "CN=svc-gaia,OU=Service,DC=acme,DC=test",
+  "base_dn": "DC=acme,DC=test",
+  "user_base": "OU=People,DC=acme,DC=test",
+  "role_source": {
+    "kind": "group",
+    "group_base": "OU=Gaia,OU=Groups,DC=acme,DC=test",
+    "nested": true,
+    "nested_strategy": "client"
+  },
+  "timeout_s": 10
+}

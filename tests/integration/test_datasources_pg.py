@@ -207,12 +207,18 @@ async def test_a_data_source_from_onboarding_to_removal(pg_session_factory, env,
 
 
 @pytest.mark.asyncio
-async def test_the_admin_api_is_off_until_switched_on(pg_session_factory, env):
+async def test_the_admin_api_needs_a_signed_in_administrator(pg_session_factory, env):
+    """Since Phase 5A the admin endpoints need an administrator's session (the
+    ``datasources.admin_api`` switch of 4F is gone) and every change the session's CSRF
+    token; the administrator's login is the actor in the audit."""
     from test_profiling_pg import _introspect, _settings
 
     from gaia.api.admin import router as admin_router
+    from gaia.api.auth import router as auth_router
     from gaia.api.chat import ChatService
     from gaia.api.chat import router as chat_router
+    from gaia.auth.service import AuthService
+    from gaia.db.models.audit import ConnectionChange
 
     await _introspect(pg_session_factory)
     settings = _settings()
@@ -220,22 +226,28 @@ async def test_the_admin_api_is_off_until_switched_on(pg_session_factory, env):
     # and it must still never be echoed back by the API.
     password = _read_only_password()
     app = FastAPI()
-    app.include_router(chat_router)
-    app.include_router(admin_router)
+    for r in (auth_router, chat_router, admin_router):
+        app.include_router(r)
     app.state.chat = ChatService(settings, session_factory=pg_session_factory,
                                  llm_factory=lambda: None, use_vectors=False)
+    app.state.auth = auth = AuthService(settings, pg_session_factory)
+    await auth.set_local_password("Local-Admin-Pass-1", actor="cli:test")
     spec = _spec("api_ro", "gaia_ro").model_dump() | {"password": password}
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app),
                                  base_url="http://gaia") as client:
-        assert (await client.get("/api/admin/data-sources")).status_code == 404
-        settings.datasources.admin_api = True
-        r = await client.post("/api/admin/data-sources", json=spec)
+        assert (await client.get("/api/admin/data-sources")).status_code == 401
+        r = await client.post("/api/auth/login",
+                              json={"login": "gaia-admin", "password": "Local-Admin-Pass-1"})
+        assert r.status_code == 200 and r.json()["roles"] == ["admin"]
+        h = {"X-CSRF-Token": r.json()["csrf"]}
+        assert (await client.post("/api/admin/data-sources", json=spec)).status_code == 401
+        r = await client.post("/api/admin/data-sources", json=spec, headers=h)
         assert r.status_code == 201 and password not in r.text
-        r = await client.post("/api/admin/data-sources/api_ro/probe")
+        r = await client.post("/api/admin/data-sources/api_ro/probe", headers=h)
         assert r.status_code == 200 and r.json()["status"] == "verified"
-        r = await client.post("/api/admin/data-sources", json=spec)
+        r = await client.post("/api/admin/data-sources", json=spec, headers=h)
         assert r.status_code == 400 and "exists" in r.json()["detail"]
-        r = await client.patch("/api/admin/data-sources/demo_pg", json={"host": "x"})
+        r = await client.patch("/api/admin/data-sources/demo_pg", json={"host": "x"}, headers=h)
         assert r.status_code == 400 and "config/gaia.yaml" in r.json()["detail"]
         listing = (await client.get("/api/admin/data-sources")).text
         assert password not in listing and '"api_ro"' in listing
@@ -243,5 +255,8 @@ async def test_the_admin_api_is_off_until_switched_on(pg_session_factory, env):
         assert sources["api_ro"]["status"] == "verified"
         assert sources["api_ro"]["usable"] is False  # verified, but not introspected yet
         assert sources["demo_pg"]["usable"] is True
-        r = await client.delete("/api/admin/data-sources/api_ro")
+        r = await client.delete("/api/admin/data-sources/api_ro", headers=h)
         assert r.status_code == 200 and r.json()["status"] == "tombstoned"
+    async with pg_session_factory() as s:
+        actors = {c.actor for c in (await s.scalars(sa.select(ConnectionChange))).all()}
+    assert actors == {"gaia-admin"}

@@ -255,12 +255,23 @@ def _calls(outcomes) -> list[dict[str, Any]]:
     for outcome, _r in outcomes:
         for c in outcome.calls:
             out.append({"purpose": c.purpose, "ok": c.parsed_ok, "cache": c.cache_hit,
+                        "model": c.answered_by,
                         "prompt_tokens": c.usage.prompt_tokens,
                         "completion_tokens": c.usage.completion_tokens,
                         "reasoning_tokens": c.usage.reasoning_tokens,
                         "latency_ms": c.latency_ms}
-                       | ({"error": c.error[:300]} if c.error else {}))
+                       | ({"error": c.error[:300]} if c.error else {})
+                       | _gateway_answer(c))
     return out
+
+
+def _gateway_answer(c) -> dict[str, Any]:
+    """What the gateway said when it refused a call (5.0, T4): a ``400`` without its body
+    cannot be diagnosed. Only transport failures — no model answer at all
+    (``finish_reason`` is None) — so no model output or data value lands here."""
+    if not c.error or c.finish_reason is not None or not c.content:
+        return {}
+    return {"gateway_response": str(c.content)[:500]}
 
 
 # Reasoner notes worth a line in the summary (the rest — dropped join hints — are

@@ -366,7 +366,7 @@ Rules:
 
 ## 8. Metadata store design
 
-Schemas: `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`.
+Schemas: `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`, `auth` (5A).
 
 ### `catalog`
 
@@ -419,6 +419,18 @@ Built in Phase 3A (migration `0005`, R4). Profiles are *current or history*
 
 - `llm_call` — prompt hash, model, tokens, cost, latency, raw response, cache hit
 - `schema_change` — detected DDL changes
+- `connection_change` — data sources added, changed, probed, removed (4F)
+- `auth_event` — sign-ins and every access decision, append-only and hash-chained (5A, D70)
+
+### `auth` (Phase 5A, migration `0012`)
+
+- `directory` — company directories (AD/LDAP; Entra ID in 5A.2), the service account's
+  password encrypted like a data source's
+- `account` — people who signed in or were read from a directory, and the one local account
+- `directory_role`, `account_role` — roles read from the directory, and who holds which
+- `access_grant` — Gaia roles (`user`, `sme` per data source, `admin`, `auditor`) and the
+  `pii_processor` permission, granted to directory roles or accounts; revoked, never deleted
+- `session` — server-side sessions; only hashes of the tokens
 
 ### Design choices
 
@@ -1761,3 +1773,15 @@ the stages are in PHASES (Phase 5). This section records why the design looks th
   embedding model there. Those need a worker, one-run-per-data-source locks and an impact
   preview first: a model change re-reasons everything, and an embedding change re-embeds
   everything.
+
+**As decided and built (owner, 2026-11-17; 5A in the sandbox).** Four roles, not three: an
+**auditor** audits the administrators' work from reports (D70), and an administrator can be
+neither an SME nor an auditor. The grant is kept but not applied, and it is shown, never
+silently dropped. A **PII-processor** permission (KVKK) decides whether personal data appears
+masked or unmasked in answers (D69, applied in 5C). The administrator chooses how the directory
+yields roles (groups with nesting, an attribute, the OU); Entra ID follows in 5A.2 behind the
+same interface. The one local account is set up and recovered from the server's command line
+only: whoever can run that command already controls Gaia, and an e-mail recovery would make a
+mailbox the weakest point of the most powerful account. The access audit is hash-chained. Its
+head hash, written down by the auditor outside Gaia, proves later that nothing before it was
+rewritten. The chain alone proves that only against changes made through the application.

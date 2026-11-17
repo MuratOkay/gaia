@@ -245,8 +245,21 @@ datasources:
   # Phase 4F (OUTLINE §24). Data sources added at runtime (make datasource) are usable
   # only if their read-only probe passed within this many days.
   reprobe_days: 30
-  # /api/admin/data-sources writes credentials; off until the API has authentication.
-  admin_api: false
+  # (admin_api is no longer read: since Phase 5A the admin role guards /api/admin/*)
+
+auth:
+  # Phase 5A (D68). Directories (AD/LDAP; Entra ID in 5A.2) are added by an administrator
+  # (make auth ARGS="directory add …" or the admin screen) and stored encrypted.
+  session_idle_minutes: 30
+  session_max_hours: 8
+  recheck_minutes: ${GAIA_AUTH_RECHECK_MINUTES:-15}   # the directory is asked again while a session lasts
+  cookie_secure: ${GAIA_COOKIE_SECURE:-false}   # true once behind TLS (P5-9)
+  setup_code_minutes: 30         # the local administrator's one-time setup code
+  local_admin_enabled: true      # the one local account, for setup and break-glass
+  max_failed_sign_ins: 5
+  lockout_minutes: 15
+  # who may chat until need-to-know exists (5C adds user)
+  chat_roles: [admin, sme]
 
 chat:
   # Phase 4E. Result rows stored with an answer (chat.message), personal-data columns

@@ -294,3 +294,27 @@ def test_follow_ups_see_the_conversation():
     assert ("Conversation so far:\n- User: Revenue by store city in December 2025?\n"
             "  Computed: Order amount per store city, December 2025") in m[1].content
     assert m[1].content.index("Conversation so far") < m[1].content.index("Question:")
+
+
+def test_clarification_options_are_shown_in_a_seeded_shuffled_order():
+    """5.0 (T5): the model put its own choice first in 13 of 13 host clarifications. Shown
+    as written, position would give Gaia's choice away (D61). The shown order is a seeded
+    permutation: reproducible, the default follows its option, and over many questions
+    Gaia's choice lands on every position about equally often."""
+    from collections import Counter
+
+    from gaia.query.planner import Clarification, present, shown_order
+
+    c = Clarification(question="Best by what?", default=0, ambiguity="ranking",
+                      options=["amount", "orders", "units", "margin"])
+    shown, order = present(c, "Top 5 shops performing best last year.")
+    assert sorted(order) == [0, 1, 2, 3] and shown.options == [c.options[i] for i in order]
+    assert shown.options[shown.default] == "amount"  # the default is the same option
+    assert c.options[0] == "amount" and c.default == 0  # the model's answer is untouched
+    assert present(c, "Top 5 shops performing best last year.")[1] == order  # reproducible
+    assert shown_order("q", ["only one"]) == [0] and shown_order("q", []) == []
+
+    positions = Counter(
+        present(c, f"question {n}")[0].default for n in range(400))
+    assert set(positions) == {0, 1, 2, 3}
+    assert all(60 <= n <= 140 for n in positions.values()), positions  # ~100 each

@@ -72,6 +72,10 @@ class CallRecord:
     request_id: str | None = None
     parsed_ok: bool = False
     error: str | None = None
+    # The model the provider says answered (``response.model``), which can differ from the
+    # configured id (e.g. a gateway's ``deepseek/…`` prefix, or a provider switch during a
+    # long evaluation, 2026-11-17 triage T3). None for a cache hit or a failed call.
+    answered_by: str | None = None
 
 
 @dataclass
@@ -231,6 +235,7 @@ def complete_structured[T: BaseModel](
             latency_ms=response.latency_ms,
             transport_attempts=response.attempts,
             request_id=response.request_id,
+            answered_by=response.model,
         )
 
         if response.finish_reason == "length":

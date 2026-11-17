@@ -111,6 +111,14 @@ lint: ## Ruff check + format check
 master-key: ## 4F: print a new GAIA_MASTER_KEY (encrypts data-source credentials; keep it in .env)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.datasource new-key
 
+.PHONY: admin-user
+admin-user: ## 5A: the one local account (gaia-admin): set its password (ARGS="setup-code | status | disable | enable")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.auth admin-user $(ARGS)
+
+.PHONY: auth
+auth: ## 5A: directories, grants, accounts, the audit chain (ARGS="directory list | grant … | accounts | audit-check")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.auth $(ARGS)
+
 .PHONY: datasource
 datasource: ## 4F: data sources added at runtime (ARGS="list | add … | probe NAME | update | disable | enable | remove | rotate-key")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.datasource $(ARGS)
@@ -273,6 +281,18 @@ check-llm: ## Smoke-test the reasoning LLM (plain, JSON mode, thinking)
 
 # --- frontend --------------------------------------------------------------
 
+.PHONY: web-install
+web-install: ## Phase 5: install the web UI's dependencies (pnpm, frozen lockfile)
+	cd $(ROOT)/frontend && pnpm install --frozen-lockfile
+
 .PHONY: dev-web
-dev-web: ## Run the Vite dev server
+dev-web: ## Phase 5: the web UI on http://127.0.0.1:5173 (proxies /api to make dev-api)
 	cd $(ROOT)/frontend && pnpm dev
+
+.PHONY: web-test
+web-test: ## Phase 5: the web UI's tests (vitest)
+	cd $(ROOT)/frontend && pnpm test
+
+.PHONY: web-build
+web-build: ## Phase 5: type-check and build the web UI into frontend/dist
+	cd $(ROOT)/frontend && pnpm build

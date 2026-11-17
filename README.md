@@ -9,18 +9,19 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status (2026-11-17): **Phases 0–2 complete.** Phase 3: 3.P, 3.0, 3A (PostgreSQL) and 3B
-> done; the 3C evaluation is running on the owner's host (B-C, B-P, N-C, N-P complete).
-> **Phase 4 built and verified on the host**: 4A (the SQL guard, the read-only executor),
-> 4B (retrieval), 4C (answering questions), 4D (golden runs), 4E (the chat API), 4F (data
-> sources added at runtime) (`make query`, `make retrieve`, `make ask`, `make golden`,
-> `make dev-api`, `make datasource`). The configured model's golden run on `demo_pg`:
-> **executable 100 %, correct 97 %** (targets 80 / 70); the gate awaits the owner's tick.
-> **Phase 5 is re-planned** (sign-in through the company directory, three roles,
-> need-to-know, SME review, chat, administration) and awaits approval. PostgreSQL is the main
-> dialect (D52); SQL Server is verified asynchronously on delivered builds (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§21 is the latest
-> triage). See [PHASES.md](PHASES.md).
+> Status (2026-11-17): **Phases 0–2 and 4 complete.** Phase 3: 3.P, 3.0, 3A (PostgreSQL) and
+> 3B done; 3C answered and judged on the owner's host, its report pending. Phase 4 (the SQL
+> guard, retrieval, answering, golden runs, the chat API, data sources added at runtime): the
+> configured model's golden run on `demo_pg` is **executable 100 %, correct 97 %**.
+> **Phase 5 is in progress** (approved 2026-11-17): **5.0** (triage fixes) and **5A** — sign-in
+> with the company's **Active Directory / LDAP**, four Gaia roles (user, SME, administrator,
+> auditor) and the PII-processor permission, one local break-glass account, server-side
+> sessions, a hash-chained access audit with the auditor's reports, and the first **web UI**
+> (`make dev-web`) — are built and verified in the sandbox; next: Entra ID (5A.2), then SME
+> review (5B). Every API endpoint except `/health` and sign-in needs a session now.
+> PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§22 for build D68). See
+> [PHASES.md](PHASES.md).
 
 ---
 
@@ -33,9 +34,10 @@ gaia/
 ├── infra/postgres/init/    metadata store: extensions + schemas (first-run only)
 ├── infra/sqlserver/        SQL Server read-only login script
 ├── infra/pg-target/        PostgreSQL dev target: schema, read-only role, seed
+├── infra/auth/             a throwaway Samba AD and its settings, to verify sign-in (5A)
 ├── backend/                FastAPI app, Alembic, tooling
 ├── gaia-env/               Python 3.12 virtualenv (git-ignored)
-├── frontend/               React + TS + Vite (Phase 5)
+├── frontend/               the web UI: React + TS + Vite + i18next, pnpm (Phase 5)
 ├── scripts/owner_runs.sh   the owner's asynchronous verification runs, in tracks
 └── tests/                  unit and integration tests
 ```
@@ -61,6 +63,8 @@ make check-env                # import + ODBC driver sanity
 make check-embed              # Ollama embedding smoke test
 make check-llm                # reasoning LLM: plain, JSON mode, thinking
 make dev-api                  # http://127.0.0.1:8000/health
+make admin-user               # Phase 5A: the local administrator's password (or ARGS=setup-code)
+make web-install && make dev-web   # Phase 5: the web UI on http://127.0.0.1:5173
 ```
 
 ## Status
@@ -266,7 +270,7 @@ To include it in `make test`:
 | Metadata PostgreSQL 18 + pgvector | `127.0.0.1:5433` | `docker compose` |
 | Redis 8 | `127.0.0.1:6380` | `docker compose` |
 | FastAPI | `127.0.0.1:8000` | `make dev-api` |
-| Vite dev server | `127.0.0.1:5173` | `make dev-web` (Phase 5) |
+| Vite dev server (web UI) | `127.0.0.1:5173` | `make dev-web` (Phase 5; proxies `/api` to 8000) |
 | SQL Server 2025 (`sql1`) | `127.0.0.1:1433` | external (owner) |
 | PostgreSQL dev target (`gaia-target-pg`) | `127.0.0.1:5434` | `make pg-target-up` (Compose profile `target-pg`) |
 | Ollama (`ollama-code`) | `127.0.0.1:11435` | external (owner) |
@@ -309,12 +313,15 @@ Key decisions already fixed:
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
 | `make review` | the SME review queue, highest priority first (`TARGET=...`) |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
-| `make dev-api` | the API on 127.0.0.1:8000, with the chat endpoints of Phase 4E (`/api/conversations`, server-sent events) |
+| `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events), administration (`/api/admin`), audit (`/api/audit`) — a session is needed since 5A |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
 | `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |
 | `make evaluate*` | Phase 3C evaluation (plan, labels, run, judge, audit, report, cost); `make evaluate-freeze` freezes a run's inputs (`<out>/inputs.json`; the first run does it too) |
 | `make datasource` / `make master-key` | Phase 4F: data sources added at runtime — add, probe, list, update, disable/enable, remove, rotate-key / a new `GAIA_MASTER_KEY` |
+| `make admin-user` | Phase 5A: the one local account (`gaia-admin`): set its password, `ARGS=setup-code` for a one-time code, `status`, `disable`, `enable` |
+| `make auth` | Phase 5A: directories (`directory add | probe | sync | roles | update | disable`), `grant` / `revoke` / `grants`, `accounts`, `audit-check` |
+| `make web-install` / `dev-web` / `web-test` / `web-build` | Phase 5: the web UI (pnpm): dependencies, dev server on 127.0.0.1:5173 (proxies `/api`), tests, production build |
 | `scripts/owner_runs.sh setup\|quick\|gateway\|gateway-long` | the owner's asynchronous runs in tracks (OWNER_VERIFICATION "Run plan"); `GAIA_LLM_CONCURRENCY=2` when two gateway tracks share the gateway |
 | `make stamp` | which code this is: build, sqlglot version, git commit (first line of every verification output) |
 | `make pg-target-up` / `pg-target-seed` / `pg-target-psql` | PostgreSQL development target |
@@ -336,8 +343,9 @@ SQL guard and executor (done), then retrieval (4B, done), answering (4C, done), 
 runs (4D, done), the API (4E, done) and data-source management (4F). The 99 columns reasoned so far are 65 `deep_profile`,
 32 `deep_profile_flagged` and 2 `abstain`; they are the catalog-only baseline
 (condition N-C). SME review moves forward into Phase 5 (roadmap R1).
-**Phase 5** (re-planned 2026-11-17, awaiting approval) runs in stages: 5.0 triage fixes →
-5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles) → 5B SME
+**Phase 5** (approved 2026-11-17) runs in stages: 5.0 triage fixes (built) →
+5A identity (the company directory via LDAP/AD, a bootstrap admin, sessions, roles; built) →
+5A.2 Entra ID → 5B SME
 review → 5C need-to-know (data categories granted to directory roles, enforced in retrieval
 and the SQL guard) → 5D the chat screen → 5E a read-only runs view; scheduling runs and
 switching models from the admin screen are proposed for later (PHASES, Phase 5).

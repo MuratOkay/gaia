@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # The owner's asynchronous runs, grouped by what they wait on (OWNER_VERIFICATION "Run plan").
 #
-#   scripts/owner_runs.sh setup         once per delivery: dependencies, migrations, tests (~10 min)
+#   scripts/owner_runs.sh setup         once per delivery: dependencies, migrations, tests, web UI (~10 min)
 #   scripts/owner_runs.sh quick         no LLM gateway: queries, retrieval, SQL Server profile (~20 min)
 #   scripts/owner_runs.sh gateway       LLM, thinking off: golden run, 3C judging, questions (~1-2 h)
 #   scripts/owner_runs.sh gateway-long  LLM, thinking on: the rest of 3C, demo_pg meanings (overnight)
@@ -38,6 +38,7 @@ setup() {
     echo "!! add GAIA_MASTER_KEY to .env first:  make master-key >> .env"
   fi
   run 20_tests make test
+  run 20_web bash -c "make web-install && make web-test && make web-build"   # Phase 5
 }
 
 quick() {

@@ -42,6 +42,7 @@ from typing import Any
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gaia.core.config import Settings
+from gaia.db.locks import DataSourceBusy, DataSourceLock
 from gaia.db.models.semantics import ReasoningRun
 from gaia.db.repositories.semantics_store import SemanticsStore
 from gaia.introspect.snapshot import Snapshot, TableSnapshot
@@ -79,6 +80,7 @@ from gaia.semantics.scoring import ColumnScore, score_column, score_column_v2, s
 logger = logging.getLogger(__name__)
 
 __all__ = [
+    "ReasoningBusy",
     "ReasoningOptions",
     "ReasoningReport",
     "TableResult",
@@ -744,7 +746,41 @@ class _Run:
     critique_prompt_version: str
 
 
+class ReasoningBusy(DataSourceBusy):
+    """Another reasoning or re-scoring run holds this data source (5.0, T2)."""
+
+
 async def run_reasoning(
+    settings: Settings,
+    session: AsyncSession,
+    options: ReasoningOptions,
+    *,
+    llm_factory: Callable[[], LLMClient],
+    embedder: EmbeddingClient | None = None,
+    cache: KVCache | None = None,
+    snapshot_loader: Callable[[dict], Snapshot] | None = None,
+    evidence_source: EvidenceSource | None = None,
+) -> ReasoningReport:
+    """Reason (or re-score) a data source. One writing run per data source at a time:
+    the plan is made under the lock, so two runs can never plan from the same state.
+    A dry run writes nothing and takes no lock."""
+    kwargs = {"llm_factory": llm_factory, "embedder": embedder, "cache": cache,
+              "snapshot_loader": snapshot_loader, "evidence_source": evidence_source}
+    if options.dry_run:
+        return await _run_reasoning(settings, session, options, **kwargs)
+    label = options.target or settings.app.default_target
+    data_source = await SemanticsStore(session).data_source(label)
+    if data_source is None:
+        raise LookupError(f"no data source {label!r} in the metadata store; run `make introspect`")
+    async with DataSourceLock(
+        session, data_source.id, "reasoning", error=ReasoningBusy,
+        message=(f"another reasoning or re-scoring run holds {label!r}; "
+                 "wait for it to finish (one run per data source)"),
+    ):
+        return await _run_reasoning(settings, session, options, **kwargs)
+
+
+async def _run_reasoning(
     settings: Settings,
     session: AsyncSession,
     options: ReasoningOptions,

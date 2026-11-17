@@ -194,6 +194,35 @@ def test_report_compares_conditions_on_the_columns_both_answered(tmp_path):
                              "6 column(s) answered or judged in one condition only, left out")
 
 
+def test_report_names_the_models_behind_each_condition(tmp_path):
+    """5.0 (T3): the recorder keys answers by the request, not by the model, so a provider
+    switch in the middle of 3C is invisible unless the report says which model answered.
+    A gateway's ``provider/`` prefix is the same id; two different ids are flagged."""
+    from gaia.evaluation.report import build_report, condition_models
+
+    def call(model, **extra):
+        return {"purpose": "semantics", "ok": True, "cache": False, "model": model,
+                "prompt_tokens": 1, "completion_tokens": 1, "latency_ms": 1} | extra
+
+    def write(code, calls):
+        d = tmp_path / code
+        d.mkdir()
+        summary = {"description": code, "calls": calls, "second_round": [],
+                   "failed": [], "notes": []}
+        (d / "results.json").write_text(json.dumps({"summary": summary, "columns": []}))
+
+    write("B-C", [call("deepseek/deepseek-v4.1-flash"), call("deepseek-v4.1-flash")])
+    write("B-P", [call("deepseek-v4.1-flash"), call("deepseek-flash"),
+                  call(None, ok=False, error="http 400: x")])
+    old = [{k: v for k, v in call("x").items() if k != "model"}]
+    write("N-C", old)
+    text, doc = build_report(tmp_path, "ds", {}, 0.8)
+    assert doc["conditions"]["B-P"]["models"] == {"deepseek-flash": 1, "deepseek-v4.1-flash": 1}
+    assert "Answered by more than one model: B-P." in text  # B-C's prefix is not a second id
+    assert "* N-C: not recorded" in text
+    assert condition_models([]) is None
+
+
 def test_evaluation_inputs_are_frozen_and_read_back(tmp_path, sample_snapshot):
     """A run directory keeps its snapshot and evidence (2026-11-16): later conditions read
     them from there, so re-profiling the target between conditions changes nothing."""

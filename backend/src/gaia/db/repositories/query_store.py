@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gaia.db.models.catalog import TableRecord
@@ -107,6 +107,7 @@ class QueryStore:
             snapshot_id=uuid.UUID(str(snapshot_id)) if snapshot_id else None,
             origin=origin, asked_by=asked_by, question=answer.question,
             clarification_question=c.question, options=list(c.options),
+            option_order=list(answer.option_order) if answer.option_order is not None else None,
             ambiguity=c.ambiguity, default_option=c.default,
             best_guess_interpretation=plan.interpretation if guessed else None,
             best_guess_assumptions=list(plan.assumptions) if guessed else [],
@@ -119,6 +120,17 @@ class QueryStore:
 
     async def clarification(self, clarification_id: uuid.UUID) -> Clarification | None:
         return await self.session.get(Clarification, clarification_id)
+
+    async def latest_open_clarification(self, data_source_id: uuid.UUID, question: str
+                                        ) -> Clarification | None:
+        """The open clarification this exact question got most recently on this data source
+        (``make ask --question Q --clarified A`` without an id, 5.0 T6)."""
+        return await self.session.scalar(
+            select(Clarification).where(
+                Clarification.data_source_id == data_source_id,
+                Clarification.status == "open",
+                func.btrim(Clarification.question) == question.strip())
+            .order_by(Clarification.created_at.desc()).limit(1))
 
     async def answer_clarification(self, row: Clarification, user_answer: str,
                                    answer_run_id: uuid.UUID | None) -> Clarification:

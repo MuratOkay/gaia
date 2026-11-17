@@ -1,9 +1,11 @@
 """Gaia FastAPI application.
 
-Phase 0 surface: ``/health`` (infrastructure + config diagnostics) and
-``/api/meta`` (redacted, non-secret configuration echo). Phase 4E: the chat API
-(``gaia.api.chat``: data sources, conversations, questions answered as server-sent
-events). No authentication yet (P5-1): serve on 127.0.0.1 only (``make dev-api``).
+Phase 0 surface: ``/health`` (infrastructure + config diagnostics, public) and
+``/api/meta`` (redacted, non-secret configuration echo; administrators). Phase 4E: the
+chat API (``gaia.api.chat``). Phase 5A: sign-in (``gaia.api.auth``), the administrator's
+API (``gaia.api.admin``) and the auditor's reports (``gaia.api.audit``); every endpoint but
+``/health`` and the sign-in ones needs a session. Serve on 127.0.0.1 until TLS is in
+place (P5-9; ``make dev-api``).
 """
 
 from __future__ import annotations
@@ -14,12 +16,15 @@ from typing import Any
 
 import asyncpg
 import redis.asyncio as aioredis
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from gaia import __version__
 from gaia.api.admin import router as admin_router
+from gaia.api.audit import router as audit_router
+from gaia.api.auth import router as auth_router
 from gaia.api.chat import router as chat_router
+from gaia.auth.deps import require
 from gaia.core.config import get_settings
 from gaia.db.engine import asyncpg_dsn, dispose_engine
 
@@ -48,8 +53,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.include_router(auth_router)
 app.include_router(chat_router)
-app.include_router(admin_router)  # off unless datasources.admin_api (Phase 4F)
+app.include_router(admin_router)  # the admin role (Phase 5A)
+app.include_router(audit_router)  # the auditor role (Phase 5A)
 
 app.add_middleware(
     CORSMiddleware,
@@ -109,7 +116,7 @@ async def health() -> dict[str, Any]:
     }
 
 
-@app.get("/api/meta")
+@app.get("/api/meta", dependencies=[Depends(require("admin"))])
 async def meta() -> dict[str, Any]:
     target = settings.target()
     return {

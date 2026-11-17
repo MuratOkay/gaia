@@ -1,0 +1,66 @@
+:root {
+  --fg: #1f2933;
+  --muted: #616e7c;
+  --line: #d9e2ec;
+  --bg: #f7f9fb;
+  --accent: #2f6f9f;
+  --danger: #b42318;
+  --warn: #9a6700;
+  --ok: #1a7f37;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color: var(--fg);
+  background: var(--bg);
+}
+body { margin: 0; }
+h1 { font-size: 1.4rem; margin: 0.2rem 0 0.6rem; }
+h2 { font-size: 1.1rem; margin: 1.4rem 0 0.5rem; }
+.muted { color: var(--muted); }
+.error { color: var(--danger); }
+.warn { color: var(--warn); }
+.note { background: #fff; border-left: 3px solid var(--accent); padding: 0.5rem 0.8rem; }
+.note.warn { border-color: var(--warn); }
+code { font-family: ui-monospace, monospace; word-break: break-all; }
+code.small { font-size: 0.75rem; }
+
+.shell header { display: flex; gap: 1.2rem; align-items: center; padding: 0.6rem 1.2rem; background: #fff; border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.shell .brand { font-size: 1.1rem; }
+.shell nav { display: flex; gap: 0.9rem; flex: 1; flex-wrap: wrap; }
+.shell nav a, .subnav a { color: var(--accent); text-decoration: none; padding: 0.2rem 0; }
+.shell nav a.active, .subnav a.active { border-bottom: 2px solid var(--accent); }
+.shell main { padding: 1rem 1.4rem 3rem; max-width: 1200px; }
+.subnav { display: flex; gap: 1rem; margin-bottom: 0.6rem; }
+.who { display: flex; gap: 0.6rem; align-items: center; }
+
+.login { max-width: 380px; margin: 10vh auto; background: #fff; padding: 1.6rem 2rem; border: 1px solid var(--line); border-radius: 6px; }
+form { display: flex; flex-direction: column; gap: 0.7rem; }
+form.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 0.7rem 1.2rem; align-items: end; }
+form.grid .wide, form.grid fieldset { grid-column: 1 / -1; }
+form.inline { flex-direction: row; flex-wrap: wrap; align-items: end; }
+label { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9rem; }
+label.check { flex-direction: row; align-items: center; gap: 0.4rem; }
+fieldset { border: 1px solid var(--line); border-radius: 4px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.7rem 1.2rem; }
+input, select { font: inherit; padding: 0.35rem 0.5rem; border: 1px solid #bcccdc; border-radius: 4px; background: #fff; }
+button, a.button { font: inherit; padding: 0.35rem 0.8rem; border: 1px solid var(--accent); border-radius: 4px; background: var(--accent); color: #fff; cursor: pointer; text-decoration: none; display: inline-block; }
+button:disabled { opacity: 0.5; cursor: default; }
+button.link { background: none; border: none; color: var(--accent); padding: 0; }
+button.danger { background: #fff; color: var(--danger); border-color: var(--danger); }
+.actions { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+
+table { width: 100%; border-collapse: collapse; background: #fff; margin: 0.5rem 0 1rem; font-size: 0.9rem; }
+th, td { text-align: left; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { background: #eef2f6; }
+tr.revoked td { color: var(--muted); text-decoration: line-through; }
+tr.revoked td:last-child { text-decoration: none; }
+
+.card { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 1rem; margin: 0.6rem 0; }
+.card.alarm { border-color: var(--danger); }
+.cards { list-style: none; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 0.8rem; }
+.cards li { background: #fff; border: 1px solid var(--line); border-radius: 6px; padding: 0.6rem 1rem; }
+.checks { list-style: none; padding: 0; margin: 0.4rem 0; font-size: 0.85rem; }
+.checks .pass strong { color: var(--ok); }
+.checks .fail strong { color: var(--danger); }
+.status { font-size: 0.8rem; padding: 0.05rem 0.45rem; border-radius: 10px; background: #eef2f6; }
+.status-verified, .status-config { background: #dafbe1; color: var(--ok); }
+.status-failed { background: #ffebe9; color: var(--danger); }
+.status-disabled, .status-tombstoned { background: #eaeef2; color: var(--muted); }
+.grant-control { display: inline-flex; gap: 0.3rem; flex-wrap: wrap; }

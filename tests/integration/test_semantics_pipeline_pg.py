@@ -291,3 +291,51 @@ async def test_single_column_change_reasons_exactly_one_bundle(
     assert {k: v for k, v in final.items() if k not in ("Products", "Orders")} == {
         k: v for k, v in baseline.items() if k not in ("Products", "Orders")
     }
+
+
+@pytest.mark.asyncio
+async def test_one_writing_run_per_data_source(
+    pg_session_factory, snapshot_factory, fake_llm, fake_embedder
+):
+    """5.0 (T2): while one run holds a data source, a second writing run — reasoning or
+    re-scoring — is refused before it plans or calls the model; a dry run is not; the lock
+    is released when the first run ends, whether it succeeded or not. Profiling keeps its
+    own lock (D33), so the two kinds do not exclude each other."""
+    from gaia.db.locks import DataSourceLock
+    from gaia.semantics.service import ReasoningBusy
+
+    factory = pg_session_factory
+    await _apply(factory, snapshot_factory())
+    async with factory() as s:
+        ds_id = await s.scalar(
+            sa.text("SELECT id FROM catalog.data_sources WHERE name = 'demo_mssql'"))
+
+    async with factory() as holder, DataSourceLock(holder, ds_id, "reasoning"):
+        with pytest.raises(ReasoningBusy, match="one run per data source"):
+            await _reason(factory, fake_llm, fake_embedder)
+        with pytest.raises(ReasoningBusy):
+            await _reason(factory, fake_llm, fake_embedder, rescore_only=True)
+        assert sum(fake_llm.calls.values()) == 0
+        assert await _count(factory, sa.select(sa.func.count()).select_from(ReasoningRun)) == 0
+        dry = await _reason(factory, fake_llm, fake_embedder, dry_run=True)
+        assert dry.count("would_reason") == TOTAL_TABLES
+        # a profiling run of the same data source is not blocked by reasoning
+        async with DataSourceLock(holder, ds_id, "profiling"):
+            pass
+
+    report = await _reason(factory, fake_llm, fake_embedder)  # released: runs
+    assert report.count("reasoned") == TOTAL_TABLES
+
+    # a failing run releases the lock too
+    class Boom(Exception):
+        pass
+
+    def broken():
+        raise Boom("no client")
+
+    async with factory() as s:
+        with pytest.raises(Boom):
+            await run_reasoning(_settings(), s, ReasoningOptions(force=True),
+                                llm_factory=broken, embedder=fake_embedder)
+    again = await _reason(factory, fake_llm, fake_embedder)
+    assert again.count("skipped") == TOTAL_TABLES

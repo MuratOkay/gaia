@@ -24,7 +24,7 @@
 
 -- The role must exist:  CREATE ROLE gaia_ro LOGIN;
 ALTER ROLE :"ro_user" WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
-    PASSWORD :"ro_password";
+    PASSWORD :'ro_password';
 ALTER ROLE :"ro_user" SET default_transaction_read_only = on;
 
 GRANT CONNECT ON DATABASE :"dbname" TO :"ro_user";

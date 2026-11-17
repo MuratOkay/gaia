@@ -229,6 +229,7 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
             "failed": summary["failed"],
             "critique_failed": summary.get("critique_failed", []),
             "notes": summary["notes"],
+            "models": condition_models(calls),
         }
 
     def paired(a: str, b: str, only: set[tuple[str, str]] | None
@@ -291,6 +292,18 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
     for name, met, value in criteria:
         mark = "pending" if met is None else ("yes" if met else "**no**")
         lines.append(f"| {name} | {mark} | {value} |")
+    lines += ["", "## Models", "",
+              "Which model answered each condition (the recorder keys answers by the "
+              "request, not the model, so a switch during a run is only visible here):", ""]
+    mixed = []
+    for code, e in table.items():
+        lines.append(f"* {code}: {_models_text(e['models'])}")
+        if _is_mixed(e["models"]):
+            mixed.append(code)
+    if mixed:
+        lines += ["", f"**Answered by more than one model: {', '.join(mixed)}.** A comparison "
+                  "that involves them compares models as well as evidence; decide whether the "
+                  "ids name the same model before reading the criteria."]
     lines += ["", "## Conditions", "",
               "| Condition | Columns | Accuracy | Yes | Role | AUROC | Accepted | "
               "Precision of accepted | Mean score | Calls | Tokens |",
@@ -331,3 +344,36 @@ def build_report(out: Path, data_source: str, labels: dict[tuple[str, str, str],
     report = {"conditions": table, "criteria": [
         {"name": n, "met": m, "value": v} for n, m, v in criteria]}
     return "\n".join(lines) + "\n", report
+
+
+def condition_models(calls: list[dict[str, Any]]) -> dict[str, int] | None:
+    """Answers per model id in a condition's calls (cache hits and failures excluded);
+    None when ``results.json`` predates the field (run the condition again: it replays
+    every recorded answer at no cost and records the models)."""
+    if not calls or not any("model" in c for c in calls):
+        return None
+    counts: dict[str, int] = {}
+    for c in calls:
+        model = c.get("model")
+        if model and not c.get("error"):
+            counts[model] = counts.get(model, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _bare(model: str) -> str:
+    """``deepseek/deepseek-v4.1-flash`` and ``deepseek-v4.1-flash`` are one id: a gateway
+    prefixes the provider."""
+    return model.rsplit("/", 1)[-1].lower()
+
+
+def _is_mixed(models: dict[str, int] | None) -> bool:
+    return bool(models) and len({_bare(m) for m in models}) > 1
+
+
+def _models_text(models: dict[str, int] | None) -> str:
+    if models is None:
+        return ("not recorded (results from before D67, 2026-11-17 — run the same `make evaluate` "
+                "command again: 0 new calls)")
+    if not models:
+        return "no answered call"
+    return ", ".join(f"`{m}` ({n})" for m, n in models.items())

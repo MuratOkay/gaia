@@ -22,7 +22,10 @@ The live answer carries every row (up to ``query.row_limit``); the stored turn k
 ``chat.keep_rows`` rows with personal-data columns masked. The SQL is not part of
 either (P4-2); ``chat.query_run`` has it.
 
-No authentication yet (P5-1): the API is meant for ``127.0.0.1`` (``make dev-api``).
+Since Phase 5A every endpoint needs a signed-in person with a chat role
+(``auth.chat_roles``), and a conversation belongs to the account that started it: another
+account's conversation answers 404. Until TLS is in place the API stays on ``127.0.0.1``
+(P5-9).
 """
 
 from __future__ import annotations
@@ -41,6 +44,8 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
+from gaia.auth.deps import require_chat
+from gaia.auth.service import Principal
 from gaia.core.config import Settings
 from gaia.db.models.catalog import DataSource
 from gaia.db.models.chat import Conversation, Message
@@ -175,36 +180,41 @@ class ChatService:
             raise HTTPException(404, f"no data source {name!r} (run make introspect)")
         return ds
 
-    async def create_conversation(self, body: NewConversation) -> dict[str, Any]:
+    async def create_conversation(self, body: NewConversation, owner: str | None = None
+                                  ) -> dict[str, Any]:
         async with self.factory() as session:
             ds = await self._data_source(session, body.data_source)
-            c = Conversation(data_source_id=ds.id, title=body.title)
+            c = Conversation(data_source_id=ds.id, title=body.title, created_by=owner)
             session.add(c)
             await session.commit()
             await session.refresh(c)
             return _conversation_dict(c, ds.name)
 
-    async def conversations(self, data_source: str, limit: int = 50) -> list[dict[str, Any]]:
+    async def conversations(self, data_source: str, limit: int = 50, owner: str | None = None
+                            ) -> list[dict[str, Any]]:
         async with self.factory() as session:
             ds = await self._data_source(session, data_source)
-            rows = await session.scalars(select(Conversation)
-                                         .where(Conversation.data_source_id == ds.id)
-                                         .order_by(Conversation.updated_at.desc()).limit(limit))
+            q = select(Conversation).where(Conversation.data_source_id == ds.id)
+            if owner is not None:  # a person sees their own conversations only (5A)
+                q = q.where(Conversation.created_by == owner)
+            rows = await session.scalars(q.order_by(Conversation.updated_at.desc()).limit(limit))
             return [_conversation_dict(c, ds.name) for c in rows]
 
-    async def _load(self, session, conversation_id: uuid.UUID
+    async def _load(self, session, conversation_id: uuid.UUID, owner: str | None = None
                     ) -> tuple[Conversation, DataSource, list[Message]]:
         c = await session.get(Conversation, conversation_id)
-        if c is None:
+        # someone else's conversation does not exist for you (not 403: its id says nothing)
+        if c is None or (owner is not None and c.created_by != owner):
             raise HTTPException(404, f"no conversation {conversation_id}")
         ds = await session.get(DataSource, c.data_source_id)
         messages = list(await session.scalars(select(Message).where(
             Message.conversation_id == c.id).order_by(Message.seq)))
         return c, ds, messages
 
-    async def conversation(self, conversation_id: uuid.UUID) -> dict[str, Any]:
+    async def conversation(self, conversation_id: uuid.UUID, owner: str | None = None
+                           ) -> dict[str, Any]:
         async with self.factory() as session:
-            c, ds, messages = await self._load(session, conversation_id)
+            c, ds, messages = await self._load(session, conversation_id, owner)
             return _conversation_dict(c, ds.name) | {
                 "messages": [_message_dict(m) for m in messages]}
 
@@ -221,11 +231,11 @@ class ChatService:
         return doc | {"rows": rows, "rows_kept": len(rows), "row_count": len(answer.rows),
                       "masked_columns": sorted(answer.personal_columns)}
 
-    async def post(self, conversation_id: uuid.UUID, body: NewMessage
-                   ) -> AsyncIterator[tuple[str, dict[str, Any]]]:
+    async def post(self, conversation_id: uuid.UUID, body: NewMessage, owner: str | None = None,
+                   asked_by: str | None = None) -> AsyncIterator[tuple[str, dict[str, Any]]]:
         lock = self._locks.setdefault(conversation_id, asyncio.Lock())
         async with lock, self.factory() as session:
-            conv, ds, messages = await self._load(session, conversation_id)
+            conv, ds, messages = await self._load(session, conversation_id, owner)
             store = QueryStore(session)
             index = await self.index(session, ds.name, ds.id)
             last = messages[-1] if messages else None
@@ -306,7 +316,8 @@ class ChatService:
             clarification = None
             if answer.status == "clarify" and answer.clarification is not None:
                 clarification = await store.record_clarification(
-                    answer, data_source_id=ds.id, snapshot_id=index.snapshot_id, origin="api")
+                    answer, data_source_id=ds.id, snapshot_id=index.snapshot_id, origin="api",
+                    asked_by=asked_by)
             if pending is not None:
                 await store.answer_clarification(pending, body.content.strip(),
                                                  runs[0].id if runs else None)
@@ -361,36 +372,42 @@ def get_chat(request: Request) -> ChatService:
 
 
 @router.get("/data-sources")
-async def data_sources(chat: ChatService = Depends(get_chat)) -> list[dict[str, Any]]:  # noqa: B008
+async def data_sources(chat: ChatService = Depends(get_chat),  # noqa: B008
+                       _who: Principal = Depends(require_chat)) -> list[dict[str, Any]]:  # noqa: B008
     return await chat.data_sources()
 
 
 @router.post("/conversations", status_code=201)
 async def create_conversation(body: NewConversation,
-                              chat: ChatService = Depends(get_chat)) -> dict[str, Any]:  # noqa: B008
-    return await chat.create_conversation(body)
+                              chat: ChatService = Depends(get_chat),  # noqa: B008
+                              who: Principal = Depends(require_chat)) -> dict[str, Any]:  # noqa: B008
+    return await chat.create_conversation(body, owner=str(who.account_id))
 
 
 @router.get("/conversations")
 async def list_conversations(data_source: str, limit: int = 50,
-                             chat: ChatService = Depends(get_chat)) -> list[dict[str, Any]]:  # noqa: B008
-    return await chat.conversations(data_source, limit)
+                             chat: ChatService = Depends(get_chat),  # noqa: B008
+                             who: Principal = Depends(require_chat)) -> list[dict[str, Any]]:  # noqa: B008
+    return await chat.conversations(data_source, limit, owner=str(who.account_id))
 
 
 @router.get("/conversations/{conversation_id}")
 async def get_conversation(conversation_id: uuid.UUID,
-                           chat: ChatService = Depends(get_chat)) -> dict[str, Any]:  # noqa: B008
-    return await chat.conversation(conversation_id)
+                           chat: ChatService = Depends(get_chat),  # noqa: B008
+                           who: Principal = Depends(require_chat)) -> dict[str, Any]:  # noqa: B008
+    return await chat.conversation(conversation_id, owner=str(who.account_id))
 
 
 @router.post("/conversations/{conversation_id}/messages")
 async def post_message(conversation_id: uuid.UUID, body: NewMessage, stream: bool = True,
-                       chat: ChatService = Depends(get_chat)):  # noqa: B008
+                       chat: ChatService = Depends(get_chat),  # noqa: B008
+                       who: Principal = Depends(require_chat)):  # noqa: B008
+    owner = str(who.account_id)
     async with chat.factory() as session:  # 404 before a stream starts
-        await chat._load(session, conversation_id)
+        await chat._load(session, conversation_id, owner)
+    turn = chat.post(conversation_id, body, owner=owner, asked_by=who.login)
     if not stream:
-        events = [(name, data) async for name, data in chat.post(conversation_id, body)
-                  if name != "keepalive"]
+        events = [(name, data) async for name, data in turn if name != "keepalive"]
         final = next((d for n, d in reversed(events) if n not in ("done", "status", "result")),
                      {})
         return JSONResponse(json.loads(json.dumps(
@@ -399,7 +416,7 @@ async def post_message(conversation_id: uuid.UUID, body: NewMessage, stream: boo
              "reply": final}, default=str)))
 
     async def body_iter() -> AsyncIterator[str]:
-        async for name, data in chat.post(conversation_id, body):
+        async for name, data in turn:
             yield ": keep-alive\n\n" if name == "keepalive" else sse(name, data)
 
     return StreamingResponse(body_iter(), media_type="text/event-stream",

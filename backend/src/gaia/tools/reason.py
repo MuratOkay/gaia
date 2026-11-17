@@ -57,7 +57,12 @@ from gaia.llm.deepseek import build_client
 from gaia.llm.embeddings import build_embedding_client
 from gaia.llm.replay import ReplayLLMClient, pending_requests
 from gaia.profiling.summary import JsonFileEvidence
-from gaia.semantics.service import ReasoningOptions, ReasoningReport, run_reasoning
+from gaia.semantics.service import (
+    ReasoningBusy,
+    ReasoningOptions,
+    ReasoningReport,
+    run_reasoning,
+)
 
 
 def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
@@ -278,6 +283,9 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         return asyncio.run(_run(args))
+    except ReasoningBusy as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
     except Exception as exc:
         print(f"FAILED: {type(exc).__name__}: {exc}", file=sys.stderr)
         return 1

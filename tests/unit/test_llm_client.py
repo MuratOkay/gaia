@@ -151,6 +151,46 @@ def test_client_error_raises_with_body():
     assert excinfo.value.status == 401
 
 
+def test_a_refusal_says_why():
+    """T4 (2026-11-17): a 400 is not retried, so the gateway's reason travels in the error
+    message — OpenAI-style ``error.message``, or the body's start — on one short line."""
+    bodies = [
+        (400, {"error": {"message": "max_tokens too large\nfor this mode", "code": "x"}},
+         "http 400: max_tokens too large for this mode"),
+        (400, {"detail": "model not found"}, "http 400: model not found"),
+        (422, None, "http 422: plain " + "text " * 60),
+    ]
+    for status, payload, expected in bodies:
+        def handler(request: httpx.Request, status=status, payload=payload) -> httpx.Response:
+            if payload is None:
+                return httpx.Response(status, text="plain " + "text " * 60)
+            return httpx.Response(status, json=payload)
+
+        client = DeepSeekClient(_config(),
+                                client=httpx.Client(transport=httpx.MockTransport(handler)))
+        with pytest.raises(LLMError) as excinfo:
+            client.complete([Message("user", "hi")])
+        message = str(excinfo.value)
+        assert excinfo.value.status == status
+        assert message == expected[: len(message)] and len(message) <= len("http 422: ") + 200
+        assert message.startswith(expected[:30])
+
+
+def test_an_evaluation_keeps_the_gateway_answer_of_a_refused_call_only():
+    from gaia.evaluation.runner import _gateway_answer
+    from gaia.llm.structured import CallRecord
+
+    base = {"purpose": "semantics", "model": "m", "prompt_version": "v", "prompt_hash": "h",
+            "thinking": False, "json_mode": True, "attempt": 1}
+    refused = CallRecord(**base, error="http 400: too long", content='{"error": "too long"}')
+    invalid = CallRecord(**base, error="validation", content='{"columns": []}',
+                         finish_reason="stop")
+    fine = CallRecord(**base, content="{}", finish_reason="stop", parsed_ok=True)
+    assert _gateway_answer(refused) == {"gateway_response": '{"error": "too long"}'}
+    assert _gateway_answer(invalid) == {}  # a model answer: never copied into results
+    assert _gateway_answer(fine) == {}
+
+
 def test_read_timeout_uses_its_own_smaller_budget():
     """A timeout already burned llm.timeout_s; do not retry it 3 times."""
     calls = {"n": 0}

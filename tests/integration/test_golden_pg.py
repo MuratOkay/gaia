@@ -150,7 +150,17 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
         a = by["o01"].answers[0]
         row = await store.record_clarification(a, data_source_id=index.data_source_id,
                                                snapshot_id=index.snapshot_id, origin="test")
-        await store.answer_clarification(row, "1", None)
+        # stored in the order shown, with the model's index of each option (5.0, T5)
+        model_options = a.plan.clarification.options
+        assert sorted(row.option_order) == list(range(len(model_options)))
+        assert row.options == [model_options[i] for i in row.option_order]
+        assert row.options[row.default_option] == model_options[a.plan.clarification.default]
+        # without an id, `make ask --clarified` finds the open clarification (5.0, T6)
+        found = await store.latest_open_clarification(index.data_source_id,
+                                                      f"  {a.question} ")
+        assert found is not None and found.id == row.id
+        await store.answer_clarification(row, str(row.default_option + 1), None)
+        assert await store.latest_open_clarification(index.data_source_id, a.question) is None
         other = await store.record_clarification(
             by["o05"].answers[0], data_source_id=index.data_source_id,
             snapshot_id=index.snapshot_id, origin="test")
@@ -158,7 +168,8 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
         await s.commit()
         rows = {r.question: r for r in (await s.scalars(sa.select(Clarification))).all()}
     first = rows[by["o01"].question]
-    assert first.default_option == 0 and first.best_guess_valid is True
-    assert first.best_guess_sql and first.chosen_option == 0 and first.took_default is True
+    assert first.default_option is not None and first.best_guess_valid is True
+    assert first.best_guess_sql and first.chosen_option == first.default_option
+    assert first.took_default is True
     free = rows[by["o05"].question]
     assert free.chosen_option is None and free.took_default is None and free.status == "answered"

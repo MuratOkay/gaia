@@ -120,9 +120,12 @@ class Clarification(Base):
     asked_by: Mapped[str | None] = mapped_column(sa.Text)  # a user, once identities exist (P5-1)
     question: Mapped[str] = mapped_column(sa.Text, nullable=False)
     clarification_question: Mapped[str] = mapped_column(sa.Text, nullable=False)
-    options: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)
+    options: Mapped[list[str]] = mapped_column(JSONB, nullable=False, default=list)  # as shown
+    # the model's index of each shown option (migration 0011); NULL: shown as written
+    option_order: Mapped[list[int] | None] = mapped_column(JSONB)
     ambiguity: Mapped[str | None] = mapped_column(sa.Text)
-    # Gaia's best guess: the option it would choose, and that option's answer
+    # Gaia's best guess: the option it would choose (its position as shown), and that
+    # option's answer. Never sent to a chat client (D61, 5.0 T5).
     default_option: Mapped[int | None] = mapped_column(sa.Integer)
     best_guess_interpretation: Mapped[str | None] = mapped_column(sa.Text)
     best_guess_assumptions: Mapped[list[str]] = mapped_column(JSONB, nullable=False,

@@ -57,6 +57,15 @@ async def _run(args: argparse.Namespace) -> int:
         share = f"{agreed / len(picked):.0%}" if picked else "—"
         print(f"  {kind:<10} {agreed}/{len(picked)} ({share}); {len(items)} asked, "
               f"{sum(1 for r in items if r.status == 'answered')} answered")
+    # Position bias (5.0, T5): since the options are shuffled, the first shown option is
+    # Gaia's only by chance; users who still pick it far more often than 1/n pick by place.
+    shuffled = [r for r in rows if r.option_order is not None and r.chosen_option is not None]
+    if shuffled:
+        first = sum(1 for r in shuffled if r.chosen_option == 0)
+        chance = sum(1 / len(r.options) for r in shuffled if r.options)
+        print(f"\nposition: the first shown option was chosen {first} of {len(shuffled)} "
+              f"time(s) (by chance ~{chance:.1f}); options are shown shuffled since D67 "
+              "(2026-11-17)")
     return 0
 
 

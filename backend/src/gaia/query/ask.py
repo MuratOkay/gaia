@@ -49,6 +49,7 @@ from gaia.query.planner import (
     SqlPlan,
     check_plan,
     generation_messages,
+    present,
     repair_message,
 )
 from gaia.query.prompts import query_prompt
@@ -115,7 +116,8 @@ class Answer:
     row_cap_reached: bool = False
     uncertain: list[str] = field(default_factory=list)
     confidence: Confidence | None = None
-    clarification: Clarification | None = None
+    clarification: Clarification | None = None  # options in the order shown (5.0, T5)
+    option_order: list[int] | None = None  # the model's index of each shown option
     best_guess: GuardResult | None = None  # the guard on the default option's SQL (D61)
     preset_used: bool = False
     personal_columns: set[int] = field(default_factory=set)  # result columns of personal data
@@ -285,6 +287,10 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
         if plan.decision != "answer":
             answer.status = "clarify" if plan.decision == "clarify" else "cannot_answer"
             answer.clarification, answer.reason = plan.clarification, plan.reason
+            if plan.clarification is not None and plan.clarification.options:
+                # shown in a shuffled order: the model's order gives its choice away (T5)
+                answer.clarification, answer.option_order = present(plan.clarification,
+                                                                    question)
             if plan.decision == "clarify" and (plan.sql or "").strip():
                 answer.best_guess = guard.check(plan.sql or "")  # checked, never run
             return _done(answer, started)
@@ -347,8 +353,14 @@ def _done(answer: Answer, started: float) -> Answer:
     return answer
 
 
-def answer_dict(a: Answer, *, with_sql: bool = False) -> dict[str, Any]:
-    """JSON-ready answer (the API of 4E will return this shape)."""
+def answer_dict(a: Answer, *, with_sql: bool = False, reveal_guess: bool = False
+                ) -> dict[str, Any]:
+    """JSON-ready answer (the API of 4E returns this shape).
+
+    For a clarification, Gaia's own choice — ``clarification.default`` and the best
+    guess's interpretation and assumptions — is left out unless ``reveal_guess``: D61
+    keeps it from the user so the choice is theirs (5.0, T5). It stays on the server, in
+    ``chat.clarification``."""
     from gaia.query.answerer import _cell
 
     doc: dict[str, Any] = {
@@ -366,6 +378,13 @@ def answer_dict(a: Answer, *, with_sql: bool = False) -> dict[str, Any]:
                 "prompt_tokens": sum(c.usage.prompt_tokens for c in a.calls),
                 "completion_tokens": sum(c.usage.completion_tokens for c in a.calls)},
     }
+    if a.status == "clarify":
+        if reveal_guess:
+            doc["clarification"] = (doc["clarification"] or {}) | {"option_order": a.option_order}
+        else:
+            doc["interpretation"], doc["assumptions"], doc["best_guess"] = None, [], None
+            if doc["clarification"] is not None:
+                doc["clarification"].pop("default", None)
     if with_sql:
         doc["sql"] = a.sql
         doc["attempt_log"] = [{"sql": t.guard.sql or t.sql, "problem": t.problem}

@@ -130,7 +130,12 @@ async def _run(args: argparse.Namespace) -> int:
             if args.command == "rotate-key":
                 n = await svc.rotate()
                 await session.commit()
-                print(f"re-encrypted: {n} credential(s) moved to the current key")
+                # directory service-account passwords use the same master key (Phase 5A)
+                from gaia.auth.service import AuthService
+
+                d = await AuthService(settings, factory).rotate_secrets()
+                print(f"re-encrypted: {n} data-source and {d} directory credential(s) moved "
+                      "to the current key")
                 return 0
     except (DataSourceError, CredentialError, ValueError) as exc:
         print(f"refused: {exc}", file=sys.stderr)

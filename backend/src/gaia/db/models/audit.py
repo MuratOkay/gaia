@@ -93,3 +93,36 @@ class ConnectionChange(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
 
+
+
+class AuthEvent(Base):
+    """Sign-ins and every access decision (Phase 5A; D68, D70): sign-ins and failures, sign-
+    outs, setup codes and password changes of the local account, directory changes,
+    syncs, grants and revocations, refusals. ``detail`` never holds a password, a token or a
+    code.
+
+    Append-only and **hash-chained**: each row's ``hash`` covers its content and the
+    previous row's hash, written under a transaction lock so the chain is linear. A row
+    altered, removed or inserted afterwards breaks the chain from there on
+    (``gaia.auth.audit.verify_chain``). It proves integrity against changes through the
+    application and casual edits; against someone with full database rights it holds
+    only if the head hash is kept elsewhere too — the auditor's report prints it."""
+
+    __tablename__ = "auth_event"
+    __table_args__ = (
+        sa.UniqueConstraint("seq", name="uq_auth_event_seq"),
+        sa.Index("ix_auth_event_at", "at"),
+        sa.Index("ix_auth_event_action", "action"),
+        {"schema": "audit"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    seq: Mapped[int] = mapped_column(sa.BigInteger, nullable=False)
+    at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
+    actor: Mapped[str | None] = mapped_column(sa.Text)  # login, or "cli:<os user>"
+    action: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    subject: Mapped[str | None] = mapped_column(sa.Text)
+    detail: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    ip: Mapped[str | None] = mapped_column(sa.Text)
+    prev_hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    hash: Mapped[str] = mapped_column(sa.Text, nullable=False)
