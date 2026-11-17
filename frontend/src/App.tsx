@@ -11,6 +11,7 @@ import { Directories } from "./pages/admin/Directories";
 import { Grants } from "./pages/admin/Grants";
 import { AuditAccess, AuditCategories, AuditEvents, AuditGrants, AuditPii, AuditRefusals, AuditSummaryPage } from "./pages/audit/Audit";
 import { ChatPage } from "./pages/chat/Chat";
+import { Evaluation } from "./pages/evaluation/Evaluation";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Queries, QueryPage, Runs } from "./pages/queries/Queries";
@@ -78,6 +79,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
               <NavLink to="/admin/grants">{t("nav.grants")}</NavLink>
               <NavLink to="/admin/accounts">{t("nav.accounts")}</NavLink>
               <NavLink to="/runs">{t("nav.runs")}</NavLink>
+              <NavLink to="/evaluation">{t("nav.evaluation")}</NavLink>
             </>
           )}
           {has("auditor") && <NavLink to="/audit">{t("nav.audit")}</NavLink>}
@@ -97,6 +99,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
           <Route path="/queries" element={<Only when={has("sme", "admin", "auditor")}><Queries /></Only>} />
           <Route path="/queries/:id" element={<Only when={has("sme", "admin", "auditor")}><QueryPage /></Only>} />
           <Route path="/runs" element={<Only when={has("admin", "auditor")}><Runs /></Only>} />
+          <Route path="/evaluation" element={<Only when={has("admin", "auditor")}><Evaluation /></Only>} />
           <Route path="/admin/categories" element={<Only when={has("admin")}><Categories /></Only>} />
           <Route path="/audit/categories" element={<Only when={has("auditor")}><AuditCategories /></Only>} />
           <Route path="/audit/refusals" element={<Only when={has("auditor")}><AuditRefusals /></Only>} />

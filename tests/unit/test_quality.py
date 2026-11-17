@@ -89,3 +89,34 @@ def test_which_runs_a_report_reads():
     text, doc = quality_report(sel.shown, data_source="d", question_set_key="S",
                                baseline=sel.baseline, candidate=sel.candidate)
     assert "## Candidate against baseline (P6-2)" in text and doc["comparison"]["questions"] == 30
+
+
+def test_a_comparison_says_when_the_meanings_differ():
+    """D81: on the owner's host g07 went from wrong to right between D77 and D80 — because of
+    his SME decision, not the build. The report now says when the runs' meanings differ."""
+    from gaia.evaluation.quality import meanings_note
+
+    def with_meanings(r: RunView, key: str | None, decided: int) -> RunView:
+        r.meanings_key, r.meanings = key, ({"sme_decisions": decided} if key else {})
+        return r
+
+    base = [with_meanings(run(f"b{i}", thirty({"q07"}), n=i), "aaa111", 0) for i in range(2)]
+    cand = [with_meanings(run(f"c{i}", thirty(set()), n=5 + i), "bbb222", 1) for i in range(2)]
+    note = meanings_note(base, cand)
+    assert note and "different meanings (SME decisions 0 → 1" in note
+    text, doc = quality_report([*base, *cand], data_source="d", question_set_key="S",
+                               baseline=base, candidate=cand)
+    assert "not the build's alone" in text and doc["comparison"]["meanings"] == note
+    assert "`aaa111` (0 SME)" in text
+    same = [with_meanings(run(f"s{i}", thirty(set()), n=9 + i), "aaa111", 0) for i in range(2)]
+    assert meanings_note(base, same) is None
+    imported = [with_meanings(run("i1", thirty(set()), mode="imported"), None, 0)]
+    assert "unknown" in meanings_note(imported, same)
+
+
+def test_a_question_wrong_in_every_run_shows_its_latest_sql():
+    runs = [run(f"r{i}", thirty({"q07"}), n=i) for i in range(2)]
+    runs[-1].items["q07"].sql = "SELECT sum(x) AS profit\nFROM t"
+    text, doc = quality_report(runs, data_source="d", question_set_key="S")
+    assert doc["questions"]["never_sql"] == {"q07": "SELECT sum(x) AS profit\nFROM t"}
+    assert "    ```sql\n    SELECT sum(x) AS profit\n    FROM t\n    ```" in text

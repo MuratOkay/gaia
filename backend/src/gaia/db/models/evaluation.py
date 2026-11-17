@@ -7,6 +7,9 @@ as (``--as``), and whether its answers were asked **fresh**, **replayed** from r
 **mix** (an interrupted run resumed) or **imported** from an older run's files. Only fresh,
 mixed and imported runs are measurements; a replay reproduces one.
 
+Since D81 a run also keeps a fingerprint of the **meanings** it answered with (migration
+``0019``): an SME's decision changes what the model reads as surely as a new build does.
+
 An **item** is one question of a run: what was expected, what Gaia did first and last, whether
 the final answer was right, the best guess, repairs, calls, tokens and time. ``make quality``
 reads these: intervals, questions that flip between runs, and comparisons question by question.
@@ -56,6 +59,11 @@ class EvaluationRun(Base):
     created_by: Mapped[str | None] = mapped_column(sa.Text)
     started_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False)
     finished_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    # D81: the meanings the run answered with — a fingerprint of the data source's current
+    # semantic versions, SME decisions, glossary and confirmed joins, and readable counts; a
+    # comparison of runs on different meanings measures them too, not only the build
+    meanings_key: Mapped[str | None] = mapped_column(sa.Text)
+    meanings: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
 
 
 class EvaluationItem(Base):
@@ -85,3 +93,4 @@ class EvaluationItem(Base):
     tokens: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
     seconds: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
     reason: Mapped[str | None] = mapped_column(sa.Text)
+    sql: Mapped[str | None] = mapped_column(sa.Text)  # the final answer's (D81, 0019)

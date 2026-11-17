@@ -50,7 +50,7 @@ export function ReviewQueue() {
             {t("review.reason")}
             <select value={reason} onChange={(e) => set({ reason: e.target.value || undefined })}>
               <option value="">{t("review.anyReason")}</option>
-              {REASONS.filter((r) => r !== "stale_decision").map((r) => <option key={r} value={r}>{t(`review.reasons.${r}`)}</option>)}
+              {REASONS.filter((r) => r !== "stale_decision" && r !== "blind").map((r) => <option key={r} value={r}>{t(`review.reasons.${r}`)}</option>)}
             </select>
           </label>
         )}

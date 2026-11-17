@@ -271,6 +271,14 @@ ask: ## 4C: ask a business question (TARGET=...; ARGS="--question '...' [--clari
 golden: ## 4D: run a golden set (TARGET=...; ARGS="--file F --out DIR [--only ids] [--replay DIR]")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.golden $(TARGET_ARG) $(ARGS)
 
+.PHONY: golden-net-accept
+golden-net-accept: ## 6E: accept the replayed golden net after an intended change (rewrites tests/fixtures/golden_net, or $$GAIA_GOLDEN_NET)
+	cd $(ROOT) && GAIA_ACCEPT_NET=1 $(VENV)/bin/pytest -q -c backend/pyproject.toml tests/integration/test_golden_net_pg.py -rs
+
+.PHONY: labels
+labels: ## 6B: SME decisions as labels on Gaia's meanings — right, partly, wrong (TARGET=...; ARGS="--csv F")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.labels $(TARGET_ARG) $(ARGS)
+
 .PHONY: quality
 quality: ## 6A: the quality report over golden runs (TARGET=...; ARGS="--last 5 | --compare-builds | --import 'evaluations/golden_*'")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.quality $(TARGET_ARG) $(ARGS)

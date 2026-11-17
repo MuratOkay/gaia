@@ -670,6 +670,38 @@ compares them **question by question**; it **passes** when even the low end of t
 interval costs less than 3 points, **fails** when even the high end costs more, and otherwise
 **cannot tell** — run more. The report is also written to `evaluations/quality_*.md`.
 
+The *Evaluation* page (administrators; auditors under *Audit*) shows the same: the runs, with how
+their answers came about and the **meanings** they answered with, and the report. When a
+comparison's runs answered with different meanings — SME decisions or re-reasoning between them
+— it says so: the difference is then not the build's alone. A question wrong in every run shows
+the SQL of its latest answer.
+
+### Labels from people (`make labels`, Phase 6B)
+
+```bash
+make labels TARGET=demo_pg                          # the summary and every label
+make labels TARGET=demo_pg ARGS="--csv evaluations/labels_demo_pg.csv"
+```
+
+Every SME decision is a verdict on the meaning Gaia had: **accept** → right; **correct** → wrong
+when the role or purpose changed, partly when only the name, entity or unit did, right when only
+other names, personal data or the values' meanings were added; **reject** → wrong; **not used** →
+no label. Each label keeps the model, prompt and scoring version of the meaning judged and its
+score — what calibration (6C) will be fitted on. The summary says how well Gaia's score ranks
+people's verdicts (AUROC) and how often a meaning was right in each band of the score.
+
+**One review item in ten is a check without Gaia's certainty** (`semantics.review_blind_share`,
+0.10): it shows no score, band or "Gaia is not sure", so that decisions made with and without it
+can be compared — people may follow Gaia's certainty too readily, and this measures it.
+
+### The replayed golden net (`make test`, Phase 6E)
+
+Every `make test` sends the golden questions through the whole pipeline with a scripted model
+(wrong on purpose in a few places) and compares every prompt and every outcome with the stored
+net (`tests/fixtures/golden_net/demo_pg.json`). A change that moves one fails and names the
+question: a moved **outcome** is a regression of the guard, the executor or the scoring; a moved
+**prompt** needs fresh golden runs before it is accepted (`make golden-net-accept`).
+
 ### Sending verification outputs (`make share`)
 
 ```bash

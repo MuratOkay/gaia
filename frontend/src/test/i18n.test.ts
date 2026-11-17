@@ -40,7 +40,7 @@ const DYNAMIC: Record<string, string[]> = {
   "review.bands.": [...BANDS],
   "review.statuses.": [...MEANING_STATUSES],
   "review.verdicts.": ["supported", "plausible", "doubtful", "contradicted"],
-  "review.summary.": ["none", "reads_as", "decided", "score", "critique", "tests", "distinct", "personal", "unsure"],
+  "review.summary.": ["none", "reads_as", "decided", "score", "critique", "tests", "distinct", "personal", "unsure", "blind"],
   "review.tabs.": ["open", "done", "stale"],
   "review.tabHelp.": ["open", "done", "stale"],
   "review.empty.": ["open", "done", "stale"],
@@ -57,6 +57,8 @@ const DYNAMIC: Record<string, string[]> = {
   "queries.statuses.": ["ok", "rejected", "refused", "error", "timeout", "lock_timeout"],
   "audit.refusalCodes.": ["forbidden", "personal_data"],
   "categories.basis.": ["direct", "view", "related", "weak"],
+  "evaluation.verdicts.": ["passes", "fails", "cannot_tell"],
+  "evaluation.modes.": ["fresh", "replay", "mixed", "imported"],
   "categories.basisHelp.": ["direct", "view", "related", "weak"],
 };
 

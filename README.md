@@ -12,15 +12,15 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 > Status (2026-11-17): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
 > built and verified on the owner's host**: sign-in with a real **Active Directory** (Samba AD) and a
 > real **Microsoft Entra ID** tenant, four Gaia roles and the PII-processor permission, the SME
-> review, need-to-know by data category, the chat screen, the runs view (`make dev-web`); two items
-> remain (g07 after an SME's decision, the chat in the owner's newer browser after D79's fix).
-> **Phase 6 (evaluation and calibration) is approved and started**: build **D80** adds the
-> evaluation store and `make quality` — every golden run recorded as fresh or replayed, pooled
-> with intervals, compared question by question (D80) — and D78 (an account is the directory's
-> object, not its login). Send verification outputs only through `make share`.
+> review — g07 answered right by an SME's decision alone — need-to-know by data category, the chat
+> screen, the runs view (`make dev-web`); the owner's gate closes it. **Phase 6 (evaluation and
+> calibration) is under way** — build **D83**: every golden run recorded with its meanings,
+> `make quality` and the *Evaluation* page (6A), the replayed golden net in `make test` (6E), and
+> SME decisions as labels on Gaia's meanings, with one review item in ten shown without Gaia's
+> certainty (6B). Send verification outputs only through `make share`.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§27: the D77 run triaged,
-> and §27d, the next run on build D80). See [PHASES.md](PHASES.md).
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§28: the D80 run triaged,
+> and §28d, the next run on build D83). See [PHASES.md](PHASES.md).
 ---
 
 ## Layout
@@ -314,6 +314,8 @@ Key decisions already fixed:
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
 | `make quality` | 6A: the quality report over golden runs — pooled, with intervals, flaky questions, a comparison question by question (`--last N`, `--compare-builds`, `--baseline … --candidate …`, `--list`, `--import 'evaluations/golden_*'`) |
+| `make labels` | 6B: SME decisions as labels on Gaia's meanings — right, partly, wrong — with the score each meaning had (`TARGET=...`, `--csv F`) |
+| `make golden-net-accept` | 6E: accept the replayed golden net after an intended change (the net runs in `make test`) |
 | `make share` | verification outputs safe to send: accounts, tenants, user names, ids and codes replaced consistently; send `verification/share/` only |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |

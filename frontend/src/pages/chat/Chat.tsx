@@ -65,7 +65,10 @@ export function ChatPage({ me }: { me: Me }) {
   const abort = useRef<AbortController | null>(null);
   const started = useRef<string | null>(null); // a conversation this page just created
   const bottom = useRef<HTMLDivElement | null>(null);
-  const canSeeSql = me.roles.includes("admin") || me.roles.includes("sme") || me.roles.includes("auditor");
+  // the SQL of answers: administrators and auditors everywhere, an SME on the data sources they
+  // review — the server says which (D81: offering it everywhere led SMEs to "no such query")
+  const current = sources.data?.find((s) => s.name === ds);
+  const canSeeSql = current?.sql ?? (me.roles.includes("admin") || me.roles.includes("auditor"));
 
   useEffect(() => {
     if (!ds && sources.data?.length) setDs((sources.data.find((s) => s.default) ?? sources.data[0]).name);

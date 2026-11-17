@@ -44,6 +44,7 @@ class ItemView:
     tokens: int = 0
     seconds: float = 0.0
     reason: str | None = None
+    sql: str | None = None
 
 
 @dataclass
@@ -56,6 +57,8 @@ class RunView:
     as_login: str | None = None
     items: dict[str, ItemView] = field(default_factory=dict)
     set_key: str = ""
+    meanings_key: str | None = None  # D81: the meanings it answered with (None: unknown)
+    meanings: dict[str, Any] = field(default_factory=dict)
 
     @property
     def measured(self) -> bool:
@@ -157,6 +160,32 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
     return Selection(key, shown, excluded, baseline, candidate)
 
 
+def _meanings(r: RunView) -> str:
+    if r.meanings_key is None:
+        return "unknown"
+    n = r.meanings.get("sme_decisions")
+    return f"`{r.meanings_key[:6]}`" + (f" ({n} SME)" if n is not None else "")
+
+
+def meanings_note(baseline: Sequence[RunView], candidate: Sequence[RunView]) -> str | None:
+    """Whether the two sets answered with different meanings (D81) — then the difference is
+    not the build's alone."""
+    b = {r.meanings_key for r in baseline}
+    c = {r.meanings_key for r in candidate}
+    if None in b or None in c:
+        return ("the meanings some of these runs answered with are unknown (imported runs): "
+                "SME decisions or re-reasoning between them would count as the build's")
+    if b != c:
+        def decided(runs: Sequence[RunView]) -> str:
+            counts = sorted({r.meanings.get("sme_decisions") for r in runs} - {None})
+            return "/".join(str(x) for x in counts) or "?"
+
+        return (f"the baseline and the candidate answered with different meanings (SME "
+                f"decisions {decided(baseline)} → {decided(candidate)}, or re-reasoning): the "
+                "difference is not the build's alone")
+    return None
+
+
 def _pct(x: float) -> str:
     return f"{x * 100:+.1f}"
 
@@ -179,21 +208,22 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
         return "\n".join(lines) + "\n", doc
 
     lines += ["## Runs", "",
-              "| Run | Started | Build | Model | Mode | As | Correct | Executable | Calls | "
-              "Tokens |", "|---|---|---|---|---|---|---|---|---|---|"]
+              "| Run | Started | Build | Model | Mode | As | Meanings | Correct | Executable | "
+              "Calls | Tokens |", "|---|---|---|---|---|---|---|---|---|---|---|"]
     for r in runs:
         scored = [i for i in r.items.values() if i.correct is not None]
         right = sum(1 for i in scored if i.correct)
         ran = sum(1 for i in scored if i.executable)
         lines.append(
             f"| `{r.id[:8]}` | {r.started_at:%Y-%m-%d %H:%M} | {r.build or '—'} | "
-            f"{r.model or '—'} | {r.mode} | {r.as_login or '—'} | "
+            f"{r.model or '—'} | {r.mode} | {r.as_login or '—'} | {_meanings(r)} | "
             f"{right}/{len(scored)} | {ran}/{len(scored)} | "
             f"{sum(i.calls for i in r.items.values())} | "
             f"{sum(i.tokens for i in r.items.values()):,} |")
     for r in excluded:
         lines.append(f"| `{r.id[:8]}` | {r.started_at:%Y-%m-%d %H:%M} | {r.build or '—'} | "
-                     f"{r.model or '—'} | replay — left out | {r.as_login or '—'} | | | | |")
+                     f"{r.model or '—'} | replay — left out | {r.as_login or '—'} | "
+                     f"{_meanings(r)} | | | | |")
 
     all_items = [i for r in runs for i in r.items.values()]
     scored = [i for i in all_items if i.correct is not None]
@@ -223,16 +253,21 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
             flaky.append((k, sum(marks), len(marks)))
         else:
             last = next(r.items[k] for r in reversed(runs) if k in r.items)
-            never.append((k, last.reason or ""))
+            never.append((k, last.reason or "", last.sql))
     lines += ["", "## Questions", "", f"* right in every run: {len(always)}",
               "* right in some runs (flaky): " + (", ".join(f"{k} {a}/{n}" for k, a, n in flaky)
                                                   or "none"),
-              "* wrong in every run: " + (", ".join(k for k, _ in never) or "none")]
-    for k, why in never:
+              "* wrong in every run: " + (", ".join(k for k, _w, _s in never) or "none")]
+    for k, why, sql in never:
         if why:
             lines.append(f"  * {k}: {why[:160]}")
+        if sql:  # the latest answer, to read why (D81)
+            lines += ["", "    ```sql", *("    " + x for x in sql.strip().splitlines()),
+                      "    ```", ""]
     doc["questions"] = {"always": always, "flaky": [list(x) for x in flaky],
-                        "never": [k for k, _ in never]}
+                        "never": [k for k, _w, _s in never],
+                        "never_reasons": {k: why for k, why, _s in never if why},
+                        "never_sql": {k: sql for k, _w, sql in never if sql}}
 
     clarify = [i for i in all_items if i.expect == "clarify"]
     asked = sum(1 for i in clarify if i.first_status in ("clarify", "cannot_answer"))
@@ -270,10 +305,16 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                   f"* correct, question by question: {_pct(c.difference)} points (95% interval "
                   f"{_pct(c.low)} to {_pct(c.high)}) over {c.questions} question(s)",
                   f"* verdict: {word} (a change may cost at most 3 points)"]
+        note = meanings_note(baseline, candidate)
+        if note:
+            lines.append(f"* **{note}**")
+            doc_note = note
+        else:
+            doc_note = None
         for k, b, cand in c.moved:
             lines.append(f"  * {k}: right in {b:.0%} of the baseline's runs, {cand:.0%} of the "
                          "candidate's")
         doc["comparison"] = {"difference": c.difference, "low": c.low, "high": c.high,
                              "questions": c.questions, "verdict": c.verdict,
-                             "moved": [list(m) for m in c.moved]}
+                             "moved": [list(m) for m in c.moved], "meanings": doc_note}
     return "\n".join(lines) + "\n", doc

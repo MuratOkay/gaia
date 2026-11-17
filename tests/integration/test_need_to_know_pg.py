@@ -293,6 +293,21 @@ async def test_nothing_forbidden_is_ever_executed(pg_session_factory, fake_llm, 
     assert await chat.data_sources(nobody.effective, "nobody") == []
     listed = await chat.data_sources(berk.effective, "berk")
     assert [d["name"] for d in listed] == ["demo_pg"] and listed[0]["readable_objects"] > 5
+    # whose SQL each person may see there (D81): not a user's; an SME's only where they
+    # review — the chat offered "Show the SQL" to SMEs everywhere, ending in "no such query"
+    assert listed[0]["sql"] is False
+    async with factory() as s:
+        ds_id = str(await s.scalar(sa.text("SELECT id FROM catalog.data_sources "
+                                           "WHERE name = 'demo_pg'")))
+    cats_b = [cats[n] for n in BERK_CATEGORIES]
+    sme_here = person("sara", cats_b, roles={"user", "sme"})
+    sme_here.effective.sme_sources = {ds_id}
+    sme_elsewhere = person("sami", cats_b, roles={"user", "sme"})
+    sme_elsewhere.effective.sme_sources = {str(uuid.uuid4())}
+    admin = person("ada", cats_b, roles={"user", "admin"})
+    for who, sees in ((sme_here, True), (sme_elsewhere, False), (admin, True)):
+        got = await chat.data_sources(who.effective, who.login)
+        assert got[0]["sql"] is sees, who.login
 
     conv = await chat.create_conversation(NewConversation(data_source="demo_pg"),
                                           owner=str(berk.account_id))

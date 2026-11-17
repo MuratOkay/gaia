@@ -1,0 +1,774 @@
+{
+ "c01": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "c3e12180c1b90b6d",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "38e532d58fc87192",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "db978bec5937d563",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "c02": {
+  "outcome": {
+   "best_guess": "not scored",
+   "calls": 1,
+   "correct": null,
+   "correct_first": null,
+   "executable": null,
+   "final_status": "clarify",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "36eb8c8ac47722d3",
+    "purpose": "generation"
+   }
+  ]
+ },
+ "c03": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "fa8be65346f8fa42",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "70873d89b0a1c1d9",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "f3225991b2319651",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "c04": {
+  "outcome": {
+   "best_guess": "not scored",
+   "calls": 1,
+   "correct": null,
+   "correct_first": null,
+   "executable": null,
+   "final_status": "clarify",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "5b094817bba5725f",
+    "purpose": "generation"
+   }
+  ]
+ },
+ "g01": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": false,
+   "correct_first": false,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "no column of the result holds the values of 'total'",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "6752963cfc0b30bc",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "7bada32147ce55c5",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g02": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "32eca4be211dff4a",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "51c45c1c3a6c05de",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g03": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 3,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 1
+  },
+  "prompts": [
+   {
+    "prompt": "8c0c5f1a17bceeca",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "55c47fb75b6fac08",
+    "purpose": "repair"
+   },
+   {
+    "prompt": "170f54e14c6b9446",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g04": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 3,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 1
+  },
+  "prompts": [
+   {
+    "prompt": "623d9d6ab5f767f6",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "29713d77c24ccb72",
+    "purpose": "repair"
+   },
+   {
+    "prompt": "05e1f46491ea3d37",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g05": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "be7e2d06fa5fc68c",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "349a05977be3b136",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g06": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "38d53b64d03f48c6",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "529703d12bce3e18",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g07": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "86307c2c0e325266",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "9a8427bedd2311c3",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g08": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "197b9f49617a71ed",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "1ddcb51a0f83e06c",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g09": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "ca786c6e63d11023",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "e4793f23afaf97a3",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g10": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "16c7bad545d870bd",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "12677f86abcd3622",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g11": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "0b4d25370c13a8e6",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "e6729d990a64b34b",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g12": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "8f91101be3dc2f72",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "24d173f7677dcf3c",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g13": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "7cd425939f5688d8",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "587d565f9b5a1b40",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g14": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "49eb6e6eec9cd77d",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "304d07517d3b72ba",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g15": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "4c8ffe56663424a8",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "04f2a4dd79070cef",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g16": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "e64fe03b36e02557",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "67c611d35ee3e81e",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g17": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "1135f590bea1cee8",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "dd7bf4c66b6c1823",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g18": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "2d5809426fe9ead6",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "6b1d6756d83c475a",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g19": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "c0b8c29c96f53a99",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "0e1499c0ff7ae850",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g20": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "fbeb9e1f3e44897f",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "8c586f338b59476c",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "g21": {
+  "outcome": {
+   "best_guess": "none",
+   "calls": 2,
+   "correct": true,
+   "correct_first": true,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "answered",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "995660507dd9434d",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "ec7bfc9a0661f745",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o01": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "2c3292aea2435a99",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "cc086d70c81af1fd",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "3fa398b1f3268d88",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o02": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "5a40fd8ec4f95719",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "fae744665ecd6f4b",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "50b33ea9a2ba4428",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o03": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "80caf9f744d98daa",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "f819ee565df5ec82",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "02bc46877244bcdc",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o04": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "c1c54dd49c324be9",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "7575af9f17e8b35b",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "366ac4877be2f4f0",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o05": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "45399c20bd9d8382",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "ccfe46204ec36cdf",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "36a22bcb92493e52",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o06": {
+  "outcome": {
+   "best_guess": "wrong",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "a81fd68b84a602be",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "c79cb122f1df2b27",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "b38a3e4e20ad8a60",
+    "purpose": "narration"
+   }
+  ]
+ },
+ "o07": {
+  "outcome": {
+   "best_guess": "correct",
+   "calls": 3,
+   "correct": true,
+   "correct_first": null,
+   "executable": true,
+   "final_status": "answered",
+   "first_status": "clarify",
+   "reason": "",
+   "repairs": 0
+  },
+  "prompts": [
+   {
+    "prompt": "01f7105fc470f579",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "4e37e006ad7b8d63",
+    "purpose": "generation"
+   },
+   {
+    "prompt": "f29432aee07eb9ff",
+    "purpose": "narration"
+   }
+  ]
+ }
+}

@@ -529,6 +529,8 @@ export interface ChatSource {
   usable: boolean;
   default: boolean;
   readable_objects: number | null;
+  /** whether this person may see the SQL of answers here (D81) */
+  sql?: boolean;
 }
 
 export interface ConversationView {
@@ -614,4 +616,43 @@ export interface RunsView {
   totals: { data_source: string; llm_calls: number; prompt_tokens: number; completion_tokens: number; cost: number | null; queries: number }[];
   reasoning: Record<string, unknown>[];
   profiling: Record<string, unknown>[];
+}
+
+// -- evaluation (6A, D80) ----------------------------------------------------------------------
+
+export interface EvaluationRunView {
+  id: string;
+  started_at: string;
+  build: string | null;
+  model: string | null;
+  mode: "fresh" | "replay" | "mixed" | "imported";
+  as_login: string | null;
+  measured: boolean;
+  set_key: string;
+  meanings_key: string | null;
+  sme_decisions: number | null;
+  correct: number;
+  scored: number;
+}
+
+export interface EvaluationShare {
+  k: number;
+  n: number;
+  interval: [number, number] | null;
+}
+
+export interface EvaluationReport {
+  data_source: string;
+  question_set_key: string;
+  runs: string[];
+  excluded: string[];
+  correct?: EvaluationShare;
+  executable?: EvaluationShare;
+  per_run?: number[];
+  questions?: { always: string[]; flaky: [string, number, number][]; never: string[]; never_reasons?: Record<string, string>;
+                never_sql?: Record<string, string> };
+  clarification?: { asked: [number, number]; over: [number, number]; agree: [number, number] };
+  comparison?: { difference: number; low: number; high: number; questions: number; verdict: "passes" | "fails" | "cannot tell";
+                 moved: [string, number, number][]; meanings: string | null };
+  markdown: string;
 }

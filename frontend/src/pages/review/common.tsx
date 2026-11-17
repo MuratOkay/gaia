@@ -2,7 +2,7 @@
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 
-export const REASONS = ["abstain", "evidence_exhausted", "contradiction", "critique_disagrees", "test_not_run", "input_reviewed", "stale_decision"] as const;
+export const REASONS = ["abstain", "evidence_exhausted", "contradiction", "critique_disagrees", "test_not_run", "input_reviewed", "stale_decision", "blind"] as const;
 export const BANDS = ["accepted", "deep_profile", "deep_profile_flagged", "abstain"] as const;
 export const MEANING_STATUSES = ["draft", "auto_approved", "sme_reviewed", "sme_rejected", "stale"] as const;
 

@@ -81,7 +81,8 @@
     "chat": "Chat",
     "queries": "Queries",
     "categories": "Data categories",
-    "runs": "Runs"
+    "runs": "Runs",
+    "evaluation": "Evaluation"
   },
   "home": {
     "title": "Welcome, {{name}}",
@@ -374,7 +375,8 @@
       "critique_disagrees": "the second opinion disagrees",
       "test_not_run": "a test could not run",
       "input_reviewed": "an input was reviewed",
-      "stale_decision": "the column changed"
+      "stale_decision": "the column changed",
+      "blind": "a check without Gaia's certainty"
     },
     "reasonHelp": {
       "abstain": "The certainty is too low to use the meaning as a fact.",
@@ -383,7 +385,8 @@
       "critique_disagrees": "A second model reading found the meaning doubtful.",
       "test_not_run": "A test of Gaia's claim could not run (time or budget).",
       "input_reviewed": "A column this view column is computed from was reviewed: check whether the computation changes its meaning.",
-      "stale_decision": "An SME decided this column, and it changed in the database since."
+      "stale_decision": "An SME decided this column, and it changed in the database since.",
+      "blind": "For a few columns Gaia does not show how sure it is, so that decisions made with and without its certainty can be compared (it tells whether people follow Gaia too readily). Decide from what you see."
     },
     "bands": {
       "accepted": "sure",
@@ -413,7 +416,8 @@
       "tests": "{{passed}} of {{total}} test(s) of Gaia's claims passed.",
       "distinct": "{{count}} distinct value(s) in the data.",
       "personal": "It holds personal data.",
-      "unsure": "Gaia is unsure about: {{items}}."
+      "unsure": "Gaia is unsure about: {{items}}.",
+      "blind": "How sure Gaia is stays hidden for this column: decide from the meaning and the evidence below."
     },
     "summaryTitle": "In short",
     "inTable": "Table: {{purpose}}",
@@ -732,5 +736,45 @@
     "queriesRun": "Queries",
     "reasoned": "{{done}} reasoned, {{skipped}} skipped, {{failed}} failed",
     "profiled": "{{done}} profiled, {{reused}} reused, {{failed}} failed"
+  },
+  "evaluation": {
+    "title": "Evaluation",
+    "intro": "Golden runs — the questions with known answers — recorded with their build, model and the meanings they answered with. One run varies by several points on its own, so the report pools runs and gives each share a 95% interval; replays reproduce a run and are never counted. Read-only; runs are started with make golden.",
+    "none": "No golden run is recorded yet: make golden (or make quality ARGS=\"--import …\" for older runs).",
+    "last": "Runs pooled",
+    "compareBuilds": "compare the newest build with the one before",
+    "report": "Report",
+    "correct": "Correct",
+    "executable": "Executable",
+    "share": "{{k}} of {{n}} = {{pct}}",
+    "interval": "(95% interval {{lo}}–{{hi}})",
+    "perRun": "per run: {{min}} to {{max}} over {{runs}} run(s)",
+    "always": "right in every run: {{count}} question(s)",
+    "flaky": "right in some runs",
+    "never": "wrong in every run",
+    "noneOf": "none",
+    "agree": "Gaia's best guess was the user's answer",
+    "verdicts": {
+      "passes": "The candidate passes.",
+      "fails": "The candidate fails.",
+      "cannot_tell": "Cannot tell — more runs are needed."
+    },
+    "difference": "Correct, question by question: {{d}} points (95% interval {{lo}} to {{hi}}) over {{n}} question(s); a change may cost at most 3 points.",
+    "moved": "{{k}}: right in {{b}} of the baseline's runs, {{c}} of the candidate's",
+    "noMeasured": "No measured run of this question set yet.",
+    "runs": "Runs",
+    "run": "Run",
+    "build": "Build",
+    "mode": "Answers",
+    "modes": {
+      "fresh": "asked now",
+      "replay": "replayed — not counted",
+      "mixed": "resumed",
+      "imported": "imported"
+    },
+    "meanings": "Meanings",
+    "sme": "{{n}} SME decision(s)",
+    "unknown": "unknown",
+    "as": "as {{who}}"
   }
 }

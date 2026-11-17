@@ -20,17 +20,17 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D80 (6A; D78, D79)` — the D77 run triaged (§27): the chat's crash
-  in newer browsers, Entra's Microsoft 365 groups, category proposals v2.1 (D79); D78 built (an
-  account is the directory's object); Phase 6 approved and **6A built** — every golden run recorded,
-  `make quality` (D80); `make share` for sending outputs without personal data.
-  **The next run: §27d.***
+  there. *Latest build: `2026-11-17 · D83 (6A, 6B, 6E net; D81)` — the D80 run triaged (§28): "Show
+  the SQL" only where the person may see it, the meanings a golden run answered with, an item's
+  SQL (D81); Phase 6: the replayed golden net in `make test` (6E, D82), labels from SME decisions
+  and 10 % of review items without Gaia's certainty (6B, D83), the *Evaluation* page.
+  **The next run: §28d.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
-  D77 — **triaged in §27**, and **§27d is the next run** (build D80). **Send outputs only through
-  `make share`** (§27, 27d step 6).
+  D77 — triaged in §27; §27d was run on D80 — **triaged in §28**, and **§28d is the next run**
+  (build D83). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -127,7 +127,8 @@ its expected results. Tick the boxes as you go. Times are rough.
 | 24 | Build D73: 5B — you as SME on `demo_pg`; the golden run with D65's prompt (D72); g07 — *run inside §25* | the LLM gateway (~8 min), a directory account with the `sme` grant (§22e or §23c) | ~1 h |
 | 25 | Build D75: Phase 5 complete — one combined run (*ran up to the directory; triaged in §26, replaced by §26e*) | an AD/LDAP server, an Entra tenant, the LLM gateway, a browser | ~2–3 h |
 | 26 | Triage of the D75 run; build D77 (*run — triaged in §27*): tests, the directory back (the CA), Entra's secret, categories on both databases, you as SME and g07, need-to-know and the chat, the golden run as a person, 3C's missing judgement | the Samba AD (or your AD), an Entra tenant, the LLM gateway, a browser | ~2–3 h |
-| 27 | **Triage of the D77 run; build D80 — the next run (§27d)**: tests, the chat in your browser, Entra's roles, D78 on the Samba AD, categories and g07, three fresh golden runs and `make quality`, `make share` | the Samba AD, the Entra tenant, the LLM gateway, a browser | ~1½–2 h |
+| 27 | Triage of the D77 run; build D80 (*run — triaged in §28*): tests, the chat in your browser, Entra's roles, D78 on the Samba AD, categories and g07, three fresh golden runs and `make quality`, `make share` | the Samba AD, the Entra tenant, the LLM gateway, a browser | ~1½–2 h |
+| 28 | **Triage of the D80 run; build D83 — the next run (§28d)**: tests (the replayed net), the SQL link, GAIA-Finance in Entra, review with blind items and `make labels`, three fresh golden runs with their meanings, the Evaluation page, `make share` | the Entra tenant, the LLM gateway, a browser | ~1½ h |
 
 Why §5 comes before §8: profiling makes SQL Server create statistics on the
 columns it reads, and the measurement in §5 is the one that records that
@@ -2546,6 +2547,9 @@ the Phase 5 gate is yours.
 
 ## 27 · Triage of the D77 run, and build D80 — the next run (2026-11-17)
 
+*Run on D80 (the `27_*` outputs, sent through `make share`); triaged in §28, whose §28d is the
+next run.*
+
 I read the sixteen `26_*` outputs (build D77, git `5936fd1`) and your notes. **Before anything
 else — sending outputs:** your uploads were refused by a platform's PII check, and rightly so in
 part: the outputs carry your own Microsoft guest account, your tenant's name and ids, your OS user
@@ -2728,6 +2732,147 @@ The Phase 5 gate (steps 1, 2 and 4 decide it); 6A part 2 (the *Evaluation* page)
 
 ---
 
+## 28 · Triage of the D80 run, and build D83 — the next run (2026-11-17)
+
+I read the eleven files of `share/` (build D80, git `dbdff35`) — sent through `make share`,
+exactly as intended: your account, tenant, ids and paths arrive as `<email-…>`, `<id-…>`,
+`/home/<user>/`, and stay readable. And your two notes.
+
+### 28a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `27_migrate.out`, `27_tests.out`, `27_web.out` | `0016 -> 0017 -> 0018`; **735 passed, 0 skipped**; 46 web tests, the build | ✅ |
+| `27_entra_roles.out` | roles: **GAIA-Admins, GAIA-HR**; left out: **GAIA-Mail (a Microsoft 365 group)**; sync: GAIA-Mail gone | ✅ D79 on a real tenant. GAIA-Finance is not even among the groups named `GAIA-…`: in your tenant there is no group of that name — 28d step 2 |
+| `27_access.out` | you confirmed six more objects (`inventory` Product, `payments` Finance, `transactions` and `trade_ins` Sales …); v2.1's cases all as intended: `hr.staff_addresses` Hr, `dw.dim_shop` Store ("named like dbo.shops"), `dw.dim_platform` Product, `transaction_lines` with your `transactions` (Sales); the rest flagged weak | ✅ |
+| `27_golden_sme.out` and `27_golden_a/b/c.out` | four fresh runs on D80: **97, 93, 97, 97 %**; **g07 right in all four** | ✅ **the 5B criterion**: your decision on `finance.invoices.status` alone made g07 right — no code, no prompt |
+| `27_import.out` | nine earlier runs imported, once each | ✅ |
+| `27_quality.out` | D80 pooled: **86 of 90 = 96 % (95 % interval 89–98 %)**, executable 100 %; flaky o03 (2/3); o06 wrong in every run; D80 against D77: **passes** (+7.5 points, interval −0.8 to +18.3), g07, o02, o05 moved | ✅ 6A works on real runs — with one flaw it exposed, 28b-2 |
+
+**Phase 5 is verified on your host**: sign-in through a real AD and a real Entra tenant, every role,
+need-to-know, the chat, review, g07. Only your tenant's missing GAIA-Finance group is left, and
+it is a tenant setting, not Gaia's. **The Phase 5 gate is yours to tick** (PHASES, Phase 5, Gate).
+
+### 28b · Your notes, and what the report showed
+
+1. **"Show the SQL" → "Something went wrong: no such query".** Reproduced: akaya asking on a
+   data source she does **not** review (for you `demo_mssql`, which her categories now reach).
+   SMEs see the SQL of *their* data sources only (P5-7) — the server rightly refused — but the chat
+   offered the link to every SME everywhere. Now the server tells the chat, per data source,
+   whether the person may see its SQL, and the link appears only there; the refusal itself says
+   "no such query among the data sources whose SQL you may see". On `demo_pg` akaya's link works
+   as before.
+2. **The comparison credited your decision to the build.** D80 "passed" against D77 with g07 moving
+   from wrong to right — but what changed g07 was your SME decision, not D80's code. A comparison
+   of builds is only about the code when both sides answered with the same **meanings**. Each run
+   now records a fingerprint of the meanings it answered with (the current semantic versions, SME
+   decisions, glossary, confirmed joins, and how many decisions); the runs table shows it, and a
+   comparison whose sides differ says **"the baseline and the candidate answered with different
+   meanings (SME decisions 0 → 1 …): the difference is not the build's alone"** — or, for
+   imported runs, that their meanings are unknown.
+3. **D78 (step 3)** — you dropped and recreated finn. No output came with it, so I take it that
+   finn was refused and the *Accounts* banner let you re-link him; tell me if anything else
+   happened.
+4. **o06 is wrong in every recent run** — after its clarification ("profit realised on sales, line
+   subtotal minus quantity times unit cost, not cancelled"), the numbers differ from the reference.
+   Without the SQL I cannot tell whose mistake it is. Each evaluation item now keeps its final
+   SQL (no data in it), and the report shows the latest SQL of every question wrong in every run
+   — step 5 brings it.
+
+### 28c · Built (D81–D83)
+
+* **D81** — the SQL link per data source (28b-1); the meanings of a run (28b-2); an item's SQL
+  (28b-4). Migration `0019`.
+* **6E, the replayed net (D82)** — in `make test` now: all 32 golden questions through the whole
+  pipeline with a scripted model that errs on purpose (a fan-out join the guard must refuse, a
+  column that does not exist, a wrong answer, a wrong best guess), every prompt fingerprinted and
+  every outcome kept against `tests/fixtures/golden_net/demo_pg.json`. A change that moves a
+  prompt or an outcome fails and names the question; a guard letting a fan-out join through and a
+  prompt losing its JOINS rule are both caught (a test shows it). An intended change: `make
+  golden-net-accept`, and a prompt change then needs fresh golden runs (P6-2).
+* **6B, labels from people (D83)** — every SME decision is a verdict on the machine meaning it
+  judged — accept right; a correction of role or purpose wrong, of name, entity or unit partly,
+  only other names, personal data or the values' meanings right; reject wrong; not used none —
+  with that meaning's model, prompt, scoring version and score: what 6C calibrates on. `make
+  labels`; `make quality` adds "Gaia's meanings, against people" (counts, AUROC, agreement per
+  score band). And **P6-5**: 10 % of the review items (`semantics.review_blind_share`) are shown
+  **without Gaia's certainty** — no score, band, "Gaia is not sure", nor its stated doubts; the
+  item says "a check without Gaia's certainty"; the decision records it, so 6B compares how often
+  people accept with and without it. Decided meanings are never hidden.
+* **6A part 2** — the *Evaluation* page (administrators; auditors from *Audit*): the runs —
+  fresh, replayed, imported, with their meanings — and the report, with a comparison of the newest
+  build against the one before.
+
+### 28d · The run (build D83) — the next run
+
+Outputs `verification/28_*.out`, each starting with `make stamp`; a new `--out` for every golden
+run; at the end `make share` and send `verification/share/`.
+
+**Step 0 — setup and tests.** Migration `0019`. If your `config/gaia.yaml` is a local copy, add
+`review_blind_share: 0.10` under `semantics:` (without it no item is blind).
+
+```bash
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head) > verification/28_migrate.out 2>&1
+(make stamp; make test) > verification/28_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/28_web.out 2>&1
+```
+
+- [ ] `28_migrate.out`: `0018 -> 0019 …`
+- [ ] `28_tests.out`: `gaia build 2026-11-17 · D83 (6A, 6B, 6E net; D81)` and **744 passed, 0 skipped**
+      (sandbox: 734 passed, 10 skipped). The new net (`test_golden_net_pg.py`) compares your server's
+      prompts with the sandbox's: if it fails with *"every prompt moved and no outcome did"*, your
+      database profiles differently — run the command the message names (it keeps your server's
+      own net) and send the message; any other difference there is a finding
+- [ ] `28_web.out`: **49 passed**, then `✓ built`
+
+**Step 1 — the SQL link.** As akaya: a question on `demo_mssql` — no *Show the SQL*; on `demo_pg`
+— the link, and the SQL opens. As dyilmaz (administrator): the link on both.
+
+**Step 2 — GAIA-Finance in Entra.** Create a **Security** group named exactly `GAIA-Finance`, put
+the Finance test user in it, then:
+
+```bash
+(make stamp; make auth ARGS="directory sync corp"; make auth ARGS="directory roles corp"
+ make auth ARGS="grant user --role corp/GAIA-Finance") > verification/28_entra.out 2>&1
+```
+
+and sign in as that user with Microsoft.
+
+**Step 3 — review, with some items blind.** As akaya: *Review* → the queue. About one item in ten
+says **"a check without Gaia's certainty"** — no score, no band; decide it as any other. Decide
+at least ten items, a few of them blind. Then:
+
+```bash
+(make stamp; make labels TARGET=demo_pg) > verification/28_labels.out 2>&1
+```
+
+- [ ] every decision you made is there as right, partly or wrong, with the score Gaia had
+
+**Step 4 — the golden runs with the meanings recorded.** Three fresh runs (`--out …d83a/b/c`),
+then the report:
+
+```bash
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d83$run") \
+    > verification/28_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make quality TARGET=demo_pg ARGS="--compare-builds") \
+  > verification/28_quality.out 2>&1
+```
+
+- [ ] the runs table has a **Meanings** column; D83 against D80 names different meanings if your
+      step-3 decisions came in between (they do), and says the difference is not the build's alone
+- [ ] o06, if still wrong in every run, with its **SQL** under it — the reason will be visible
+- [ ] a section "Gaia's meanings, against people (6B)" at the end
+
+**Step 5 — the Evaluation page.** As dyilmaz: *Evaluation* — the report and the runs; tick
+"compare the newest build with the one before". As bdemir: *Audit* → *Evaluation*.
+
+**Step 6 — send.** `make share` → send `verification/share/` (and nothing from `verification/`
+itself).
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -2759,6 +2904,10 @@ The Phase 5 gate (steps 1, 2 and 4 decide it); 6A part 2 (the *Evaluation* page)
 | An Entra group is not a role | not named with the prefix, not a security group, or a Microsoft 365 group (D79) | `directory probe`: the roles line names every group left out, and why; make a *Security* group |
 | "This page could not be shown" | a page failed to render; the message says why (since D77) | send the message; D79 fixed "destroy is not a function" on the chat |
 | An upload of outputs is refused for personal data | outputs carry accounts, tenants, user names | `make share`, send `verification/share/` only |
+| An SME sees no *Show the SQL* under an answer | the data source is not one they review (P5-7, D81) | as intended; an administrator or auditor sees it, or grant `sme` for that data source |
+| A review item says "a check without Gaia's certainty" | P6-5: one item in ten hides Gaia's score and doubts, to measure whether people follow them (D83) | decide it as any other; `semantics.review_blind_share: 0` turns it off |
+| `make test`: `the golden net moved` | a change moved a golden question's prompt or outcome (6E, D82) | read the lines: an intended change → `make golden-net-accept` (and fresh golden runs for a prompt change); "every prompt moved and no outcome did" on a new server → its own net, as the message says |
+| `make quality`: "different meanings … not the build's alone" | SME decisions or re-reasoning between the compared runs (D81) | compare runs on the same meanings, or read the difference as the meanings' too |
 | `directory probe`: `the service account's bind was refused` | `bind_dn` or its password | `make auth ARGS="directory update NAME --password"` |
 | Every API call answers 401 | no session (sign in), or the session expired (30 min idle, 8 h at most) | sign in again; from scripts, log in with `POST /api/auth/login` and send the `X-CSRF-Token` header on changes |
 | `missing or wrong CSRF token` | a POST/PATCH/DELETE without the `X-CSRF-Token` header (the value of the `gaia_csrf` cookie) | the web UI sends it; a script must too |

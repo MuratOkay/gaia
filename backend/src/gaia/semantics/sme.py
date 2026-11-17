@@ -34,11 +34,13 @@ is not a PII processor as shapes only (``aaaa.aaaa@aaaa.aaa``).
 
 from __future__ import annotations
 
+import hashlib
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+import sqlalchemy as sa
 from sqlalchemy import and_, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -90,6 +92,7 @@ class ReviewService:
         self.settings = settings
         self.factory = session_factory
         self.now = now or (lambda: datetime.now(UTC))
+        self.blind_share = settings.semantics.review_blind_share  # P6-5
 
     # -- helpers ---------------------------------------------------------------------------
     async def _source(self, s: AsyncSession, name: str) -> DataSource:
@@ -159,7 +162,7 @@ class ReviewService:
                 rows = (await s.execute(q.order_by(ColumnSemantic.reviewed_at.desc())
                                         .limit(limit).offset(offset))).all()
                 return {"total": total, "items": [
-                    _item(None, t, c, sem) for sem, c, t in rows]}
+                    _item(None, t, c, sem, self.blind_share) for sem, c, t in rows]}
             wanted = ("open",) if status == "open" else ("done", "dismissed")
             base = (select(ReviewItem, TableRecord, ColumnRecord, ColumnSemantic)
                     .join(TableRecord, TableRecord.id == ReviewItem.table_id)
@@ -170,6 +173,9 @@ class ReviewService:
                     .where(ReviewItem.data_source_id == ds.id, ReviewItem.status.in_(wanted)))
             if reason:
                 base = base.where(ReviewItem.reasons.contains([reason]))
+                if self.blind_share > 0:  # a filter on why would tell a blind item's certainty
+                    base = base.where(~and_(_blind_sql(self.blind_share),
+                                            ColumnSemantic.reviewed_by.is_(None)))
             if table:
                 base = base.where(func.lower(TableRecord.schema_name + "."
                                              + TableRecord.object_name) == table.lower())
@@ -177,7 +183,8 @@ class ReviewService:
             order = (ReviewItem.priority.desc(), ReviewItem.id) if status == "open" else \
                 (ReviewItem.resolved_at.desc(),)
             rows = (await s.execute(base.order_by(*order).limit(limit).offset(offset))).all()
-            return {"total": total, "items": [_item(i, t, c, sem) for i, t, c, sem in rows]}
+            return {"total": total, "items": [_item(i, t, c, sem, self.blind_share)
+                                              for i, t, c, sem in rows]}
 
     async def column(self, data_source: str, column_id: uuid.UUID, who: Reviewer
                      ) -> dict[str, Any]:
@@ -229,7 +236,14 @@ class ReviewService:
                 .limit(1))
             questions = await self._questions(s, ds, table, col.column_name)
             meaning = _meaning(sem) if sem else None
+            blind = _blind(col, sem, self.blind_share)
+            if blind and meaning is not None:  # P6-5: Gaia's certainty is not shown
+                meaning.update(score=None, raw_score=None, band=None, self_confidence=None,
+                               critique=None)
+                versions = [{**v, "score": None, "band": None} if not v["reviewed_by"] else v
+                            for v in versions]
             return {
+                "blind": blind,
                 "data_source": ds.name,
                 "table": {"id": str(table.id), "schema": table.schema_name,
                           "name": table.object_name, "kind": table.kind,
@@ -239,14 +253,16 @@ class ReviewService:
                           "status": tsem.status if tsem else None},
                 "column": {"id": str(col.id), "name": col.column_name, **facts},
                 "meaning": meaning,
-                "summary": _summary(meaning, ledger, tests, profile, personal),
-                "breakdown": sem.score_breakdown if sem else None,
+                "summary": [x for x in _summary(meaning, ledger, tests, profile, personal)
+                            if not (blind and x["key"] == "unsure")],  # doubt, in words
+                "breakdown": sem.score_breakdown if sem and not blind else None,
                 "ledger": ledger, "profile": profile, "personal": personal,
                 "masked": personal and not who.pii_processor,
                 "tests": tests, "join_hints": hints, "lineage": lineage,
                 "versions": versions, "questions": questions,
                 "review": None if item is None else {
-                    "id": str(item.id), "status": item.status, "reasons": list(item.reasons),
+                    "id": str(item.id), "status": item.status,
+                    "reasons": ["blind"] if blind else list(item.reasons),
                     "priority": round(item.priority, 4), "importance": item.importance,
                     "coverage": item.coverage, "assignee": item.assignee},
                 "reviewable": meaning is not None and not meaning["inherited_from"],
@@ -294,6 +310,7 @@ class ReviewService:
                 .order_by(ColumnRecord.ordinal))).all()
             open_items = {i.column_id: i for i in (await s.scalars(select(ReviewItem).where(
                 ReviewItem.table_id == table.id, ReviewItem.status == "open"))).all()}
+            share = self.blind_share
             return {
                 "data_source": ds.name, "id": str(table.id), "schema": table.schema_name,
                 **(await _category_of(s, table.id)),
@@ -310,14 +327,17 @@ class ReviewService:
                 "columns": [{"id": str(c.id), "name": c.column_name, "data_type": c.data_type,
                              "business_name": sem.business_name if sem else None,
                              "role": sem.role if sem else None,
-                             "score": round(sem.calibrated_score, 3) if sem else None,
-                             "band": sem.band if sem else None,
+                             "score": round(sem.calibrated_score, 3)
+                             if sem and not _blind(c, sem, share) else None,
+                             "band": sem.band if sem and not _blind(c, sem, share) else None,
                              "status": sem.status if sem else None,
                              "inherited": bool(sem and (sem.score_breakdown or {}).get(
                                  "inherited_from")),
                              "queued": c.id in open_items,
-                             "reasons": list(open_items[c.id].reasons) if c.id in open_items
-                             else []} for c, sem in cols],
+                             "blind": _blind(c, sem, share),
+                             "reasons": (["blind"] if _blind(c, sem, share) else
+                                         list(open_items[c.id].reasons))
+                             if c.id in open_items else []} for c, sem in cols],
             }
 
     async def _lineage(self, s: AsyncSession, ds: DataSource, table: TableRecord,
@@ -396,7 +416,10 @@ class ReviewService:
                 row["unused"] = True
             row["score_breakdown"] = {
                 "sme": {"action": action, "reviewer": who.login, "at": now.isoformat(),
-                        "note": note},
+                        "note": note,
+                        # decided without Gaia's certainty on screen (P6-5)
+                        "blind": bool(not cur.reviewed_by
+                                      and is_blind(column_id, self.blind_share))},
                 "previous": {"version": cur.version, "status": cur.status, "band": cur.band,
                              "raw_score": cur.raw_score,
                              "calibrated_score": cur.calibrated_score},
@@ -734,8 +757,33 @@ def _with_meanings(domain: dict[str, Any], meanings: dict[str, str]) -> dict[str
 # -- views of rows ---------------------------------------------------------------------------
 
 
+def is_blind(column_id: Any, share: float) -> bool:
+    """P6-5 (D83): whether a column's undecided meaning is shown without Gaia's certainty —
+    a fixed share of columns, chosen by a hash of the column (the same on every screen and
+    every visit), so that people's decisions can be compared with and without it."""
+    if not column_id or share <= 0:
+        return False
+    return int(hashlib.sha256(str(column_id).encode()).hexdigest()[:8], 16) / 0xFFFFFFFF < share
+
+
+def _blind_sql(share: float):
+    """``is_blind`` in SQL, on the review item's column (the same hash: PostgreSQL's sha256 of
+    the id as text, its first 32 bits)."""
+    return sa.text("('x' || substr(encode(sha256(convert_to(semantics.review_item.column_id"
+                   "::text, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint / 4294967295.0 < :share"
+                   ).bindparams(share=share)
+
+
+def _blind(c: ColumnRecord | None, sem: ColumnSemantic | None, share: float) -> bool:
+    return bool(c is not None and sem is not None and not sem.reviewed_by
+                and is_blind(c.id, share))
+
+
 def _item(item: ReviewItem | None, t: TableRecord, c: ColumnRecord | None,
-          sem: ColumnSemantic | None) -> dict[str, Any]:
+          sem: ColumnSemantic | None, share: float = 0.0) -> dict[str, Any]:
+    if _blind(c, sem, share):  # P6-5: no score, band or "Gaia is not sure"
+        return {**_item(item, t, c, sem), "score": None, "band": None, "reasons": ["blind"],
+                "blind": True}
     return {
         "id": str(item.id) if item else None,
         "table_id": str(t.id), "table": f"{t.schema_name}.{t.object_name}",
@@ -837,6 +885,8 @@ def _summary(meaning: dict[str, Any] | None, ledger: list[dict[str, Any]],
     if meaning["reviewed_by"]:
         out.append({"key": "decided", "status": meaning["status"],
                     "who": meaning["reviewed_by"]})
+    elif meaning["score"] is None:
+        out.append({"key": "blind"})  # P6-5
     else:
         out.append({"key": "score", "score": meaning["score"], "band": meaning["band"],
                     "supports": sum(1 for e in ledger if e["direction"] == "supports"),

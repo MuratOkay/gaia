@@ -1954,3 +1954,25 @@ processes, so the host run is no longer the first time the screens meet a direct
   a comparison question by question with the uncertainty shown — *passes*, *fails* or *cannot
   tell* against the owner's 3-point rule (P6-2). Calibration (6C) and the regression nets (6E)
   build on the same store.
+
+## 43. A build is not the only thing that changes (D81–D83, build D83, 2026-11-17)
+
+The first quality report on real runs said D80 "passes" against D77, and named g07 among the
+questions that moved — from wrong in every D77 run to right in every D80 run. The code had not
+changed anything that bears on g07; the owner had, by telling Gaia what `finance.invoices.status`
+codes mean. That is the product working as designed (human-in-the-loop, A1), and it is also a
+trap for every comparison Phase 6 makes: **what the model reads changes between runs without a
+build** — SME decisions, re-reasoning, glossary terms. So a run now records a fingerprint of the
+meanings it answered with, and a comparison says when its sides differ. The same principle runs
+through the rest of Phase 6:
+
+* **Labels come from people, not from a model** (6B, D83). An SME's decision is a verdict on a
+  specific machine meaning, with that meaning's model and score beside it; that pairing is what
+  calibration needs, and it exists as a by-product of the review rather than as extra work.
+* **People can be anchored.** A reviewer who sees "Gaia is not sure · 0.32" may judge differently
+  from one who does not. A fixed share of items hides Gaia's certainty until decided; comparing
+  agreement with and without it says how much the labels lean toward Gaia.
+* **Regressions are caught where they cannot hide** (6E, D82). A golden run costs model calls and
+  varies by several points; a replayed net costs nothing, never varies, and turns "the guard let a
+  fan-out join through" or "the context lost a line" into a named failing question in every test
+  run — leaving the expensive, noisy runs for what only they can measure: the model.

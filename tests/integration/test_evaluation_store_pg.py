@@ -18,6 +18,7 @@ from gaia.evaluation.recorder import RecordingLLMClient
 from gaia.evaluation.store import (
     import_golden_dir,
     load_runs,
+    meanings_state,
     question_set_key,
     record_golden,
     run_mode,
@@ -33,13 +34,14 @@ GOLDEN = Path(__file__).resolve().parents[2] / "infra" / "pg-target" / "golden.y
 
 
 @pytest.mark.asyncio
-async def test_golden_runs_become_measurements(pg_session_factory, tmp_path):
+async def test_golden_runs_become_measurements(pg_session_factory, tmp_path, fake_llm,
+                                               fake_embedder):
     from test_golden_pg import GoldenModel, _plan
-    from test_profiling_pg import _introspect, _settings, _target
+    from test_profiling_pg import _target
+    from test_review_pg import _world
 
     factory = pg_session_factory
-    await _introspect(factory)
-    settings = _settings()
+    settings, _review = await _world(factory, fake_llm, fake_embedder)
     async with factory() as s:
         index = await load_retrieval_index(s, "demo_pg", settings)
     golden = load_golden(GOLDEN)
@@ -54,6 +56,7 @@ async def test_golden_runs_become_measurements(pg_session_factory, tmp_path):
         async with factory() as s:
             run = await record_golden(
                 s, data_source="demo_pg", outcomes=outcomes, summary=summarise(outcomes),
+                meanings=await meanings_state(s, "demo_pg"),
                 question_set=str(GOLDEN), out_dir=str(out), model="scripted", build=build,
                 set_key=question_set_key((o.id, o.question, o.expect) for o in outcomes),
                 live_calls=llm.live_calls, replayed_calls=llm.replayed,
@@ -69,6 +72,14 @@ async def test_golden_runs_become_measurements(pg_session_factory, tmp_path):
     again, _ = await golden_run(right, tmp_path / "a", "B1")
     assert again.mode == "replay" and again.live_calls == 0 and run_mode(3, 2) == "mixed"
 
+    assert first.meanings_key and first.meanings_key == second.meanings_key
+    # an SME decides a meaning between the builds (D81)
+    async with factory() as s:
+        await s.execute(sa.text(
+            "UPDATE semantics.column_semantic SET status = 'sme_reviewed' WHERE is_current AND "
+            "column_id = (SELECT c.id FROM catalog.columns c JOIN catalog.tables t ON "
+            "t.id = c.table_id WHERE t.object_name = 'invoices' AND c.column_name = 'status')"))
+        await s.commit()
     # a build whose model gets g01 wrong
     wrong = GoldenModel(golden)
     g01 = next(q for q in golden.questions if q.id == "g01")
@@ -106,4 +117,6 @@ async def test_golden_runs_become_measurements(pg_session_factory, tmp_path):
                                excluded=sel.excluded, baseline=sel.baseline,
                                candidate=sel.candidate)
     assert doc["comparison"]["moved"] == [["g01", 1.0, 0.0]]
+    assert third.meanings_key != first.meanings_key and third.meanings["sme_decisions"] == 1
+    assert "different meanings (SME decisions 0 → 1" in doc["comparison"]["meanings"]
     assert "g01: right in 100% of the baseline's runs, 0% of the candidate's" in text

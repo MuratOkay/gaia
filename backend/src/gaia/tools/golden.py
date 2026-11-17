@@ -36,7 +36,13 @@ from gaia.core.config import get_settings
 from gaia.db.engine import dispose_engine, get_engine
 from gaia.db.repositories.query_store import QueryStore
 from gaia.evaluation.recorder import RecordingLLMClient
-from gaia.evaluation.store import git_commit, question_set_key, record_golden, run_mode
+from gaia.evaluation.store import (
+    git_commit,
+    meanings_state,
+    question_set_key,
+    record_golden,
+    run_mode,
+)
 from gaia.query.golden import load_golden
 from gaia.query.golden_run import report_markdown, run_golden, summarise
 from gaia.query.retrieval_store import load_retrieval_index
@@ -80,6 +86,7 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"as {policy.label}: {len(policy.readable)} object(s) readable"
                       + ("" if policy.pii_processor else ", personal data masked"))
             index = restrict_index(full_index, policy)
+            meanings = await meanings_state(session, label)  # what it answers with (D81)
             hits: dict[str, object] = {}
             if not args.no_vectors:
                 from gaia.tools.retrieve import _embedder, _vectors
@@ -133,7 +140,7 @@ async def _run(args: argparse.Namespace) -> int:
                     set_key=question_set_key((o.id, o.question, o.expect) for o in outcomes),
                     live_calls=llm.live_calls, replayed_calls=llm.replayed, started_at=started,
                     as_login=policy.label if args.as_login else None,
-                    created_by=cli_actor(), commit=git_commit())
+                    created_by=cli_actor(), commit=git_commit(), meanings=meanings)
                 await session.commit()
     finally:
         await dispose_engine()

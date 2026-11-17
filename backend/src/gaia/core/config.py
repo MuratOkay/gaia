@@ -357,6 +357,9 @@ class SemanticsConfig(BaseModel):
     embed_after_reasoning: bool = True
     # Prompt generation: 1 = Phase 2 (catalog only), 2 = Phase 3B (evidence).
     prompt_major: Literal[1, 2] = 2
+    # P6-5 (D83): this share of review items is shown without Gaia's certainty, to measure
+    # whether people follow it; 0 turns it off
+    review_blind_share: float = Field(default=0.0, ge=0.0, le=1.0)  # config: 0.10
 
 
 class QueryConfig(BaseModel):

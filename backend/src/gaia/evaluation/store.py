@@ -23,12 +23,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gaia.db.models.evaluation import EvaluationItem, EvaluationRun
 from gaia.evaluation.quality import ItemView, RunView
 
-__all__ = ["git_commit", "import_golden_dir", "load_runs", "question_set_key",
-           "record_golden", "run_mode"]
+__all__ = ["git_commit", "import_golden_dir", "load_runs", "meanings_state",
+           "question_set_key", "record_golden", "run_mode"]
 
 ITEM_FIELDS = ("question", "expect", "first_status", "final_status", "correct",
                "correct_first", "executable", "over_clarified", "answered_directly",
-               "best_guess", "ambiguity", "repairs", "calls", "tokens", "seconds", "reason")
+               "best_guess", "ambiguity", "repairs", "calls", "tokens", "seconds", "reason",
+               "sql")
 
 
 def question_set_key(questions: Iterable[tuple[str, str, str]]) -> str:
@@ -55,6 +56,36 @@ def git_commit() -> str | None:
         return None
 
 
+async def meanings_state(session: AsyncSession, data_source: str
+                         ) -> tuple[str | None, dict[str, Any]]:
+    """The meanings a question is answered with, now (D81): a fingerprint of the current
+    table and column semantic versions, the glossary and the confirmed joins of the data
+    source, and what people decided among them."""
+    from gaia.db.models.catalog import DataSource, TableRecord
+    from gaia.db.models.semantics import ColumnSemantic, GlossaryTerm, JoinHint, TableSemantic
+
+    ds = await session.scalar(select(DataSource).where(DataSource.name == data_source))
+    if ds is None:
+        return None, {}
+    tables = (await session.execute(select(TableSemantic.id, TableSemantic.status).where(
+        TableSemantic.data_source_id == ds.id, TableSemantic.is_current.is_(True)))).all()
+    columns = (await session.execute(
+        select(ColumnSemantic.id, ColumnSemantic.status)
+        .join(TableRecord, TableRecord.id == ColumnSemantic.table_id)
+        .where(TableRecord.data_source_id == ds.id, ColumnSemantic.is_current.is_(True)))).all()
+    terms = (await session.execute(select(GlossaryTerm.id, GlossaryTerm.updated_at).where(
+        GlossaryTerm.data_source_id == ds.id))).all()
+    joins = (await session.execute(select(JoinHint.id, JoinHint.status).where(
+        JoinHint.data_source_id == ds.id, JoinHint.source == "sme"))).all()
+    parts = sorted(f"t{i}:{st}" for i, st in tables) + sorted(f"c{i}:{st}" for i, st in columns)
+    parts += sorted(f"g{i}:{u.isoformat() if u else ''}" for i, u in terms)
+    parts += sorted(f"j{i}:{st}" for i, st in joins)
+    decided = sum(1 for _i, st in [*tables, *columns] if str(st).startswith("sme_"))
+    facts = {"sme_decisions": decided, "glossary_terms": len(terms), "sme_joins": len(joins),
+             "meanings": len(tables) + len(columns)}
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()[:12], facts
+
+
 def _item(run_id: uuid.UUID, key: str, values: dict[str, Any]) -> EvaluationItem:
     row = {f: values.get(f) for f in ITEM_FIELDS}
     for f in ("over_clarified", "answered_directly"):
@@ -72,7 +103,9 @@ async def record_golden(session: AsyncSession, *, data_source: str, outcomes: Se
                         build: str | None, live_calls: int | None, replayed_calls: int | None,
                         started_at: datetime, as_login: str | None = None,
                         created_by: str | None = None, mode: str | None = None,
-                        commit: str | None = None) -> EvaluationRun:
+                        commit: str | None = None,
+                        meanings: tuple[str | None, dict[str, Any]] | None = None
+                        ) -> EvaluationRun:
     run = EvaluationRun(kind="golden", data_source=data_source, question_set=question_set,
                         question_set_key=set_key, out_dir=out_dir, build=build,
                         git_commit=commit, model=model, as_login=as_login,
@@ -80,7 +113,9 @@ async def record_golden(session: AsyncSession, *, data_source: str, outcomes: Se
                         live_calls=live_calls, replayed_calls=replayed_calls,
                         summary=json.loads(json.dumps(summary, default=str)),
                         created_by=created_by, started_at=started_at,
-                        finished_at=datetime.now(UTC))
+                        finished_at=datetime.now(UTC),
+                        meanings_key=meanings[0] if meanings else None,
+                        meanings=meanings[1] if meanings else None)
     session.add(run)
     await session.flush()
     for o in outcomes:
@@ -133,6 +168,8 @@ async def load_runs(session: AsyncSession, data_source: str, *, set_key: str | N
         out.append(RunView(str(r.id), r.started_at, r.build, r.model, r.mode, r.as_login, {
             i.item_key: ItemView(i.item_key, i.expect, i.correct, i.executable, i.first_status,
                                  i.final_status, i.best_guess, i.over_clarified,
-                                 i.answered_directly, i.calls, i.tokens, i.seconds, i.reason)
-            for i in items}, set_key=r.question_set_key))
+                                 i.answered_directly, i.calls, i.tokens, i.seconds, i.reason,
+                                 i.sql)
+            for i in items}, set_key=r.question_set_key, meanings_key=r.meanings_key,
+            meanings=dict(r.meanings or {})))
     return out

@@ -228,6 +228,9 @@ semantics:
   # 2 = Phase 3B prompts (evidence block, semantic_type); 1 = Phase 2 prompts.
   # Changing it changes the prompt versions, so every table is re-reasoned once.
   prompt_major: 2
+  # P6-5: 10 % of the review items are shown without Gaia's certainty (score, band, "not
+  # sure"), so 6B can measure whether people follow it. 0 turns it off.
+  review_blind_share: 0.10
 
 retrieval:
   # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).

@@ -237,10 +237,21 @@ class ChatService:
                     policy = await self.policy(session, ds, index, effective, label)
                     readable[v["name"]] = len(policy.readable)
                 views = [v for v in views if readable.get(v["name"])]
+        def sql_visible(name: str) -> bool:
+            """Whether this person may see the SQL of answers here (P5-7, D70): administrators
+            and auditors everywhere, an SME only on the data sources they review (D81: the
+            chat offered "Show the SQL" to an SME everywhere, and the link ended in a refusal)."""
+            if effective is None or effective.has("admin", "auditor"):
+                return True
+            ds = rows.get(name)
+            return bool(ds is not None and effective.has("sme")
+                        and str(ds.id) in effective.sme_sources)
+
         return [{"name": v["name"], "dialect": v["dialect"], "origin": v["origin"],
                  "readable_objects": readable.get(v["name"]),
                  "status": v["status"], "introspected": v["name"] in introspected,
                  "usable": v["status"] in ("config", "verified") and v["name"] in introspected,
+                 "sql": sql_visible(v["name"]),
                  "default": v["name"] == self.settings.app.default_target} for v in views]
 
     async def _data_source(self, session, name: str) -> DataSource:

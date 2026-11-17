@@ -19,6 +19,7 @@ function AuditNav() {
       <NavLink to="/audit/refusals">{t("audit.refusalsNav")}</NavLink>
       <NavLink to="/queries">{t("nav.queries")}</NavLink>
       <NavLink to="/runs">{t("nav.runs")}</NavLink>
+      <NavLink to="/evaluation">{t("nav.evaluation")}</NavLink>
     </nav>
   );
 }

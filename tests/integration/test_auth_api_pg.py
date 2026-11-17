@@ -70,6 +70,9 @@ MATRIX = [  # (method, path, who may: set of logins)
     ("GET", "/api/audit/refusals", {"bdemir"}),
     ("GET", "/api/queries", {"akaya", "dyilmaz", "bdemir"}),  # 5D: never a plain user
     ("GET", "/api/runs", {"dyilmaz", "bdemir"}),  # 5E
+    ("GET", "/api/evaluation/data-sources", {"dyilmaz", "bdemir"}),  # 6A
+    ("GET", "/api/evaluation/runs?data_source=demo_pg", {"dyilmaz", "bdemir"}),
+    ("GET", "/api/evaluation/report?data_source=demo_pg", {"dyilmaz", "bdemir"}),
     ("GET", "/api/audit/summary", {"bdemir"}),
     ("GET", "/api/audit/access", {"bdemir"}),
     ("GET", "/api/audit/events", {"bdemir"}),

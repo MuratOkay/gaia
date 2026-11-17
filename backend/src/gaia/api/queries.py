@@ -106,7 +106,7 @@ async def query(query_id: uuid.UUID, request: Request,
     async with auth.factory() as s:
         r = await s.get(QueryRun, query_id)
         if r is None or (scope is not None and str(r.data_source_id) not in scope):
-            raise HTTPException(404, "no such query")  # another's data source: not there
+            raise HTTPException(404, "no such query among the data sources whose SQL you may see")
         ds = await s.get(DataSource, r.data_source_id)
         root = r
         for _ in range(10):
