@@ -11,8 +11,8 @@ and keeps the counts on stderr; ``-v`` adds the line and the kind.
     scripts/pii_scan.py --also 'Jane Doe'     # a name no pattern can know
     scripts/pii_scan.py docs verification     # some subtrees
 
-For ``make cleanup`` the line is
-``$(PY) $(ROOT)/scripts/pii_scan.py`` (add ``--fail-on-findings`` to stop).
+``make cleanup`` runs it after the caches are gone; add ``--fail-on-findings``
+to that target if it should stop when the list is not empty.
 
 Listed — only what reads as real data:
   * e-mail addresses outside the domains that only docs and fixtures use

@@ -27,7 +27,9 @@ cleanup:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
+	@$(PY) $(ROOT)/scripts/pii_scan.py
+	@echo "Cleaned up pycache and pytest cache files."
+	@echo "The files listed above hold personal data or a credential; 'scripts/pii_scan.py -v' says where."
 
 .PHONY: share
 share: ## Verification outputs safe to send: personal data replaced consistently (ARGS="[--check] [--also NAME] files")
