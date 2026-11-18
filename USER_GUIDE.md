@@ -582,7 +582,8 @@ an expert). The level is a rule of thumb until enough answers are checked (Phase
 follows how often answers like this one were right — *high* from 95 % — and SMEs, administrators
 and auditors see the percentage and its lower bound; until then they see *uncalibrated*.
 
-**Was this right?** Under every answer: *Yes*, *Partly* or *No*, with a note for the last two.
+**Was this right?** Under every answer: *Yes*, *Partly* or *No* — each is sent on the click; after
+*Partly* or *No*, *add a note* says what was not right (optional, and it can be changed later).
 *Yes* is counted. *Partly* and *No* go to the data source's expert (SME), who decides what the
 answer really was and why; the decision then appears under the answer. Your verdict can be
 changed; after the expert has decided, their decision stands. A question Gaia
@@ -1191,7 +1192,7 @@ make auth ARGS="refusals --last 40"
 
 | The reason | What to do |
 |---|---|
-| `directory acme: … connect …` | the directory is not answering — for the Samba test AD after a reboot: `infra/auth/samba-ad-test.sh start` |
+| `directory acme: … connect …` | the directory is not answering — for the Samba test AD after a reboot: `bash infra/auth/samba-ad-test.sh start` |
 | `directory acme: … certificate …` | its CA changed (a test domain provisioned again): `infra/auth/samba-ad-test.sh ca`, then `make auth ARGS="directory probe acme"` |
 | `the directory object changed` | D78: the same login, a new directory object — `make auth ARGS="account relink acme/LOGIN"` if it is the same person (`acme --all` for a test domain provisioned again) |
 | `locked after repeated failures` | 5 failures lock an account for 15 minutes (`auth.lockout_minutes`) — wait, then fix the first cause |

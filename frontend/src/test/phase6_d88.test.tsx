@@ -58,13 +58,32 @@ describe("Was this right? (6D)", () => {
     expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ verdict: "right", note: null });
   });
 
-  it("sends a no with a note to the expert", async () => {
+  it("sends a no at once, and the note after it (D92)", async () => {
+    // on the owner's host "Partly" and "No" only opened a form, and two verdicts never reached
+    // the expert: the click itself now sends, the note is optional and follows
     const calls = world();
     fireEvent.click(await screen.findByRole("button", { name: "No" }));
-    fireEvent.change(screen.getByLabelText(/What was not right/), { target: { value: "Ankara is missing" } });
-    fireEvent.click(screen.getAllByRole("button", { name: "Send" }).find((b) => b.closest(".feedback"))!);
     expect(await screen.findByText(/waiting for the data source's expert/)).toBeInTheDocument();
-    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ verdict: "wrong", note: "Ankara is missing" });
+    const puts = () => calls.filter((c) => c.method === "PUT").map((c) => c.body);
+    expect(puts()).toEqual([{ verdict: "wrong", note: null }]);
+    fireEvent.change(screen.getByLabelText(/What was not right/), { target: { value: "Ankara is missing" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save the note" }));
+    expect(await screen.findByText(/“Ankara is missing”/)).toBeInTheDocument();
+    expect(puts()).toEqual([{ verdict: "wrong", note: null }, { verdict: "wrong", note: "Ankara is missing" }]);
+    // the note can be changed later, the verdict stays with the expert
+    fireEvent.click(screen.getByRole("button", { name: "change the note" }));
+    expect(screen.getByLabelText(/What was not right/)).toHaveValue("Ankara is missing");
+  });
+
+  it("sends a partly at once too, and a change of mind", async () => {
+    const calls = world();
+    fireEvent.click(await screen.findByRole("button", { name: "Partly" }));
+    expect(await screen.findByText("You said this was partly right.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "change" }));
+    fireEvent.click(screen.getByRole("button", { name: "Yes" }));
+    expect(await screen.findByText("You said this was right.")).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "PUT").map((c) => (c.body as { verdict: string }).verdict))
+      .toEqual(["partly", "right"]);
   });
 
   it("shows the expert's decision", async () => {

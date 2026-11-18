@@ -20,18 +20,19 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D91 (o06: the vectors search the clarified question; D90 +
-  P6-8, P6-9)` — built while §31e ran on D90: the vector search reads the same text as the word
-  search (the question, the answers to its clarifications, the turn before), so o06's "… over all
-  orders that were not cancelled" reaches both (§31f). **Finish §31e on D90, then §31f on D91.***
+  there. *Latest build: `2026-11-18 · D92 ("Was this right?" sent on the click; D91 o06
+  retrieval; D90)` — the §31e run triaged (§32): the fresh net's acceptance test **passed**;
+  "Partly" and "No" now reach the expert on the click (two of yours never did); the Samba
+  script is executable again; D91's o06 retrieval is in this build. **The next run: §32e — the
+  last one of Phase 6.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
   D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
-  failed) — **triaged in §31**, and **§31e is the next run** (build D90), then **§31f** (build
-  D91). **Send outputs only through `make share`.**
+  failed) — triaged in §31; §31e was run on D90 — **triaged in §32**, and **§32e is the next run**
+  (build D92; it includes §31f). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3401,7 +3402,9 @@ columns people decided before the switch, rollback, the old model's results kept
 an honest start: a new model is **uncalibrated** until its own labels say otherwise — a
 calibrator passes from one model to another only through an alias, and only for a rename (P6-9).
 
-### 31e · The run (build D90) — the next run
+### 31e · The run (build D90)
+
+*Run (the `31_*` outputs); triaged in §32. §31f was not run — §32e includes it.*
 
 Outputs `verification/31_*.out`, each starting with `make stamp`; a new `--out` for every golden
 run; at the end `make share` and send `verification/share/`.
@@ -3554,6 +3557,174 @@ done
       its context with its answer's vectors too, so a break there is possible and is exactly what
       this comparison is for: send it as it is
 - [ ] the line *made … h before* only if more than 6 hours passed since §31e's runs
+
+---
+
+## 32 · Triage of the D90 run, build D92, and the Phase 6 gate (2026-11-18)
+
+I read the eighteen `31_*` files (build D90, git `ebbfde2`) and your notes: finn could not sign
+in, so bdemir answered the three questions; akaya then had nothing to review. And your question:
+*can we finish Phase 6?* — 32d.
+
+### 32a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `31_migrate.out`, `31_tests.out` | `0020 (head)`; `make test-host`: **780 passed, 0 skipped, 0 failed** | ✅ the replayed net now passes on your server (g09, D90) |
+| `31_signin.out` | `samba-ad-test.sh: Permission denied`; `acme`'s probe: *the TLS handshake failed (UNEXPECTED_EOF_WHILE_READING)*; `corp` passes all six checks (GAIA-Finance among the roles); `refusals`: every `acme` sign-in since 08:09 refused with *directory unreachable … UNEXPECTED_EOF* | the Samba test AD was not running, and the script to start it could not run: 32b-2 |
+| `31_golden_a/b/c.out` | D90: 27, 27, 28 of 30; executable 30/30 | ✅ |
+| `31_quality_d88.out` | D90 against D88 (the SQL prompt v4 against v3): **+1.1 points (−6.7 to +8.9), named breaks: none — cannot tell**; repairs 1.0 → 1.7 a run | ✅ v4 costs nothing visible; no session line (2 h apart) |
+| `31_drop_stores_*`, `31_quality_stores.out` | `drop:store.stores`: **fails — broken: c03, g02, g17**; *expected … named: 3 of 5*; and *fixed: o06* | ✅ **caught** — 32b-1 |
+| `31_drop_invoices_*`, `31_quality_invoices.out` | `drop:finance.invoices`: **fails — broken: g07**; *named: 1 of 1* | ✅ **caught: one question that breaks every time is enough** |
+| `31_feedback.out` | meanings of `deepseek-flash` *with its earlier names* — **30 labels** (13 SME + 17 of your N-P audits, P6-9), 1 not right: too few; answers *180 labels on 30 subjects, 6 not always right: too few*; nothing fitted; feedback **1 yes, 0 partly, 0 no** | ✅ P6-9 and P6-1 as intended; the feedback: 32b-3 |
+| `31_categories.out` | `demo_pg`: 26 of 28 as you confirmed; **`demo_mssql`: 18 of 29 (62 %)**, and of the 13 proposals you saw there, **you kept none** | ✅ measured — what it says: 32b-4 |
+
+### 32b · Findings
+
+1. **The fresh net's acceptance test passed (P6-8).** Dropping `store.stores` was caught by three
+   named breaks; of the five questions that need it, o03 could not be named (right in only 2 of
+   the 3 D90 runs — a flaky question cannot break "every time") and **g09 did not break at all**:
+   the products below their reorder level per store are answered from `store.inventory.store_id`
+   alone, so g09 does not really need `store.stores` (its `objects` overstate it). Dropping
+   `finance.invoices` was caught by g07 alone — the net sees a single question that breaks every
+   time. **And o06 was right in all three `drop:store.stores` runs**: with one object fewer in the
+   running, `sales.orders` got into o06's context — the retrieval diagnosis of §30b-3 confirmed
+   from the other side, and what D91 fixes properly.
+2. **Sign-in: the Samba test AD was down, and my delivery broke its script.** The probe's handshake
+   failed and every `acme` sign-in since 08:09 says *directory unreachable* — Samba was not running
+   in its container (after a reboot it does not come back by itself). `infra/auth/samba-ad-test.sh
+   start` was the fix, and it said *Permission denied*: the scripts had lost their executable bit
+   in the repository. **Fixed (D92):** executable again (`samba-ad-test.sh`, `owner_runs.sh`,
+   `strip_verification_first_line.sh`); the commands below call them with `bash`, which works
+   either way. An unreachable directory does not count towards the lockout — only wrong passwords
+   do — so if finn still fails once Samba runs, `make auth ARGS="refusals"` names the other reason
+   (after a new domain: *the directory object changed*, §31b-2).
+3. **"Partly" and "No" never reached the expert — a flaw of the chat, not of your test.** Clicking
+   *Yes* sends at once; clicking *Partly* or *No* only opened a note box, and nothing was sent until
+   its *Send* was pressed. The report counts exactly what that predicts: 1 yes, no partly, no no,
+   nothing waiting and nothing decided — so nothing for akaya. **Fixed (D92):**
+   every verdict is sent on the click and the item reaches the expert at once; the note box then
+   offers *Save the note* (optional, changeable — *change the note*), and the line under the answer
+   shows the note. If bdemir's two answers were on another data source, that would also leave
+   akaya's queue empty; step 3 removes the doubt.
+4. **Categories on `demo_mssql`: the rule disagrees with you on one theme.** Of the eleven misses,
+   five are the same two cases: `payments`, `payment_methods`, `saved_payment_methods`,
+   `store_credit_ledger` proposed as **Sales** or **Store**, you said **Finance**; `inventory`,
+   `inventory_movements` proposed **Store**, you said **Product** (and on `demo_pg`, `sales.payments`
+   the same). Every miss's reason shows why: *payment* counts for **Sales** today, *inventory* and
+   *store* for **Store** — your categories' words more than the rule's weights. Giving *payment*,
+   *ledger* and *credit* to Finance and *inventory* to Product on *Data categories* is your
+   decision and changes no code; fitting D77's weights to 58 confirmations would still fit noise
+   (6G).
+
+### 32c · Built (D92; no migration)
+
+* "Was this right?" sends every verdict on the click; the note follows (32b-3). Web tests **62**
+  (+1).
+* The scripts' executable bits (32b-2).
+* D91's o06 retrieval (§31f) is in this build: step 2 below measures it.
+
+Sandbox: **772 passed, 10 skipped** (the backend as D91); web **62**; `✓ built`.
+
+### 32d · Can Phase 6 be finished?
+
+**Yes — after one short run, and with one criterion recorded as not met.** Against PHASES, Phase 6,
+*Acceptance criteria*, on your host:
+
+| Criterion | Evidence | |
+|---|---|---|
+| `make quality`: one report, intervals, clarification, labels, calibration, cost | §28–§31 on real runs | ✅ |
+| Reproducible; replays marked | the same three D88 runs read 81 of 90 under D88 and under D89 (`29_quality`, `30_quality`); replays left out since D80 | ✅ |
+| Calibration beats the identity — or the report says too few labels | "too few" with the counts, per model, pooled over renames | ✅ (the second branch) |
+| A deliberate regression caught by each net | fresh: `drop:store.stores` and `drop:finance.invoices` both *fail*, with named breaks (§31e); replayed: the fan-out guard and the JOINS rule in `make test`, 780 passed | ✅ (P6-8) |
+| Three runs, compared question by question | every comparison since §28 | ✅ |
+| **"High" is right at least as often as its threshold says** | shown: high right 16 of 17 (94 %, interval 73–99 %) — the threshold is 95 % and the interval cannot show it; the levels are not fitted yet, and fitting them needs P6-1's answer labels (75 questions, 15 not right) — more than the 30 golden questions can ever give | ❌ **not met** — it needs 6F's questions and decided feedback from real use |
+| The judge's agreement in every report, read by nothing | κ 0.65 (§31a) | ✅ |
+| Category proposals' accuracy per basis | both databases (32a) | ✅ |
+
+What is **not** done, by the phase's own cut line (*"6D's feedback control, 6F's drafted questions
+and 6G can move to Phase 7"*): **6F** (`nge_small`'s golden set, persona runs, D61 (b)); **6D part
+2** (answer levels fitted — waits for labels); **6C's first real fit** (waits for labels); **6G's
+weights** (wait for more confirmations). And one thing must still be seen on your host: the SME's
+half of "Was this right?" (32b-3) — step 3.
+
+So my recommendation, **P6-10**: close Phase 6 after §32e, with the "high" criterion recorded as
+*not met — measurable only with more labelled questions* (as P6-0 recorded 3C's criterion 4), and
+6F, 6D part 2, the first real calibration and 6G's weights carried to Phase 7's backlog. The
+decision and the tick are yours (PHASES, Phase 6, *Decisions needed*, P6-10).
+
+### 32e · The run (build D92) — the last of Phase 6
+
+Outputs `verification/32_*.out`, each starting with `make stamp`; a new `--out` for every golden
+run; at the end `make share`.
+
+**Step 0 — tests.**
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make test-host) > verification/32_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/32_web.out 2>&1
+```
+
+- [ ] `32_tests.out`: `… D92 …` and **782 passed, 0 skipped, 0 failed**
+- [ ] `32_web.out`: **62 passed**, then `✓ built`
+
+**Step 1 — the test directory, and sign-in.**
+
+```bash
+bash infra/auth/samba-ad-test.sh start
+(make stamp; bash infra/auth/samba-ad-test.sh status; make auth ARGS="directory probe acme") > verification/32_signin.out 2>&1
+```
+
+Sign in as **finn**, **akaya** and **dyilmaz**, then:
+
+```bash
+(make stamp; make auth ARGS="refusals --last 15") >> verification/32_signin.out 2>&1
+```
+
+- [ ] `status`: *Samba: running*, the CA matches; the probe's four checks pass
+- [ ] `refusals`: *signed in* for finn, akaya and dyilmaz — or, for finn, the reason (then the fix
+      in USER_GUIDE §9, and once more)
+
+**Step 2 — o06's retrieval (D91), three fresh runs against D90's.**
+
+```bash
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d92$run") \
+    > verification/32_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/32_quality.out 2>&1
+```
+
+- [ ] baseline the three D90 runs, candidate the three D92 runs; **o06** *fixed* (wrong in every
+      D90 run, right in every D92 run) — or at least no longer *the context lacked sales.orders*
+- [ ] *named breaks: none* — every clarified question now ranks its context with its answer's
+      vectors too; a break is a finding, send it as it is
+- [ ] *made … h before* only if more than 6 hours passed since §31e
+
+**Step 3 — "Was this right?" and the SME, end to end** (in the browser, on `demo_pg`).
+
+1. As **finn**: ask three questions. Under the first answer click **Yes**; under the second
+   **Partly** — it says *waiting for the data source's expert* at once — then *add a note*, write
+   one, *Save the note*; under the third **No**, and leave it without a note.
+2. As **akaya**: *Review* — `demo_pg` says *2 answer(s) people doubted*; open them: the question,
+   the table, the SQL, finn's note on one. Decide the *Partly* one **wrong** with a cause, the *No*
+   one **right after all**.
+3. As **finn**: reopen the conversations — the decisions are under the answers.
+
+```bash
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3") > verification/32_feedback.out 2>&1
+```
+
+- [ ] *People's feedback on answers*: **2 yes, 1 partly, 1 no** (bdemir's yes stays), *waiting: 0;
+      decided: 2*
+- [ ] *Calibration*, answers: *… on 32 subject(s)* — the two decisions joined the golden questions
+
+**Step 4 — the Evaluation page.** As dyilmaz: *Evaluation* — the comparison with *named breaks*,
+the calibration cards with the pooled names, the feedback. As bdemir: *Audit → Evaluation*.
+
+**Step 5 — the gate.** If steps 0–4 are as above: P6-10 in PHASES — close Phase 6 as recommended,
+or say what to change. Then `make share` → send `verification/share/`.
 
 ---
 

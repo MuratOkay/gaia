@@ -82,17 +82,21 @@ export function ConfidenceBadge({ confidence, showProbability = false }: {
   );
 }
 
-/** "Was this right?" under an answer (6D, P6-4): right is counted; partly and wrong, with a
- *  note, go to the data source's SMEs, whose decision then shows here. */
+/** "Was this right?" under an answer (6D, P6-4): right is counted; partly and wrong go to the
+ *  data source's SMEs, whose decision then shows here. Every verdict is sent on the click
+ *  (D92): before, "Partly" and "No" only opened a note form and nothing reached the expert
+ *  until its Send was pressed — on the owner's host two verdicts were lost that way
+ *  (OWNER_VERIFICATION §32). The note follows, optional, and can be added or changed. */
 export function WasThisRight({ messageId, initial }: { messageId: string; initial?: FeedbackView | null }) {
   const { t } = useTranslation();
   const [given, setGiven] = useState<FeedbackView | null>(initial ?? null);
-  const [choice, setChoice] = useState<Verdict | null>(null);
+  const [changing, setChanging] = useState(false);
+  const [noting, setNoting] = useState(false);
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function send(verdict: Verdict, text?: string) {
+  async function send(verdict: Verdict, text?: string | null) {
     setBusy(true);
     setError(null);
     try {
@@ -100,7 +104,10 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
         method: "PUT", body: { verdict, note: text?.trim() || null },
       });
       setGiven(f);
-      setChoice(null);
+      setChanging(false);
+      // after "Partly" or "No": offer the note (the verdict is already with the expert)
+      setNoting(verdict !== "right" && text === undefined);
+      if (text === undefined) setNote(f.note ?? "");
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -108,7 +115,7 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
     }
   }
 
-  if (given && !choice) {
+  if (given && !changing) {
     return (
       <div className="feedback small" aria-label={t("chat.feedback.title")}>
         <span className="muted">{t(`chat.feedback.given.${given.verdict}`)}</span>
@@ -119,7 +126,23 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
             {given.decision_note && <span className="muted"> ({given.decision_note})</span>}
           </span>
         )}
-        {" "}<button type="button" className="link" onClick={() => { setChoice(given.verdict); setNote(given.note ?? ""); }}>{t("chat.feedback.change")}</button>
+        {given.note && !noting && <span className="muted"> · “{given.note}”</span>}
+        {" "}<button type="button" className="link" onClick={() => setChanging(true)}>{t("chat.feedback.change")}</button>
+        {given.verdict !== "right" && given.status === "open" && !noting && (
+          <>{" "}<button type="button" className="link" onClick={() => { setNote(given.note ?? ""); setNoting(true); }}>
+            {given.note ? t("chat.feedback.editNote") : t("chat.feedback.addNote")}</button></>
+        )}
+        {noting && (
+          <form className="feedback-note" onSubmit={(e) => { e.preventDefault(); void send(given.verdict as Verdict, note); }}>
+            <label>
+              {t("chat.feedback.notePrompt")}
+              <textarea rows={2} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+            </label>
+            <button type="submit" disabled={busy}>{t("chat.feedback.saveNote")}</button>
+            <span className="muted"> {t("chat.feedback.sentToSme")}</span>
+          </form>
+        )}
+        {error && <span className="error"> {error}</span>}
       </div>
     );
   }
@@ -127,22 +150,11 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
     <div className="feedback small" role="group" aria-label={t("chat.feedback.title")}>
       <span>{t("chat.feedback.title")}</span>{" "}
       {(["right", "partly", "wrong"] as Verdict[]).map((v) => (
-        <button key={v} type="button" className={choice === v ? "chosen" : undefined} disabled={busy}
-                aria-pressed={choice === v}
-                onClick={() => (v === "right" ? void send(v) : setChoice(v))}>
+        <button key={v} type="button" disabled={busy} onClick={() => void send(v)}>
           {t(`chat.feedback.verdicts.${v}`)}
         </button>
       ))}
-      {choice && choice !== "right" && (
-        <form className="feedback-note" onSubmit={(e) => { e.preventDefault(); void send(choice, note); }}>
-          <label>
-            {t("chat.feedback.notePrompt")}
-            <textarea rows={2} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
-          </label>
-          <button type="submit" disabled={busy}>{t("chat.feedback.send")}</button>
-          <span className="muted"> {t("chat.feedback.toSme")}</span>
-        </form>
-      )}
+      {" "}<span className="muted">{t("chat.feedback.toSme")}</span>
       {error && <span className="error"> {error}</span>}
     </div>
   );
