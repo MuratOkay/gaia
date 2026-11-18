@@ -11,7 +11,8 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status (2026-11-18): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
 > built and verified on the owner's host**; the owner's gate closes it. **Phase 6 (evaluation and
-> calibration) is at its gate** — build **D92**: the fresh net's acceptance test passed on the
+> calibration) is closing** (P6-10 decided 2026-11-18; the last host run, §32e, closes it;
+> what waits for labels from real use goes to Phase 7) — build **D92**: the fresh net's acceptance test passed on the
 > owner's host; "Was this right?" sends every verdict on the click; D91: the vector search reads the
 > clarified question too (o06's missing `sales.orders`). D90 before it: P6-8's fresh net (`make golden --regress
 > drop:<object>` — a regression whose damage is known in advance; named breaks; an interval that

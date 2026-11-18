@@ -702,10 +702,23 @@ with its build, model, question set and **mode** — *fresh*, *replay*, *mixed* 
 next, so the report pools runs: correct and executable answers with a **95 % interval**, the
 spread per run, the questions right in every run, in some (**flaky**, with counts) or in none
 (with why), the clarification measurements with intervals, and cost and time. Replays are
-listed and never counted. A comparison takes two sets of runs of the same questions and
-compares them **question by question**; it **passes** when even the low end of the difference's
-interval costs less than 3 points, **fails** when even the high end costs more, and otherwise
-**cannot tell** — run more. The report is also written to `evaluations/quality_*.md`.
+listed and never counted, and so are deliberate-regression runs (below) unless they are the
+comparison asked for. A comparison takes two sets of runs of the same questions and compares them
+**question by question**, in two parts (P6-8): a question right in every baseline run and wrong in
+every candidate run is a **named break** and fails the candidate by itself; otherwise the overall
+difference decides — **passes** when even the low end of its interval costs less than 3 points,
+**fails** when even the high end costs more, else **cannot tell** (with 30 questions, the usual
+reading of an unchanged build). It also says when the two sides were run more than 6 hours apart.
+The report is also written to `evaluations/quality_*.md`.
+
+**Reading it, in order.** (1) *Runs*: the same build, model and **meanings** on the runs you
+compare — else the difference is not the build's alone. (2) *Correct answers over the runs*: the
+pooled share and its interval, not a single run's number. (3) *Questions*: flaky ones are noise
+until they stop flipping; a question wrong in every run has its SQL and *why* — retrieval (the
+context lacked an object) or reading (the model had it all). (4) *Candidate against baseline*:
+named breaks first, then the interval; *cannot tell* is not *passes*. (5) *The confidence Gaia
+showed*: per level with an interval — until a calibrator is in use, the levels are a rule of
+thumb. (6) *Calibration*: how many labels, on how many subjects, are still missing.
 
 The *Evaluation* page (administrators; auditors under *Audit*) shows the same: the runs, with how
 their answers came about and the **meanings** they answered with, and the report. When a

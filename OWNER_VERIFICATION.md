@@ -24,7 +24,7 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   retrieval; D90)` — the §31e run triaged (§32): the fresh net's acceptance test **passed**;
   "Partly" and "No" now reach the expert on the click (two of yours never did); the Samba
   script is executable again; D91's o06 retrieval is in this build. **The next run: §32e — the
-  last one of Phase 6.***
+  last one of Phase 6 (P6-10 decided: it closes on §32e's outputs).***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -3650,8 +3650,11 @@ half of "Was this right?" (32b-3) — step 3.
 
 So my recommendation, **P6-10**: close Phase 6 after §32e, with the "high" criterion recorded as
 *not met — measurable only with more labelled questions* (as P6-0 recorded 3C's criterion 4), and
-6F, 6D part 2, the first real calibration and 6G's weights carried to Phase 7's backlog. The
-decision and the tick are yours (PHASES, Phase 6, *Decisions needed*, P6-10).
+6F, 6D part 2, the first real calibration and 6G's weights carried to Phase 7's backlog.
+**Decided (owner, 2026-11-18): "Yep let's start finishing Phase 6"** — PHASES records P6-10, the
+carried items are in Phase 7's backlog, the docs of the phase are written (OUTLINE §45, USER_GUIDE
+*reading the report*, `docs/measurements/2026-11-18-demo_pg-phase6-host.md`); §32e's outputs close
+it.
 
 ### 32e · The run (build D92) — the last of Phase 6
 
@@ -3723,8 +3726,8 @@ done
 **Step 4 — the Evaluation page.** As dyilmaz: *Evaluation* — the comparison with *named breaks*,
 the calibration cards with the pooled names, the feedback. As bdemir: *Audit → Evaluation*.
 
-**Step 5 — the gate.** If steps 0–4 are as above: P6-10 in PHASES — close Phase 6 as recommended,
-or say what to change. Then `make share` → send `verification/share/`.
+**Step 5 — send.** `make share` → send `verification/share/`. P6-10 is decided: the triage of
+these outputs closes Phase 6 (and says so if anything in them should hold it open).
 
 ---
 

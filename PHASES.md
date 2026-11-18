@@ -41,8 +41,8 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **VERIFIED ON THE HOST — awaiting the owner's gate**: 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 |
-| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **IN PROGRESS** — 6.0 (D78), 6A (the store, `make quality`, the page; D80, D81), 6E's replayed net (D82), 6B (labels, the blind share; D83; the 3C audit and the judge's κ, D85), 6C (calibrators, `make calibrate`; D86), 6D part 1 ("Was this right?", the SME's doubted answers, answer calibration; D87), 6E part 2's tooling (a deliberate regression), 6G's measurement (D88) built; 6A and 6B verified on the host (§28, §29); next the host run §29d, then 6F | ✅ approved 2026-11-17 |
-| 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence; a change of model or provider as a managed event (Phase 6, *Raised for Phase 7*) | **backlog** | ⬜ |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **CLOSING (P6-10, 2026-11-18)** — 6.0, 6A–6E and 6G's measurement built (D78–D92) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration and 6G's weights carried to Phase 7; the last host run §32e ("Was this right?" end to end, D91's o06 runs) closes it | ✅ approved 2026-11-17 · closing 2026-11-18 |
+| 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence; a change of model or provider as a managed event; what Phase 6 carried over (P6-10) | **backlog — to be planned next** | ⬜ |
 
 ### Environment as it stands
 
@@ -2820,7 +2820,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e); the gate: P6-10, after §32e**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e); the gate: P6-10 decided 2026-11-18 — close after §32e**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -3219,7 +3219,10 @@ models from the screen, with an impact preview" (P5-12) is where this belongs.
   regressions; label mapping; feedback → review item; every number of the report recomputed from
   its items
 - Docs: OUTLINE (evaluation and calibration as built), USER_GUIDE (reading the report), a
-  measurement note per host report in `docs/measurements/`
+  measurement note per host report in `docs/measurements/` *(done: OUTLINE §42–§45; USER_GUIDE
+  "The quality report" — reading it in order —, labels, calibration, the nets, deliberate
+  regressions; `docs/measurements/2026-11-18-demo_pg-phase6-host.md`, one note for the phase's
+  host runs)*
 - *As built (D80–D87):* `evaluation/store.py`, `quality.py` (comparisons live here, not in a
   `compare.py`), `human_labels.py` (6B), `calibration.py` and `calibrators.py` (6C, and 6D's answer
   calibration — no separate `answer_confidence.py`), `feedback.py` (6D), `net.py` (6E),
@@ -3278,9 +3281,9 @@ models from the screen, with an impact preview" (P5-12) is where this belongs.
 | P6-8 | **What the fresh net must catch, and how it says so** (replaces the JOINS-rule half of the acceptance) | 6E's acceptance | **The yardstick** — (a) keep the JOINS rule and add questions that need it: even then the guard refuses what the rule forbids, so its removal can only cost repairs; (b) **a regression whose damage is known in advance**: `--regress drop:<object>` takes one object out of every context, and `golden.yaml`'s `objects` say which questions lose what they need — `finance.invoices` 1 (g07), `store.stores` 5, `product.products` 8, `sales.orders` 14; (c) a weaker model (P6-7) — realistic, but its damage is not known in advance. **The verdict** — the per-question bootstrap resolves 3.3 points a question: with 3 runs a side it says *fails* reliably only when ~6 questions break, and an unchanged build *passes* only 40–50 % of the time (simulated on the host's flakiness); more runs barely help, more questions do. **Recommended:** (b) as the yardstick, at two sizes — `store.stores` (5 questions) must be *caught*, `finance.invoices` (1) documents the limit; a two-part verdict — **any question right in every baseline run and wrong in every candidate run is named and blocks** (a deterministic break of even one question is caught; on the host's flakiness a false alarm ~3 % a comparison; none on D83→D88 or D88→regression), and the overall difference with an interval that resamples runs as well as questions; the baseline re-run **in the same session** as the candidate (provider drift, §30b-6); 6F's questions to resolve smaller losses. The chasm trap is fixed in the guard either way (a correctness fix, caught by the replayed net, with golden questions that need sibling aggregates) |
 | P6-9 | Pool `deepseek-v4.1-flash` with `deepseek-flash` for calibration (§21f: renamed) | 6C, once labels near P6-1 | Pool them through a configured alias **only** for labels from before the rename; `deepseek-flash` is "always the latest", so its own labels stay per model id (the risk row above) |
 
-*Open (2026-11-18, after §31e):*
+*Decided by the owner on 2026-11-18 ("Yep let's start finishing Phase 6"): as recommended; the last run (§32e) is cleaned up in the triage that closes the phase.*
 
-| # | Decision | Needed by | Recommendation |
+| # | Decision | Needed by | Recommendation (= the decision) |
 |---|---|---|---|
 | P6-10 | **The Phase 6 gate** | after §32e | **Close Phase 6** once §32e shows the SME's half of "Was this right?" and D91's runs: every criterion met on the host but "high ≥ 95 %", recorded as *not met — measurable only with more labelled questions* (as P6-0 recorded 3C's criterion 4); carried to Phase 7's backlog: 6F (`nge_small`'s golden set, persona runs, D61 (b)), 6D part 2 (answer levels fitted), the first real calibration (6C, once P6-1's labels exist), 6G's weights (more confirmations) |
 
@@ -3315,8 +3318,10 @@ today's speed) per prompt change; calibration and the replayed net make none.
 - [ ] 6C, 6D part 1, 6E part 2 verified on the host *(done: the 3C import with κ 0.65 (§31a),
       o06's cause (§30b-3), P6-8's acceptance test (§32a); open: "Was this right?" end to end with
       the SME's decision — §32e step 3)*
-- [ ] P6-10 decided — **the Phase 6 gate** (close with "high ≥ 95 %" recorded as not met; 6F,
-      6D part 2, the first real calibration and 6G's weights to Phase 7)
+- [x] P6-10 decided — **the Phase 6 gate** (close with "high ≥ 95 %" recorded as not met; 6F,
+      6D part 2, the first real calibration and 6G's weights to Phase 7) *(owner, 2026-11-18)*
+- [ ] **Phase 6 complete** — after §32e's outputs are triaged (the SME's half of "Was this
+      right?" seen on the host; D91's runs read)
 
 ---
 
@@ -3343,6 +3348,23 @@ Not scheduled. Listed so scope creep has somewhere to land.
 - Query Store / plan-cache evidence (how applications join, filter, aggregate)
 - Known-product schema recognition (SAP, Dynamics, Logo, Netsis …)
 - Cross-database transfer of SME labels (Phase 3 stores per-column profile signatures)
+- *From Phase 6 (P6-10, 2026-11-18):*
+  - **6F** — `nge_small`'s golden set (P4-1, P6-6: Gaia drafts ~30 questions, the owner corrects
+    them), its first T-SQL golden run; golden runs *as a person* per role pattern; D61 (b), the
+    soft clarification, decided on its agreement interval. More questions are also what resolves
+    regressions smaller than 3.3 points (§45)
+  - **6D part 2** — answer levels fitted to P(right), so that "high" is right ≥ 95 % with the
+    interval to show it (the one Phase 6 criterion not met); needs P6-1's answer labels: decided
+    feedback from real use and 6F's questions
+  - **The first real calibration** (6C) — `make calibrate --apply` once P6-1's subjects exist
+    (meanings: 30 labels, 1 not right on 2026-11-18)
+  - **6G's weights** fitted once the confirmations are many more than 58; meanwhile the owner's
+    category words (*payment*, *inventory*, §32b-4)
+  - **A change of model or provider as a managed event** (Phase 6, *Raised for Phase 7*): register
+    beside the old, measure on the golden set and on SME-decided columns, compare like builds,
+    roll back, start uncalibrated
+  - `retrieval-eval` of clarified questions with vectors (D91 changed what the vectors read;
+    the retrieval set has no clarifications yet)
 
 ---
 

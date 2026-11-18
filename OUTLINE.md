@@ -5,16 +5,11 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status (2026-11-17): Phases 0–2 done; Phase 3: 3.P, 3.0, 3A (PostgreSQL), 3B
-> done, 3C runs on the host; **Phase 4 built and verified on the host — 4A (SQL guard,
-> executor), 4B (retrieval), 4C (answering), 4D (golden runs), 4E (chat API) and 4F
-> (data sources added at runtime)**; the configured model's golden run: executable 100 %,
-> correct 97 %. **Phase 5 in progress**: sign-in through the company directory, four roles
-> and need-to-know (§38; 5A, 5A.2 built and passing on the host), the SME review (§39),
-> need-to-know, the chat screen and runs (§40) — built in the sandbox; the owner's D75 run
-> proved sign-in against a real Samba AD and stopped at the directory, and build D77 fixes what it
-> found (§41); the D77 run verified sign-in against a real AD and a real Entra tenant, and build
-> D80 fixes what it found and starts Phase 6 — the evaluation store and the quality report (§42).
+> Status (2026-11-18): Phases 0–4 done (3C accepted, P6-0); **Phase 5 verified on the host** —
+> sign-in through a real AD and a real Entra tenant, four roles, need-to-know, the SME review, the
+> chat (§38–§41); **Phase 6 closing** (P6-10) — the evaluation store and quality report, labels
+> from people, calibrators judged on held-out labels, "Was this right?", two regression nets and
+> category proposals measured (§42–§45); what waits for labels from real use goes to Phase 7.
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -2010,3 +2005,54 @@ time* — but only where the promise has been measured:
   query without `ORDER BY` returned its groups in another order — a difference of the server, not
   of Gaia. A check that fails for reasons outside the code teaches people to ignore it; the net now
   treats such rows as a set, as the scorer always did.
+
+## 45. A measurement must be measured too (D89–D92, build D92, 2026-11-18 — Phase 6 closes)
+
+The last four builds of Phase 6 found every one of their defects in the measuring, not in the
+thing measured. Each is a rule now:
+
+* **A check that can skip silently will.** A test run without the database exports skipped 82
+  tests and ended green (D89). On the host, `make test-host` refuses to start without them and
+  fails on any skip; every run lists its skips by reason. A verification's first duty is to say
+  whether it verified.
+* **A yardstick needs a known length** (P6-8, D90). "Remove the JOINS rule and the net must catch
+  it" failed — correctly: the guard already refuses what the rule forbids, and no golden question
+  needs it. A regression is a yardstick only if its damage is known before the run: removing one
+  object from every context breaks exactly the questions that need it (the golden set lists them),
+  so the net can be judged by how many of them it names. On the host it named 3 of 5 for
+  `store.stores` and 1 of 1 for `finance.invoices`; the two it missed taught something too (one
+  question was flaky, one did not need the object).
+* **Resolution is set by the questions, not the runs.** Thirty questions resolve 3.3 points each;
+  a 3-point margin is below that. So the verdict is two-part: a question that is right in every
+  baseline run and wrong in every candidate run fails the change by itself (regressions are usually
+  deterministic; an always-right question does not flip by chance), and the overall difference
+  gets an interval that resamples runs as well as questions — its usual honest answer for an
+  unchanged build is *cannot tell*. Runs made hours apart may differ by the provider's model,
+  not the build: the report says so.
+* **Repeats are not evidence.** Six runs of thirty questions are 180 labels about thirty things;
+  counting them as 180 offered a calibrator that "beat the identity" on six questions' mistakes.
+  P6-1's minimums count subjects. And a run made with a deliberately worse prompt is never a
+  label, nor "the latest build".
+* **Names change; models do not always.** A provider's rename keeps a model's labels (an alias,
+  P6-9); a new model under an old name — "always the latest" — does not. A calibrator never passes
+  from one model to another by inference.
+* **The guard, not the prompt.** The prompt advised "go through the parent table" to avoid a fan
+  trap, which is how a chasm trap is made; the guard let it through. The guard now refuses sums
+  and counts over two many-sides of one table (D90), and the prompt says the same — but the rule
+  that holds is the guard's.
+* **Both searches read the same words** (D91). o06 was wrong in every run because the words of
+  its clarification reached the word search and not the vectors; the context never held the table
+  the answer needed. The evidence came from the measuring itself: each answer now keeps what it
+  was made of, and a deliberate regression that freed one slot in the context made o06 right.
+* **The click that looks final must be final** (D92). "Partly" and "No" opened a note form and
+  sent nothing until *Send*; two verdicts never reached the expert. Feedback that can be lost
+  without the person knowing is worse than none.
+
+**Phase 6 as built.** One evaluation store and report (`make quality`, the *Evaluation* page);
+labels from people (SME decisions, the owner's audit, a blind share) with the LLM judge measured
+against them (κ 0.65) and used for nothing; calibrators judged on held-out labels, used only when
+they beat the identity, otherwise the scores say *uncalibrated*; "Was this right?" decided by the
+data source's SME; two regression nets — replayed in every test run, fresh over three runs with
+deliberate regressions of known damage; category proposals measured against people. What waits
+for labels that only use brings — fitted answer levels ("high" right ≥ 95 %), the first real
+calibrator, fitted category weights — and `nge_small`'s golden set (6F) go to Phase 7 (P6-10).
