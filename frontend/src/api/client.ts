@@ -611,6 +611,8 @@ export interface FeedbackView {
   decision_note: string | null;
   decided_at: string | null;
   updated_at: string;
+  /** D94: open, and nobody reviews this data source — it waits for no one */
+  no_reviewer?: boolean;
 }
 
 /** An answer someone doubted, as the SME of the data source sees it (6D). */

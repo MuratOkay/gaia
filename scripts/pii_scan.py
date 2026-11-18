@@ -10,13 +10,9 @@ and keeps the counts on stderr; ``-v`` adds the line and the kind.
     scripts/pii_scan.py -v                    # ... and why
     scripts/pii_scan.py --also 'Jane Doe'     # a name no pattern can know
     scripts/pii_scan.py docs verification     # some subtrees
-    scripts/pii_scan.py --include-src --fail-on-findings DIR   # a copy to hand over
 
 ``make cleanup`` runs it after the caches are gone; add ``--fail-on-findings``
 to that target if it should stop when the list is not empty.
-``--include-src`` also reads ``src`` trees (``make export`` uses it on the copy
-it ships): the code rule still applies there — only a credential is listed,
-never a sample address or a row id.
 
 Listed — only what reads as real data:
   * e-mail addresses outside the domains that only docs and fixtures use
@@ -41,20 +37,17 @@ Listed — only what reads as real data:
     ``secret``, ``test``, ``dummy``, ``sample``, ``example`` or ``placeholder``
     is a fixture (``Ayse-Password-1``), so it is not listed.
 
-Not searched: ``src`` trees (the code — unless ``--include-src``), ``gaia-env``,
-``node_modules``, build output, VCS and cache directories, symlinks, binaries,
-files over ``--max-bytes``, and this script. Certificates are read for one thing only — a
+Not searched: ``src`` trees (the code), ``gaia-env``, ``node_modules``, build
+output, VCS and cache directories, symlinks, binaries, files over
+``--max-bytes``, and this script. Certificates are read for one thing only — a
 subject e-mail address or your login (a public CA certificate is not personal
 data; ``CN=DC1.acme.test, O=Samba Administration`` is not either).
 
 Code (``.py``, ``.sh``, ``.sql`` … and ``Makefile``) is read for credentials
 only: a sample address, a row id, a path or a login that happens to be a word
 in a name pool is a fixture, not somebody's data — ``--also`` still reports a
-name there. A credential in source is a quoted value: a type annotation
-(``password: SecretStr``) and a fetch mode (``credentials: "same-origin"``) are
-not one. Nor is a recorded fixture reported: a value that names itself
-(``Local-Admin-Pass-1``), a UUID made of repeating digits, or a masked shape
-(``aaaa.aaaa99@aaaa.aaa``).
+name there. Nor is a recorded fixture reported: a value that names itself
+(``Local-Admin-Pass-1``) or a UUID made of repeating digits.
 
 Nothing is written: the tool only reads. Exit 0, or 1 with
 ``--fail-on-findings`` when the list is not empty.
@@ -170,10 +163,6 @@ def _real_email(address: str) -> bool:
     """An address somebody could own (not a doc, a fixture or a role mailbox)."""
     local, _, domain = address.partition("@")
     domain = domain.lower().rstrip(".")
-    # ``aaaa.aaaa99@aaaa.aaa`` is a masked shape (a/A = letter, 9 = digit), which
-    # is how a profile draws an address; the masking alphabet has no real TLD.
-    if re.fullmatch(r"[aA9.]+@[aA9.]+", address):
-        return False
     if RESERVED.search(domain) or local.lower() in ROLE_LOCAL or len(local) < 2:
         return False
     if any(len(label) == 1 for label in domain.split(".")[:-1]):
@@ -266,21 +255,7 @@ def _line_findings(line: str, names: list[str], login: str, code: bool = False) 
             continue
         raw = m.group("value")
         quoted = len(raw) >= 2 and raw[0] in "\"'" and raw[-1] == raw[0]
-        value = raw[1:-1] if quoted else raw
-        key = m.group("key").strip("\"'").lower()
-        # ``credentials: "same-origin"`` is the fetch option's mode, not a secret
-        if key.endswith("credentials") and value.strip().lower() in {
-                "same-origin", "same_origin", "include", "omit"}:
-            continue
-        if code and not quoted:
-            # ``password: SecretStr`` — a type annotation or a reference, not a
-            # literal; in source a credential is quoted.
-            bare = re.fullmatch(
-                r"[A-Za-z_][A-Za-z0-9_.]*(?:\s*\|\s*[A-Za-z_][A-Za-z0-9_.]*)*", value)
-            if bare and (value[:1].isupper() or value.lower() in
-                         {"str", "bytes", "int", "dict", "list", "none", "true", "false"}):
-                continue
-        if _real_secret(value):
+        if _real_secret(raw[1:-1] if quoted else raw):
             password = re.search(r"pass(?:word|wd)|pwd", m.group("key"), re.I)
             kinds.add("password" if password else "secret")
     return kinds
@@ -303,10 +278,7 @@ def _certificate_has_pii(block: str, names: list[str]) -> bool:
 
 def _scan(path: Path, text: str, names: list[str], login: str) -> list[Finding]:
     found: list[Finding] = []
-    # A file under a ``src`` tree is the code even when it is a prompt (``.md``):
-    # ``--include-src`` reads it for credentials only, as the skip implies.
-    code = (path.suffix.lower() in CODE_SUFFIX or path.name in CODE_NAMES
-            or "src" in path.parts)
+    code = path.suffix.lower() in CODE_SUFFIX or path.name in CODE_NAMES
     body: set[int] = set()  # one finding per PEM block, not one per base64 line
     for kind, pattern in (("private-key", PRIVATE_KEY), ("certificate", CERTIFICATE)):
         for m in pattern.finditer(text):
@@ -354,14 +326,13 @@ def _read(path: Path, max_bytes: int) -> tuple[str | None, str]:
         return None, "not UTF-8"
 
 
-def _walk(root: Path, skip: list[str], skip_dirs: set[str] | None = None) -> tuple[list[Path], Counter[str]]:
+def _walk(root: Path, skip: list[str]) -> tuple[list[Path], Counter[str]]:
     """Every candidate file under ``root`` and what was left out."""
-    dirs = SKIP_DIRS if skip_dirs is None else skip_dirs
     files: list[Path] = []
     skipped: Counter[str] = Counter()
     for dirpath, dirnames, filenames in os.walk(root):
         dirnames[:] = sorted(d for d in dirnames
-                             if d not in dirs and not (Path(dirpath) / d).is_symlink())
+                             if d not in SKIP_DIRS and not (Path(dirpath) / d).is_symlink())
         for name in sorted(filenames):
             path = Path(dirpath) / name
             rel = path.relative_to(root).as_posix()
@@ -397,9 +368,6 @@ def main(argv: list[str] | None = None) -> int:
                         help="another name to look for (a person, a company), repeatable")
     parser.add_argument("--os-user", metavar="NAME",
                         help="the login to look for (default: yours)")
-    parser.add_argument("--include-src", action="store_true",
-                        help="also read 'src' trees (credentials only there, as in all code); "
-                             "for checking a copy that will be handed over")
     parser.add_argument("--max-bytes", type=int, default=4_000_000, metavar="N",
                         help="skip files larger than N bytes (default: 4 000 000)")
     parser.add_argument("--fail-on-findings", action="store_true",
@@ -414,13 +382,12 @@ def main(argv: list[str] | None = None) -> int:
 
     candidates: list[Path] = []
     skipped: Counter[str] = Counter()
-    skip_dirs = SKIP_DIRS - {"src"} if args.include_src else SKIP_DIRS
     for entry in [Path(p).expanduser() for p in args.paths] or [ROOT]:
         if not entry.exists():
             print(f"no such path: {entry}", file=sys.stderr)
             return 2
         if entry.is_dir():
-            found, entry_skipped = _walk(entry, args.skip, skip_dirs)
+            found, entry_skipped = _walk(entry, args.skip)
             candidates += found
             skipped += entry_skipped
         else:

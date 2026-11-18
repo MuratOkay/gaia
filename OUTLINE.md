@@ -5,7 +5,7 @@
 > score is weak, and answer business questions in natural language by generating,
 > validating and executing SQL.
 >
-> Status (2026-11-18): Phases 0–4 done (3C accepted, P6-0); **Phase 5 verified on the host** —
+> Status (2026-11-18): Phases 0–4 done (3C accepted, P6-0); **Phase 5 complete** —
 > sign-in through a real AD and a real Entra tenant, four roles, need-to-know, the SME review, the
 > chat (§38–§41); **Phase 6 complete** (P6-10, 2026-11-18) — the evaluation store and quality report, labels
 > from people, calibrators judged on held-out labels, "Was this right?", two regression nets and

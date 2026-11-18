@@ -306,12 +306,18 @@ class ChatService:
             given: dict[uuid.UUID, Any] = {}
             if login:  # the person's own "Was this right?" on each answer (6D)
                 from gaia.db.models.chat import Feedback
-                from gaia.evaluation.feedback import feedback_dict
+                from gaia.evaluation.feedback import feedback_dict, reviewers
 
                 rows = await session.scalars(select(Feedback).where(
                     Feedback.message_id.in_([m.id for m in messages] or [uuid.UUID(int=0)]),
                     Feedback.given_by == login))
                 given = {f.message_id: feedback_dict(f) for f in rows.all()}
+                if any(g and g["status"] == "open" for g in given.values()):
+                    # D94: a doubt on a data source nobody reviews waits for nobody — say so
+                    nobody = not await reviewers(session, ds.id)
+                    for g in given.values():
+                        if g and g["status"] == "open":
+                            g["no_reviewer"] = nobody
             return _conversation_dict(c, ds.name) | {
                 "messages": [_message_dict(m, given.get(m.id)) for m in messages]}
 
@@ -319,22 +325,29 @@ class ChatService:
                        login: str) -> dict[str, Any]:
         """The person's "Was this right?" on an answer of their own (6D, P6-4)."""
         from gaia.evaluation.feedback import (
+            KEEP,
             FeedbackError,
             FeedbackNotFound,
             feedback_dict,
             give,
+            reviewers,
         )
 
         async with self.factory() as session:
             try:
+                # a body without "note" changes the verdict only (D94)
                 f = await give(session, message_id, owner=owner, login=login,
-                               verdict=body.verdict, note=body.note)
+                               verdict=body.verdict,
+                               note=body.note if "note" in body.model_fields_set else KEEP)
             except FeedbackNotFound as exc:
                 raise HTTPException(404, str(exc)) from None
             except FeedbackError as exc:
                 raise HTTPException(400, str(exc)) from None
             await session.commit()
-            return feedback_dict(f) or {}
+            doc = feedback_dict(f) or {}
+            if f.status == "open":  # D94: nobody reviews this data source — the person is told
+                doc["no_reviewer"] = not await reviewers(session, f.data_source_id)
+            return doc
 
     # a turn
     def _history(self, messages: list[Message]) -> list[tuple[str, str]]:

@@ -86,7 +86,8 @@ export function ConfidenceBadge({ confidence, showProbability = false }: {
  *  data source's SMEs, whose decision then shows here. Every verdict is sent on the click
  *  (D92): before, "Partly" and "No" only opened a note form and nothing reached the expert
  *  until its Send was pressed — on the owner's host two verdicts were lost that way
- *  (OWNER_VERIFICATION §32). The note follows, optional, and can be added or changed. */
+ *  (OWNER_VERIFICATION §32). The note follows, optional, and can be added or changed; it is
+ *  kept when the box is left too (D94). A doubt on a data source nobody reviews says so. */
 export function WasThisRight({ messageId, initial }: { messageId: string; initial?: FeedbackView | null }) {
   const { t } = useTranslation();
   const [given, setGiven] = useState<FeedbackView | null>(initial ?? null);
@@ -101,7 +102,8 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
     setError(null);
     try {
       const f = await api<FeedbackView>(`/api/messages/${messageId}/feedback`, {
-        method: "PUT", body: { verdict, note: text?.trim() || null },
+        // a verdict alone keeps the note given before; a note is sent only when given (D94)
+        method: "PUT", body: text === undefined ? { verdict } : { verdict, note: text?.trim() || null },
       });
       setGiven(f);
       setChanging(false);
@@ -119,7 +121,8 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
     return (
       <div className="feedback small" aria-label={t("chat.feedback.title")}>
         <span className="muted">{t(`chat.feedback.given.${given.verdict}`)}</span>
-        {given.status === "open" && <span className="muted"> · {t("chat.feedback.waiting")}</span>}
+        {given.status === "open" && !given.no_reviewer && <span className="muted"> · {t("chat.feedback.waiting")}</span>}
+        {given.status === "open" && given.no_reviewer && <span className="warn"> · {t("chat.feedback.noReviewer")}</span>}
         {given.status === "decided" && given.decision && (
           <span> · {t("chat.feedback.decided", { decision: t(`chat.feedback.decisions.${given.decision}`) })}
             {given.cause && <> — {t(`chat.feedback.causes.${given.cause}`, { defaultValue: given.cause })}</>}
@@ -136,7 +139,9 @@ export function WasThisRight({ messageId, initial }: { messageId: string; initia
           <form className="feedback-note" onSubmit={(e) => { e.preventDefault(); void send(given.verdict as Verdict, note); }}>
             <label>
               {t("chat.feedback.notePrompt")}
-              <textarea rows={2} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+              {/* D94: a typed note is kept when the box is left, not only on the button */}
+              <textarea rows={2} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)}
+                        onBlur={() => { if (!busy && note.trim() && note.trim() !== (given.note ?? "")) void send(given.verdict as Verdict, note); }} />
             </label>
             <button type="submit" disabled={busy}>{t("chat.feedback.saveNote")}</button>
             <span className="muted"> {t("chat.feedback.sentToSme")}</span>

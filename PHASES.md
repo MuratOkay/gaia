@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**§31f and §32e triaged — Phase 6 closed; build `2026-11-18 · D93 (Phase 6 closed: flaky flips not named; D78 noticed once; D92)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6 complete** (P6-10: "high ≥ 95 %" recorded as not met; its carried items in Phase 7's backlog; one asynchronous host item, OWNER_VERIFICATION §33d) · **Next: Phase 7's plan** · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) §33
+> Last updated: 2026-11-18 (**A1's first run triaged; build `2026-11-18 · D94 ("Was this right?": nobody-reviews warning, notes kept, make feedback)`**) · Status: **Phases 0–6 complete** (Phase 5 ticked by the owner 2026-11-18; Phase 6 by P6-10 — "high ≥ 95 %" recorded as not met) · one asynchronous host item open: A1, "Was this right?" with the SME's decision — its first run failed, D94, again in OWNER_VERIFICATION §34c · **Next: Phase 7's plan**
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -40,7 +40,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 2 | Semantic reasoning, evidence scoring, embeddings | **DONE — verified live** | ✅ approved |
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
-| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **VERIFIED ON THE HOST — awaiting the owner's gate**: 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 |
+| 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **DONE** — 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
 | 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision on the host: asynchronous (§33d) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence; a change of model or provider as a managed event; what Phase 6 carried over (P6-10) | **backlog — to be planned next** | ⬜ |
 
@@ -2092,7 +2092,7 @@ Revised 2026-11-16 for D52.
 
 ---
 
-## Phase 5 — Sign-in, roles and need-to-know; SME review first, then chat; administration (R1; scope revised 2026-11-17) · **approved 2026-11-17 — every stage built (5.0 … 5E); the D75 host run triaged (D76, D77); host verification: §26e**
+## Phase 5 — Sign-in, roles and need-to-know; SME review first, then chat; administration (R1; scope revised 2026-11-17) · **approved 2026-11-17 — complete 2026-11-18 (the owner's tick)**
 
 **Goal.** People of a company sign in with their directory account and get what their role
 allows: an **SME** reviews and corrects Gaia's meanings for the data sources assigned to them,
@@ -2798,7 +2798,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 - [x] **Approved to start Phase 5** with this staged plan (owner, 2026-11-17: "I approve Phase 5
       plan … Let's start"; every decision answered, D68–D70); P5-1 … P5-3, P5-8, P5-10, P5-11,
       P5-12 answered (the others before the stage that needs them)
-- [ ] 5.0 complete (triage fixes; may run before the approval above) → 5A *(on the host, D68: T1
+- [x] 5.0 complete (triage fixes; may run before the approval above) → 5A *(on the host, D68: T1
       closed, T5 and T6 seen working; the golden run's dip to 90 %: T6's prompt sentence withdrawn
       (D72); three fresh runs of the D72 prompt since — 97, 90, 93 % — so the model's spread is
       ±4 points and D72 stands (§26c F6))*
@@ -2813,9 +2813,9 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
       with no change to code or prompts; §28a)*
 - [x] 5C adversarial suite passing → 5D offered to the `user` role *(724 passed on the host, D77;
       need-to-know in the browser as expected, owner 2026-11-17)*
-- [ ] 5D and 5E (read-only) complete → **Phase 5 done** *(D80 run: the chat works in the owner's
-      browser; "Show the SQL" for SMEs fixed in D81. Everything of Phase 5 is verified on the host —
-      **the owner's tick closes the phase**; GAIA-Finance in the Entra tenant is a tenant setting)*
+- [x] 5D and 5E (read-only) complete → **Phase 5 done** *(D80 run: the chat works in the owner's
+      browser; "Show the SQL" for SMEs fixed in D81. Everything of Phase 5 is verified on the host;
+      **ticked by the owner, 2026-11-18** — "the last tick in Phase 5 is OK")*
 
 ---
 
@@ -3207,6 +3207,17 @@ D78 change once, as *NOTICED*, with the relink command. Tests: **773 passed, 10 
 **Phase 6 is complete** (P6-10). The SME's half of "Was this right?" on the host is asynchronous
 (A1, after the owner's AD rebuild).
 
+### A1's first run, and D94 (2026-11-18)
+
+OWNER_VERIFICATION §34. finn re-linked (D78), three answers given — **akaya saw no notes**; no
+outputs came, so the cause is read from the code: a doubt goes to the SMEs of the conversation's
+data source, and the chat opens on `app.default_target` (`demo_mssql` on the host), which akaya
+does not review; or a note typed and never saved; and — found while testing — a change of verdict
+erased the note. **D94:** `reviewers` / `all_feedback` and `make feedback` (every doubt across
+data sources, with who reviews it); *nobody reviews this data source* in the chat and in the
+report; a note saved on leaving its box and kept across a change of verdict (a PUT without
+`note` changes the verdict only). Web **64**; tests **775 passed, 10 skipped**. The owner ticked Phase 5.
+
 ### Raised for Phase 7: a change of model or provider in production (2026-11-18)
 
 The owner's question: a customer changes the LLM provider some time in production — what then?
@@ -3327,9 +3338,7 @@ today's speed) per prompt change; calibration and the replayed net make none.
 
 ### Gate
 
-- [ ] Phase 5 gate ticked (after §27d: the chat in the owner's browser, Entra's Finance role, g07
-      — all three done by §29a; the owner's "let's continue with the next stage", 2026-11-18, read
-      as acceptance; the tick is his)
+- [x] Phase 5 gate ticked *(owner, 2026-11-18)*
 - [x] P6-0 … P6-7 answered *(owner, 2026-11-17: as recommended)*
 - [x] **Approved to start Phase 6** *(owner, 2026-11-17, with the decisions; 6.0 and 6A built
       the same day, D78–D80)*
@@ -3338,7 +3347,8 @@ today's speed) per prompt change; calibration and the replayed net make none.
 - [x] 6C, 6D part 1, 6E part 2 verified on the host *(the 3C import with κ 0.65 (§31a), o06's
       cause (§30b-3) and its fix (§33a), P6-8's acceptance test (§32a), "Was this right?" sent on
       the click (§33a); the SME's decision on the host is asynchronous item A1 (§33d), verified in
-      the sandbox over HTTP and in a browser)*
+      the sandbox over HTTP and in a browser — A1's first host run failed (akaya saw no notes,
+      §34): D94, and A1 again in §34c)*
 - [x] P6-10 decided — **the Phase 6 gate** (close with "high ≥ 95 %" recorded as not met; 6F,
       6D part 2, the first real calibration and 6G's weights to Phase 7) *(owner, 2026-11-18)*
 - [x] **Phase 6 complete** *(2026-11-18, OWNER_VERIFICATION §33: D91's runs read — o06 fixed;
@@ -3529,14 +3539,14 @@ D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B
 *2026-11-17 (later): D75 run → §26, build D77; D77 run → §27, Phase 6 approved, build D80;
 D80 run → §28, build D83 (D81–D83).*
 
-1. **Owner — the Phase 5 gate**: everything of Phase 5 is verified on your host (§28a).
+1. ~~**Owner — the Phase 5 gate**~~ — ticked 2026-11-18.
 2. **Assistant — next: Phase 7's plan** — its backlog ordered (Phase 6's carried items first:
    6F, 6D part 2, the first real calibration, 6G's weights, the change of model as a managed
    event), the decisions it needs, for the owner's approval.
-3. **Owner, asynchronous:** A1 — "Was this right?" end to end once the AD is rebuilt (finn
-   re-linked, or `relink acme --all` after a rebuild; OWNER_VERIFICATION §33d); `make test-host`
-   on D93; the categories' words on `demo_mssql` (§32b-4).
-4. **Owner:** the Phase 5 gate's tick (everything of Phase 5 verified on the host, §28a).
+3. **Owner, asynchronous:** A1 again on D94 — `make feedback` first, then "Was this right?" on
+   `demo_pg` with akaya deciding (OWNER_VERIFICATION §34c); the categories' words on
+   `demo_mssql` (§32b-4).
+4. ~~**Owner:** the Phase 5 gate's tick~~ — done 2026-11-18.
 5. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
    evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
 6. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %

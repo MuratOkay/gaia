@@ -137,12 +137,19 @@ async def extra_sections(session: AsyncSession, data_source: str, settings, fact
                 given[verdict] += n
                 if st in status:
                     status[st] += n
+            from gaia.evaluation.feedback import reviewers
+
+            who = await reviewers(session, ds)
             lines += ["", "## People's feedback on answers (6D)", "",
                       f"* \"Was this right?\": {given['right']} yes, {given['partly']} partly, "
                       f"{given['wrong']} no",
                       f"* waiting for an SME: {status['open']}; decided: {status['decided']} "
-                      "(a decided one is a label for answer calibration)"]
-            doc["feedback"] = {"given": given, **status}
+                      "(a decided one is a label for answer calibration)",
+                      f"* reviewed by: {', '.join(who)}" if who else
+                      f"* **nobody reviews {data_source}**: its doubted answers wait for no one "
+                      "— grant an SME (`make auth ARGS=\"grant sme --user DIR/LOGIN "
+                      f"--data-source {data_source}\"`)"]
+            doc["feedback"] = {"given": given, **status, "reviewers": who}
     if factory is not None:
         from gaia.access.categories import CategoryError, CategoryService
 

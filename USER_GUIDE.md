@@ -583,7 +583,11 @@ follows how often answers like this one were right — *high* from 95 % — and 
 and auditors see the percentage and its lower bound; until then they see *uncalibrated*.
 
 **Was this right?** Under every answer: *Yes*, *Partly* or *No* — each is sent on the click; after
-*Partly* or *No*, *add a note* says what was not right (optional, and it can be changed later).
+*Partly* or *No*, *add a note* says what was not right (optional; saved with its button or when the
+box is left, and kept if the verdict is changed later). A doubt goes to the experts **of the data
+source the conversation is on** — choose the data source before asking; if nobody reviews it, the
+answer says so, and an administrator names an SME (`make auth ARGS="grant sme --user DIR/LOGIN
+--data-source NAME"`). `make feedback` lists every doubt across data sources with who reviews it.
 *Yes* is counted. *Partly* and *No* go to the data source's expert (SME), who decides what the
 answer really was and why; the decision then appears under the answer. Your verdict can be
 changed; after the expert has decided, their decision stands. A question Gaia
@@ -857,34 +861,6 @@ ids, your OS user name in paths, once even a one-time setup code. `make share` r
 writes the key to map them back to `verification/share-key.json`, which you keep. Send
 `verification/share/` only.
 
-### A clean copy for delivery (`make export`)
-
-```bash
-make export                                   # ../gaia-clean-YYYYMMDD/ and .zip
-make export ARGS="--also 'Acme Ltd' --force"  # one more name to replace; replace an old copy
-make export ARGS="--out /tmp/gaia --no-zip"   # the copy only, somewhere else
-```
-
-`make export` builds a copy you can hand to someone else, and proves it is clean:
-
-* **Only what git tracks**, at its working-tree state, plus `verification/share/` and its
-  contents — the one exception. `.env`, `gaia-env/`, `.git/`, `evaluations/`, the other
-  verification outputs, `__pycache__`, `node_modules`, `dist` and the caches never enter it.
-* **Personal data replaced** in every document and recorded output (`make share`'s rules
-  for what is personal there: real addresses, tenants, home paths, the OS user), so the
-  copy still reads — a run id, a private address or a masked shape in a doc stays.
-  Source, lock files and fixtures lose only the words listed in
-  `scripts/export_also.txt` (a company, an internal host name) and in `--also`: a
-  replacement anywhere else would change what the copy builds or what its tests measure.
-  The mapping is written beside the copy as `gaia-clean-<date>-key.json` and is never
-  part of it.
-* **Code is left untouched** — a replacement in source would break the copy — and the PII
-  scan reads it anyway (`--include-src`, credentials only). **A single finding stops the
-  run before anything is zipped**; the copy stays for inspection.
-
-The archive is written beside the project (`../gaia-clean-<date>.zip`) with a short report
-next to it. `make export` is repeatable: `--force` replaces a copy of the same day.
-
 ### Finding what a question needs (`make retrieve`, Phase 4B)
 
 ```bash
@@ -952,6 +928,7 @@ lists each one; that footprint is one of the things being measured.
 | `make psql` / `make redis-cli` | Shells into the containers |
 | `make test` | Full test suite (`ARGS="tests/... -k name"` for a subset) |
 | `make test-host` | The host's verification: the §9 exports required, any skip fails the run |
+| `make feedback` | Every "Was this right?" across data sources: who, where, verdict, note, status, who reviews it |
 | `make auth ARGS="refusals"` | The last sign-ins and refusals, with the reason the sign-in screen does not show |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |
 | `make measure` | Profiling-cost measurements for Phase 3 budgets (`TARGET=`, `ARGS=`) |

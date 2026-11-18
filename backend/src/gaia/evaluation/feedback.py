@@ -35,10 +35,11 @@ from gaia.db.models.chat import (
     QueryRun,
 )
 
-__all__ = ["FeedbackError", "FeedbackNotFound", "decide", "feedback_dict", "give",
-           "open_counts", "review_items"]
+__all__ = ["FeedbackError", "FeedbackNotFound", "all_feedback", "decide", "feedback_dict",
+           "give", "open_counts", "review_items", "reviewers"]
 
 NOTE_MAX = 2000
+KEEP = object()  # D94: a verdict sent without a note keeps the note given before
 
 
 class FeedbackError(ValueError):
@@ -59,8 +60,9 @@ def feedback_dict(f: Feedback | None) -> dict[str, Any] | None:
 
 
 async def give(session: AsyncSession, message_id: uuid.UUID, *, owner: str, login: str,
-               verdict: str, note: str | None = None) -> Feedback:
-    """The person's verdict on an answer of their own conversation (created or changed)."""
+               verdict: str, note: Any = None) -> Feedback:
+    """The person's verdict on an answer of their own conversation (created or changed).
+    ``note=KEEP``: the verdict alone changes and the note given before stays (D94)."""
     if verdict not in FEEDBACK_VERDICTS:
         raise FeedbackError(f"verdict is one of {', '.join(FEEDBACK_VERDICTS)}")
     row = (await session.execute(
@@ -72,7 +74,8 @@ async def give(session: AsyncSession, message_id: uuid.UUID, *, owner: str, logi
     message, conv = row
     if message.role != "assistant" or message.kind != "answer":
         raise FeedbackError("only an answer can be right or wrong")
-    note = (note or "").strip()[:NOTE_MAX] or None
+    keep = note is KEEP
+    note = None if keep else ((note or "").strip()[:NOTE_MAX] or None)
     now = datetime.now(UTC)
     f = await session.scalar(select(Feedback).where(Feedback.message_id == message_id,
                                                     Feedback.given_by == login))
@@ -82,11 +85,65 @@ async def give(session: AsyncSession, message_id: uuid.UUID, *, owner: str, logi
                      status="none" if verdict == "right" else "open")
         session.add(f)
     else:
-        f.verdict, f.note, f.updated_at = verdict, note, now
+        f.verdict, f.updated_at = verdict, now
+        if not keep:
+            f.note = note
         if f.status != "decided":
             f.status = "none" if verdict == "right" else "open"
     await session.flush()
     return f
+
+
+async def reviewers(session: AsyncSession, data_source_id: uuid.UUID) -> list[str]:
+    """Who may decide the doubted answers of a data source (D94): its current SME grants —
+    ``acme/akaya`` for an account, ``acme/GAIA-X (role)`` for a directory role. Empty: nobody
+    will ever see them (an administrator's SME grant is not applied, D68, and is left out)."""
+    from gaia.db.models.auth import Account, Directory, DirectoryRole, Grant
+
+    grants = (await session.scalars(select(Grant).where(
+        Grant.privilege == "sme", Grant.data_source_id == data_source_id,
+        Grant.revoked_at.is_(None)))).all()
+    out: list[str] = []
+    for g in grants:
+        if g.account_id is not None:
+            row = (await session.execute(
+                select(Account.login, Directory.name).outerjoin(
+                    Directory, Directory.id == Account.directory_id)
+                .where(Account.id == g.account_id, Account.enabled.is_(True)))).first()
+            if row is not None:
+                admin = await session.scalar(select(func.count()).select_from(Grant).where(
+                    Grant.account_id == g.account_id, Grant.privilege == "admin",
+                    Grant.revoked_at.is_(None)))
+                if not admin:
+                    out.append(f"{row[1]}/{row[0]}" if row[1] else row[0])
+        elif g.directory_role_id is not None:
+            row = (await session.execute(
+                select(DirectoryRole.name, Directory.name).join(
+                    Directory, Directory.id == DirectoryRole.directory_id)
+                .where(DirectoryRole.id == g.directory_role_id))).first()
+            if row is not None:
+                out.append(f"{row[1]}/{row[0]} (role)")
+    return sorted(set(out))
+
+
+async def all_feedback(session: AsyncSession, *, limit: int = 50) -> list[dict[str, Any]]:
+    """Every "Was this right?", newest first, with its data source and who reviews it — the
+    operator's view across data sources (``make feedback``, D94)."""
+    rows = (await session.execute(
+        select(Feedback, Message, DataSource.name, DataSource.id)
+        .join(Message, Message.id == Feedback.message_id)
+        .join(DataSource, DataSource.id == Feedback.data_source_id)
+        .order_by(Feedback.updated_at.desc()).limit(limit))).all()
+    who: dict[uuid.UUID, list[str]] = {}
+    out = []
+    for f, m, ds_name, ds_id in rows:
+        if ds_id not in who:
+            who[ds_id] = await reviewers(session, ds_id)
+        out.append({"updated_at": f.updated_at, "data_source": ds_name, "given_by": f.given_by,
+                    "verdict": f.verdict, "note": f.note, "status": f.status,
+                    "decision": f.decision, "decided_by": f.decided_by,
+                    "question": (m.payload or {}).get("question"), "reviewers": who[ds_id]})
+    return out
 
 
 async def open_counts(session: AsyncSession, data_source_ids: list[uuid.UUID]

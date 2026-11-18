@@ -110,3 +110,68 @@ async def test_was_this_right_from_the_person_to_the_sme(api):  # noqa: F811
         assert [(p.score, p.y) for p in points[("deepseek-test", ANSWER_SCORING)]] == [(0.71, 0.0)]
         assert (await s.scalar(sa.select(sa.func.count()).select_from(Feedback))) == 1
         assert (await s.scalar(sa.select(sa.func.count()).select_from(Message))) >= 2
+
+
+@pytest.mark.asyncio
+async def test_a_doubt_nobody_reviews_says_so(api, monkeypatch, capsys):  # noqa: F811
+    """D94 (OWNER_VERIFICATION §34): finn's "Partly" and "No" never reached akaya. A doubt on a
+    data source nobody reviews waits for no one — the person, the report and the operator are
+    told; and ``make feedback`` shows every doubt with who reviews its data source."""
+    import argparse
+    import os
+
+    from gaia.db.engine import dispose_engine
+    from gaia.db.models.auth import Grant
+    from gaia.evaluation.feedback import all_feedback, reviewers
+    from gaia.tools import feedback as feedback_tool
+
+    app, auth, factory = api
+    _auth = auth
+    async with await _client(app) as deniz:
+        await _login(deniz, "dyilmaz", PASSWORDS["dyilmaz"])
+        hd = {"X-CSRF-Token": deniz.cookies.get("gaia_csrf")}
+        cid = (await deniz.post("/api/conversations", json={"data_source": "demo_pg"},
+                                headers=hd)).json()["id"]
+        first, second = await _answer(factory, cid, 2), await _answer(factory, cid, 4)
+        async with factory() as s:
+            ds = await s.scalar(sa.select(DataSource.id).where(DataSource.name == "demo_pg"))
+            assert await reviewers(s, ds) == ["acme/akaya"]
+        r = await deniz.put(f"/api/messages/{first}/feedback", json={"verdict": "partly"},
+                            headers=hd)
+        assert r.json()["status"] == "open" and r.json()["no_reviewer"] is False
+        # the note may come later, on its own (D92)
+        r = await deniz.put(f"/api/messages/{first}/feedback",
+                            json={"verdict": "partly", "note": "only half the stores"}, headers=hd)
+        assert r.json()["note"] == "only half the stores"
+
+        async with factory() as s:  # akaya no longer reviews demo_pg
+            await s.execute(sa.update(Grant).where(Grant.privilege == "sme").values(
+                revoked_at=sa.func.now()))
+            await s.commit()
+            assert await reviewers(s, ds) == []
+        r = await deniz.put(f"/api/messages/{second}/feedback", json={"verdict": "wrong"},
+                            headers=hd)
+        assert r.json()["no_reviewer"] is True
+        conv = (await deniz.get(f"/api/conversations/{cid}")).json()
+        assert [m["feedback"]["no_reviewer"] for m in conv["messages"]
+                if m.get("feedback")] == [True, True]
+        assert (await deniz.put(f"/api/messages/{first}/feedback", json={"verdict": "right"},
+                                headers=hd)).json().get("no_reviewer") is None
+
+    async with factory() as s:
+        rows = await all_feedback(s)
+        from gaia.evaluation.sections import extra_sections
+
+        text, doc = await extra_sections(s, "demo_pg", _auth.settings)
+    # the change of mind to "right" kept the note: a verdict alone changes the verdict (D94)
+    assert [(r["verdict"], r["note"], r["status"], r["reviewers"]) for r in rows] == [
+        ("right", "only half the stores", "none", []), ("wrong", None, "open", [])]
+    assert "**nobody reviews demo_pg**: its doubted answers wait for no one" in text
+    assert doc["feedback"]["reviewers"] == [] and doc["feedback"]["open"] == 1
+
+    monkeypatch.setenv("GAIA_METADATA_URL", os.environ["GAIA_TEST_DATABASE_URL"])
+    await dispose_engine()
+    assert await feedback_tool._run(argparse.Namespace(last=10)) == 0
+    out = capsys.readouterr().out
+    assert "demo_pg" in out and "wrong" in out and "NOBODY reviews this data source" in out
+    assert "“only half the stores”" in out

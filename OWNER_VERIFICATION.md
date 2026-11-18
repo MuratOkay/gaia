@@ -20,11 +20,11 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D93 (Phase 6 closed: flaky flips not named; D78 noticed
-  once; D92)` — §31f and §32e triaged (§33): o06 fixed by D91, **Phase 6 closed** (P6-10). A
-  full flip of a question already seen flaky within a build is no longer named a break or a fix;
-  `refusals` shows a D78 identity change once, as *NOTICED*, with the command. **Next: Phase 7's
-  plan; one asynchronous item (§33d).***
+  there. *Latest build: `2026-11-18 · D94 ("Was this right?": nobody-reviews warning, notes kept,
+  make feedback)` — A1's first run triaged (§34): akaya saw no notes. `make feedback` shows every
+  doubt, its data source and who reviews it; a doubt on a data source nobody reviews says so to
+  the person and in the report; a typed note is kept when its box is left, and a change of verdict
+  no longer erases it. **Phase 5 ticked. The next run: §34c (A1 again, diagnosis first).***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -32,7 +32,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
   failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
-  run — **triaged in §33, which closes Phase 6**; one asynchronous item remains (§33d). **Send outputs only through `make share`.**
+  run — **triaged in §33, which closes Phase 6**; its asynchronous item A1 was run once — **triaged in §34**,
+  and **§34c is the next run**. **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3795,6 +3796,8 @@ calibration, 6G's weights, the change of model as a managed event.
 
 **One asynchronous item, non-blocking** (like the SQL Server track):
 
+*A1 was run once on D93 — akaya saw no notes: §34; again in §34c on D94.*
+
 | Id | What | When | Output |
 |---|---|---|---|
 | A1 | "Was this right?" end to end on D93: finn re-linked (`make auth ARGS="account relink acme/finn"`; or after an AD rebuild, `… relink acme --all`); as finn three answers — *Yes*, *Partly* (with a note), *No*; as akaya decide both; as finn see the decisions. Then `(make stamp; make auth ARGS="refusals --last 10"; make quality TARGET=demo_pg ARGS="--last 3") > verification/33_feedback.out 2>&1` | whenever the AD is ready | *People's feedback*: 2 yes, 1 partly, 1 no (bdemir's yes stays); decided 2 |
@@ -3803,6 +3806,81 @@ Also, whenever you like: `make test-host` on D93 (**783 passed, 0 skipped**), an
 categories' words on `demo_mssql` (§32b-4).
 
 **Next:** Phase 7's plan — its backlog, ordered, with the decisions it needs.
+
+---
+
+## 34 · A1's first run, and build D94 (2026-11-18)
+
+Your note: finn re-linked, three questions answered — but **akaya could not see the notes**, so
+§32e step 3 / A1 did not pass. And: the last tick of Phase 5 is yours — **done in PHASES**
+(Phase 5 complete, 2026-11-18). No output files came with this run, so the cause below is read
+from the code; §34c's first command settles it.
+
+### 34a · What can make akaya see nothing — and what D94 changes
+
+Every step of the path holds in the sandbox (the API test over HTTP, the browser test): a *Partly*
+or *No* opens an item for the SMEs **of the data source the conversation was on**, and akaya's
+*Review → Answers people doubted* lists those of `demo_pg`, notes included. Three ways it still
+fails, each now closed or made visible:
+
+1. **The conversation was on another data source.** The chat opens on the configured default
+   data source — on your host `demo_mssql` (`app.default_target`), not `demo_pg`. akaya reviews
+   only `demo_pg`; if nobody reviews `demo_mssql`, finn's doubts there wait for no one, and no
+   screen said so. **D94:** the person sees *no expert reviews this data source yet — an
+   administrator has to name one before anyone sees it* under such an answer; the report's
+   *People's feedback* names who reviews the data source, or says **nobody reviews demo_mssql**
+   with the grant command; and **`make feedback`** lists every doubt across data sources — who,
+   where, the verdict, the note, its status, who reviews it.
+2. **The note was typed but not saved.** Since D92 the verdict is sent on the click and the note
+   box follows; a note typed and left without *Save the note* stayed in the browser. **D94:** the
+   note is saved when the box is left, too, and the line under the answer shows the saved note.
+3. **A change of verdict erased the note.** Found while testing: choosing another verdict sent
+   *no note*, and the server took that as *remove the note*. **D94:** a verdict alone keeps the
+   note given before; only an explicit empty note clears it.
+
+### 34b · Built (D94; no migration)
+
+* `gaia.evaluation.feedback.reviewers` and `all_feedback`; `make feedback`; the chat's and the
+  report's *nobody reviews* (34a-1).
+* The note kept on leaving its box, and across a change of verdict (34a-2, 34a-3).
+* Phase 5's gate ticked in PHASES.
+
+Sandbox: **775 passed, 10 skipped** (+2); web **64** (+2).
+
+### 34c · The run (build D94) — A1 again, the diagnosis first
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make feedback) > verification/34_feedback_before.out 2>&1
+(make stamp; make test-host; make web-test; make web-build) > verification/34_tests.out 2>&1
+```
+
+- [ ] `34_feedback_before.out` — finn's three answers of the first attempt: **on which data
+      source**, with which verdicts and notes, and *reviewed by* — this says which of 34a's three it
+      was (send it even if it looks empty)
+- [ ] `34_tests.out`: **785 passed, 0 skipped**; web **64 passed**, `✓ built`
+
+Then, in the browser — **on `demo_pg`: choose it in the chat's data-source list first**:
+
+1. As **finn**: three questions. *Yes* under the first; *Partly* under the second — write a note
+   and just click elsewhere (it is saved on leaving the box; the note shows under the answer);
+   *No* under the third, with a note and *Save the note*.
+2. As **akaya**: *Review* → `demo_pg` — *2 answer(s) people doubted* → both, **with finn's notes**.
+   Decide one *wrong* (with a cause), the other *right after all*.
+3. As **finn**: reopen the conversations — the decisions are under the answers.
+4. Optional, to see 34a-1: as finn, one question on `demo_mssql` and *No* under it — if nobody
+   reviews `demo_mssql`, the answer says so.
+
+```bash
+(make stamp; make feedback; make quality TARGET=demo_pg ARGS="--last 3") > verification/34_feedback.out 2>&1
+```
+
+- [ ] `make feedback`: finn's two `demo_pg` doubts *decided by akaya*, each with its note,
+      *reviewed by: acme/akaya*
+- [ ] *People's feedback on answers*: the yes counted, 2 decided, *reviewed by: acme/akaya*
+
+If A1 passes, 6D is verified on your host end to end; if not, `34_feedback*.out` shows where it
+stops. Then `make share`.
 
 ---
 

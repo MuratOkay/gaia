@@ -23,8 +23,9 @@ const ANSWER = { status: "answered", narrative: "Istanbul sold the most.", colum
 afterEach(() => vi.restoreAllMocks());
 
 describe("Was this right? (6D)", () => {
-  function world(feedback: unknown = null) {
+  function world(feedback: unknown = null, noReviewer = false) {
     const calls: { url: string; method: string; body: unknown }[] = [];
+    let kept: string | null = null;
     vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
       const url = String(input);
       const method = init?.method ?? "GET";
@@ -42,8 +43,11 @@ describe("Was this right? (6D)", () => {
       }
       if (url.endsWith("/api/messages/m2/feedback") && method === "PUT") {
         const body = JSON.parse(String(init?.body));
-        return json({ verdict: body.verdict, note: body.note, status: body.verdict === "right" ? "none" : "open",
-                      decision: null, cause: null, decision_note: null, decided_at: null, updated_at: "2026-11-18T09:01:00Z" });
+        const open = body.verdict !== "right";
+        if ("note" in body) kept = body.note;  // as the server: a verdict alone keeps the note
+        return json({ verdict: body.verdict, note: kept, status: open ? "open" : "none",
+                      decision: null, cause: null, decision_note: null, decided_at: null, updated_at: "2026-11-18T09:01:00Z",
+                      ...(open ? { no_reviewer: noReviewer } : {}) });
       }
       return json([]);
     });
@@ -55,7 +59,7 @@ describe("Was this right? (6D)", () => {
     const calls = world();
     fireEvent.click(await screen.findByRole("button", { name: "Yes" }));
     expect(await screen.findByText("You said this was right.")).toBeInTheDocument();
-    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ verdict: "right", note: null });
+    expect(calls.find((c) => c.method === "PUT")?.body).toEqual({ verdict: "right" });
   });
 
   it("sends a no at once, and the note after it (D92)", async () => {
@@ -65,25 +69,50 @@ describe("Was this right? (6D)", () => {
     fireEvent.click(await screen.findByRole("button", { name: "No" }));
     expect(await screen.findByText(/waiting for the data source's expert/)).toBeInTheDocument();
     const puts = () => calls.filter((c) => c.method === "PUT").map((c) => c.body);
-    expect(puts()).toEqual([{ verdict: "wrong", note: null }]);
+    expect(puts()).toEqual([{ verdict: "wrong" }]);
     fireEvent.change(screen.getByLabelText(/What was not right/), { target: { value: "Ankara is missing" } });
     fireEvent.click(screen.getByRole("button", { name: "Save the note" }));
     expect(await screen.findByText(/“Ankara is missing”/)).toBeInTheDocument();
-    expect(puts()).toEqual([{ verdict: "wrong", note: null }, { verdict: "wrong", note: "Ankara is missing" }]);
+    expect(puts()).toEqual([{ verdict: "wrong" }, { verdict: "wrong", note: "Ankara is missing" }]);
     // the note can be changed later, the verdict stays with the expert
     fireEvent.click(screen.getByRole("button", { name: "change the note" }));
     expect(screen.getByLabelText(/What was not right/)).toHaveValue("Ankara is missing");
+  });
+
+  it("keeps a typed note when the box is left, without its button (D94)", async () => {
+    const calls = world();
+    fireEvent.click(await screen.findByRole("button", { name: "No" }));
+    await screen.findByText(/waiting for the data source's expert/);
+    const box = screen.getByLabelText(/What was not right/);
+    fireEvent.change(box, { target: { value: "the totals are doubled" } });
+    fireEvent.blur(box);
+    expect(await screen.findByText(/“the totals are doubled”/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "PUT").map((c) => c.body)).toEqual([
+      { verdict: "wrong" }, { verdict: "wrong", note: "the totals are doubled" }]);
+  });
+
+  it("says when nobody reviews the data source (D94)", async () => {
+    world(null, true);
+    fireEvent.click(await screen.findByRole("button", { name: "Partly" }));
+    expect(await screen.findByText(/no expert reviews this data source yet/)).toBeInTheDocument();
+    expect(screen.queryByText(/waiting for the data source's expert/)).not.toBeInTheDocument();
   });
 
   it("sends a partly at once too, and a change of mind", async () => {
     const calls = world();
     fireEvent.click(await screen.findByRole("button", { name: "Partly" }));
     expect(await screen.findByText("You said this was partly right.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText(/What was not right/), { target: { value: "half the stores" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save the note" }));
+    await screen.findByText(/“half the stores”/);
     fireEvent.click(screen.getByRole("button", { name: "change" }));
     fireEvent.click(screen.getByRole("button", { name: "Yes" }));
     expect(await screen.findByText("You said this was right.")).toBeInTheDocument();
+    // the change of mind keeps the note (D94): the verdict alone was sent
+    expect(screen.getByText(/“half the stores”/)).toBeInTheDocument();
+    expect(calls.filter((c) => c.method === "PUT").at(-1)?.body).toEqual({ verdict: "right" });
     expect(calls.filter((c) => c.method === "PUT").map((c) => (c.body as { verdict: string }).verdict))
-      .toEqual(["partly", "right"]);
+      .toEqual(["partly", "partly", "right"]);
   });
 
   it("shows the expert's decision", async () => {
