@@ -126,7 +126,10 @@ def sample_lines(status: dict[str, Any], labels: list, cfg) -> list[str]:
              f"{status['decided']}, waiting {status['open']}, lapsed {status['lapsed']} "
              "(re-reasoned before anyone decided)",
              f"* this week (from {status['period']:%Y-%m-%d}): {status['this_week']['drawn']} "
-             f"drawn, {status['this_week']['open']} waiting"]
+             f"drawn, {status['this_week']['open']} waiting"
+             + (" — too few meanings to draw from in "
+                + ", ".join(f"{b} ({n} short)" for b, n in status["this_week"]["short"].items())
+                if status["this_week"].get("short") else "")]
     sampled = [x for x in labels if x.sampled]
     if sampled:
         lines.append("* decided, by Gaia's score when drawn — the only labels not chosen by "
@@ -158,7 +161,7 @@ async def extra_sections(session: AsyncSession, data_source: str, settings, fact
 
     ds_id = await session.scalar(select(DataSource.id).where(DataSource.name == data_source))
     if ds_id is not None and settings.calibration.sample_per_week > 0:
-        status = await sample_status(session, ds_id, now=now)
+        status = await sample_status(session, ds_id, now=now, cfg=settings.calibration)
         lines += ["", "## The calibration sample (7A)", "",
                   *sample_lines(status, labels, settings.calibration)]
         doc["sample"] = {k: (v.isoformat() if k == "period" else v) for k, v in status.items()}

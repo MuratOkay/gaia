@@ -109,6 +109,9 @@ class ProfileOptions:
     ignore_window: bool = False
     force: bool = False  # re-profile fresh tables; Stage 3: re-run claim tests
     joins: bool = True
+    # Phase 7C: asked between tables (and claim tests); a reason stops the run there — a
+    # scheduled run's window or a cancellation (``gaia.jobs.signal.StopSignal``)
+    stop: Any = None
 
 
 @dataclass
@@ -482,6 +485,10 @@ async def _stage1(
                 )
                 report.results.append(TableAction(table.qualified_name, "skipped", "window"))
                 await session.commit()
+                continue
+            why = options.stop.reason() if options.stop is not None else None
+            if why:  # 7C: a cancellation, or the job's own window — nothing written for it
+                report.results.append(TableAction(table.qualified_name, "stopped", why))
                 continue
             try:
                 allowed = await worker.call(profiler.can_select, cur, table.schema, table.name)
@@ -1066,7 +1073,12 @@ async def _stage3_tests(
     async with _TargetThread(profiler) as worker:
         cur = worker.cur
         queries_start = profiler.queries
-        for table, column, key, role in work:
+        for done, (table, column, key, role) in enumerate(work):
+            why = options.stop.reason() if options.stop is not None else None
+            if why:  # 7C: nothing recorded for the rest — the next run runs them
+                report.notes.append(f"stopped: {why} — {len(work) - done} claim test(s) "
+                                    "wait for the next run")
+                break
             table_id = ctx.table_ids[table.qualified_name]
             column_id = (await store.column_ids([table_id]))[table_id].get(column)
             budget = budgets.setdefault(

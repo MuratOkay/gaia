@@ -767,3 +767,62 @@ export interface CalibrationTrial {
   identity: CalibrationMetrics;
   held_out: CalibrationMetrics | null;
 }
+
+// -- jobs, schedules, alerts (7C, D98) ---------------------------------------------------------
+
+export type JobKind = "refresh" | "drift_watch" | "sample";
+export type JobState = "queued" | "running" | "done" | "partial" | "cancelled" | "failed" | "refused";
+
+export interface JobView {
+  id: string;
+  kind: JobKind;
+  data_source: string;
+  params: Record<string, unknown>;
+  state: JobState;
+  requested_by: string;
+  schedule_id: string | null;
+  worker: string | null;
+  progress: { step?: string; [k: string]: unknown };
+  result: Record<string, unknown> | null;
+  error: string | null;
+  tokens: number;
+  calls: number;
+  cancel_requested_at: string | null;
+  cancel_requested_by: string | null;
+  created_at: string;
+  started_at: string | null;
+  heartbeat_at: string | null;
+  finished_at: string | null;
+  events?: { seq: number; at: string; level: string; message: string }[];
+}
+
+export interface JobsView {
+  jobs: JobView[];
+  data_sources: string[];
+  kinds: JobKind[];
+}
+
+export interface ScheduleView {
+  id: string;
+  data_source: string;
+  kind: JobKind;
+  when: string;
+  params: Record<string, unknown>;
+  enabled: boolean;
+  next_due_at: string;
+  last_queued_at: string | null;
+  created_by: string;
+  updated_at: string;
+}
+
+export interface AlertView {
+  id: string;
+  kind: string;
+  data_source: string | null;
+  job_id: string | null;
+  message: string;
+  detail: Record<string, unknown> | null;
+  created_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+}

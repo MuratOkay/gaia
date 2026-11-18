@@ -263,6 +263,23 @@ calibration:
     deepseek-v4.1-flash: deepseek-flash            # renamed on 2026-11-16 (§21f, Q3)
     deepseek/deepseek-v4.1-flash: deepseek-flash   # the same, with the gateway's provider prefix
 
+jobs:
+  # Phase 7C (P7-6, P7-7): `make worker` runs queued and scheduled jobs — a refresh of a data
+  # source, the drift watch of its golden set, the week's calibration sample. One worker; a
+  # job of a kind per data source at a time; D67's locks still guard each step.
+  poll_seconds: 10
+  heartbeat_seconds: 15
+  stale_after_minutes: 10
+  # Model tokens one refresh may spend on a data source; at the limit it stops between
+  # tables and says so (a partial run). Set it from `make evaluate-cost`; 0 = no limit.
+  refresh_token_budget: 2000000
+  refresh_claim_tests: true
+  drift_runs: 3
+  golden_files:
+    demo_pg: infra/pg-target/golden.yaml
+    demo_mssql: infra/sqlserver/golden.yaml
+  runs_dir: evaluations/jobs
+
 retrieval:
   # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).
   max_objects: 6              # objects found by relevance; bridges on join paths come on top

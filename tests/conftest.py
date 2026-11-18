@@ -549,11 +549,11 @@ async def pg_session_factory():
 
     engine = create_async_engine(url)
     async with engine.begin() as conn:
-        for schema in ("evaluation", "auth", "chat", "audit", "profiling", "semantics",
+        for schema in ("ops", "evaluation", "auth", "chat", "audit", "profiling", "semantics",
                        "catalog"):
             await conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema} CASCADE"))
         for schema in ("catalog", "semantics", "profiling", "audit", "chat", "auth",
-                       "evaluation"):
+                       "evaluation", "ops"):
             await conn.execute(sa.text(f"CREATE SCHEMA {schema}"))
         await conn.execute(sa.text("CREATE EXTENSION IF NOT EXISTS vector"))
         has_trgm = await conn.scalar(

@@ -618,9 +618,10 @@ questions:
       GROUP BY 1 ORDER BY 1
 
   - id: h19
-    question: Of the web orders placed in 2025 that were delivered, what percentage arrived within 72 hours of being ordered, with two decimals?
+    question: Of the web orders placed in 2025 that have a delivery time recorded, returned ones included, what percentage arrived within 72 hours of being ordered, with two decimals?
     expect: answer
     objects: [sales.orders]
+    notes: reworded in D98 — "that were delivered" read as status delivered in all three D97 runs, a fair reading the reference did not mean
     sql: |
       SELECT round(100.0 * count(*) FILTER (WHERE delivered_at - ordered_at <= INTERVAL '72 hours')
                    / count(*), 2) AS delivered_within_72h_pct

@@ -3,6 +3,7 @@
     "name": "Gaia"
   },
   "common": {
+    "close": "close",
     "error": "Something went wrong",
     "loading": "Loading…",
     "wait": "Please wait…",
@@ -309,7 +310,13 @@
       "identity_changed": "another directory object carries the login",
       "account_relinked": "account re-linked to its directory object",
       "account_renewed": "account started anew",
-      "feedback_decided": "an SME decided on a doubted answer"
+      "feedback_decided": "an SME decided on a doubted answer",
+      "feedback_voided": "a verdict on an answer set aside",
+      "feedback_unvoided": "a set-aside verdict taken back",
+      "job_started": "a job started",
+      "job_cancelled": "a job cancelled",
+      "schedule_changed": "a schedule changed",
+      "alert_acknowledged": "an alert acknowledged"
     },
     "categories": "Data categories",
     "categoriesTitle": "Data categories: what is in them, who may read them",
@@ -806,7 +813,7 @@
   },
   "runs": {
     "title": "Runs",
-    "intro": "What Gaia ran to understand the data sources, and what the model calls cost (read-only; starting and scheduling runs come later).",
+    "intro": "What Gaia ran to understand the data sources, and what the model calls cost. Jobs run them by themselves: a refresh of what changed, the weekly drift watch of the golden set, the calibration sample.",
     "totals": "Per data source",
     "calls": "Model calls",
     "tokens": "Tokens",
@@ -820,6 +827,53 @@
     "queriesRun": "Queries",
     "reasoned": "{{done}} reasoned, {{skipped}} skipped, {{failed}} failed",
     "profiled": "{{done}} profiled, {{reused}} reused, {{failed}} failed"
+  },
+  "jobs": {
+    "title": "Jobs",
+    "intro": "Work the worker (make worker) runs on a data source, one at a time: queued by an administrator or a schedule. A refresh reads what changed and reasons only about that, inside its run window and token budget; it stops between tables when cancelled, and the next run takes up the rest.",
+    "kind": "Job",
+    "kinds": {
+      "refresh": "refresh",
+      "drift_watch": "drift watch",
+      "sample": "calibration sample"
+    },
+    "states": {
+      "queued": "queued",
+      "running": "running",
+      "done": "done",
+      "partial": "stopped early",
+      "cancelled": "cancelled",
+      "failed": "failed",
+      "refused": "could not start"
+    },
+    "start": "Start now",
+    "schedule": "Schedule",
+    "when": "When",
+    "by": "Asked by",
+    "bySchedule": "the schedule",
+    "step": "at {{step}}",
+    "stopping": "stopping at the next table",
+    "stopped": "stopped: {{why}} — the next run takes up the rest",
+    "log": "Log",
+    "cancel": "Cancel",
+    "none": "No job has run yet. Start one, or schedule them — the worker (make worker) runs them.",
+    "schedules": "Schedules",
+    "noSchedules": "No schedule yet.",
+    "next": "Next",
+    "off": "off",
+    "turnOff": "turn off",
+    "turnOn": "turn on"
+  },
+  "alerts": {
+    "title": "To look at",
+    "ack": "Done",
+    "kinds": {
+      "job_failed": "A job failed",
+      "job_partial": "A job stopped early",
+      "drift": "The golden set got worse",
+      "model_changed": "The provider's model changed",
+      "worker_lost": "The worker stopped answering"
+    }
   },
   "evaluation": {
     "title": "Evaluation",

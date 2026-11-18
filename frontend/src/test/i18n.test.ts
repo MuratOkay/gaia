@@ -35,7 +35,8 @@ const DYNAMIC: Record<string, string[]> = {
                      "review_decision", "glossary_term_added", "glossary_term_changed", "glossary_term_removed",
                      "category_added", "category_changed", "category_retired", "object_category_set",
                      "categories_proposed", "access_refused", "identity_changed", "account_relinked",
-                     "account_renewed", "feedback_decided"],
+                     "account_renewed", "feedback_decided", "feedback_voided", "feedback_unvoided",
+                     "job_started", "job_cancelled", "schedule_changed", "alert_acknowledged"],
   "review.reasons.": [...REASONS],
   "review.reasonHelp.": [...REASONS],
   "review.bands.": [...BANDS],
@@ -70,6 +71,9 @@ const DYNAMIC: Record<string, string[]> = {
   "review.answers.verdicts.": ["right", "partly", "wrong"],
   "review.answers.causes.": [...FEEDBACK_CAUSES],
   "evaluation.calibration.kinds.": ["meaning", "answer"],
+  "jobs.kinds.": ["refresh", "drift_watch", "sample"],
+  "jobs.states.": ["queued", "running", "done", "partial", "cancelled", "failed", "refused"],
+  "alerts.kinds.": ["job_failed", "job_partial", "drift", "model_changed", "worker_lost"],
 };
 
 describe("locale keys", () => {

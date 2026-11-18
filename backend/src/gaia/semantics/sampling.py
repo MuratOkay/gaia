@@ -172,8 +172,10 @@ async def ensure_drawn(factory, data_source_ids: list[uuid.UUID], *, cfg,
 
 
 async def sample_status(session: AsyncSession, data_source_id: uuid.UUID, *,
-                        now: datetime | None = None) -> dict[str, Any]:
-    """What was drawn, what waits, what lapsed — this week and in all."""
+                        now: datetime | None = None, cfg=None) -> dict[str, Any]:
+    """What was drawn, what waits, what lapsed — this week and in all; with ``cfg`` (the
+    calibration settings) also this week's draw per band, and the bands that held too few
+    meanings to give their share (D98)."""
     now = now or datetime.now(UTC)
     period = period_of(now)
     rows = (await session.execute(
@@ -195,4 +197,14 @@ async def sample_status(session: AsyncSession, data_source_id: uuid.UUID, *,
         if r.period == period:
             out["this_week"]["drawn"] += 1
             out["this_week"]["open"] += state == "open"
+    if cfg is not None:
+        strata = bands(cfg)
+        wanted = per_band(cfg.sample_per_week, len(strata))
+        week = [r for r, _st in rows if r.period == period]
+        out["this_week"]["bands"] = {
+            b.label: sum(1 for r in week if r.band_from == b.lo) for b in strata}
+        out["this_week"]["short"] = {
+            b.label: k - out["this_week"]["bands"][b.label]
+            for b, k in zip(strata, wanted, strict=True)
+            if week and out["this_week"]["bands"][b.label] < k}
     return out

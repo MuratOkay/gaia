@@ -10,9 +10,11 @@ from gaia.db.models import (  # noqa: F401
     catalog,
     chat,
     evaluation,
+    ops,
     profiling,
     semantics,
 )
 from gaia.db.models.base import Base
 
-__all__ = ["Base", "audit", "auth", "catalog", "chat", "evaluation", "profiling", "semantics"]
+__all__ = ["Base", "audit", "auth", "catalog", "chat", "evaluation", "ops", "profiling",
+           "semantics"]

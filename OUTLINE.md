@@ -11,7 +11,7 @@
 > from people, calibrators judged on held-out labels, "Was this right?", two regression nets and
 > category proposals measured (§42–§45); what waits for labels from real use goes to Phase 7.
 > **Phase 7 in progress** (approved 2026-11-18): ready to be run by others (§46) — 7A (labels sought)
-> and 7B (harder questions, drafts, need-to-know measured) built (§47).
+> and 7B (harder questions, drafts, need-to-know measured, §47), 7C (runs that run themselves, §48).
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -2118,4 +2118,26 @@ workload evidence, known-product recognition — waits under *Later* in PHASES.
   is right only if no number comes back; a number computed from other data is a wrong answer that looks
   right, and a forbidden name in any reply is a leak. The truth (the references) does not depend on who
   asks; the person's runs are theirs and never pool with the operator's.
+
+## 48. Runs that run themselves (D98, build D98, 2026-11-18)
+
+* **The queue is a table.** Jobs live in the metadata store, not in Redis: they must survive a restart,
+  carry their log and cost, and be audited. One worker claims them with `SKIP LOCKED` and runs one at a
+  time — the target's load and the gateway's slots stay predictable, and D67's locks still guard each
+  step against a person running the same step by hand.
+* **A scheduled run must know when to stop.** Nobody watches a night's run, so it carries its own
+  limits — the data source's run window, a token budget, a cancellation — and asks one question between
+  tables: *should I stop?* Work under way finishes; what was not started is simply not recorded, and
+  because every step is incremental (hashes, skip keys, re-profiling rules) the next run takes it up
+  without being told. *Partial* is a normal ending, not a failure.
+* **Nothing changed, nothing spent.** A refresh of an unchanged database reads the catalog, reuses every
+  profile and reasons about nothing: zero model calls. A table added to the target is exactly one table
+  profiled and reasoned.
+* **A name is not a model.** A provider's "always the latest" can change the model behind a name
+  overnight. Every golden run now records which model the provider says answered; the weekly drift
+  watch compares itself with the runs before and raises an alert on a break, a worse set, or a model id
+  the earlier runs never saw — the first line of the managed model change of 7D.
+* **A golden set evolves; its baseline should not die with every edit.** Comparisons read the questions
+  both sides share with the same wording and name the reworded ones, so correcting one question costs
+  one question's history, not the whole baseline's.
 

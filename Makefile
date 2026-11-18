@@ -306,6 +306,14 @@ calibrate: ## 6C/6D: fit and judge calibrators on held-out labels (ARGS="[--kind
 quality: ## 6A: the quality report over golden runs (TARGET=...; ARGS="--last 5 | --compare-builds | --import 'evaluations/golden_*'")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.quality $(TARGET_ARG) $(ARGS)
 
+.PHONY: worker
+worker: ## 7C: run queued and scheduled jobs (ARGS="--once" to run what is due, then exit)
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.worker $(ARGS)
+
+.PHONY: jobs
+jobs: ## 7C: jobs, schedules, alerts (TARGET=...; ARGS="list | show ID | start KIND | cancel ID | schedule … | alerts")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.jobs $(TARGET_ARG) $(ARGS)
+
 .PHONY: feedback
 feedback: ## 6D: every "Was this right?" across data sources, and who reviews each (ARGS="--last 10")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.feedback $(ARGS)

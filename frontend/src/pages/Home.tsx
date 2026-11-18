@@ -2,12 +2,14 @@ import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
 import type { Me } from "../api/client";
+import { Alerts } from "./jobs/Jobs";
 
 export function Home({ me }: { me: Me }) {
   const { t } = useTranslation();
   return (
     <section>
       <h1>{t("home.title", { name: me.display_name ?? me.login })}</h1>
+      {me.roles.includes("admin") && <Alerts />}
       <ul className="cards">
         {me.roles.map((r) => (
           <li key={r}>

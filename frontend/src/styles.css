@@ -151,3 +151,13 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .reliability .diag { stroke: #999; stroke-dasharray: 3 3; }
 .reliability .held { fill: var(--accent); }
 .reliability .ident { fill: #bbb; }
+
+/* 7C: a job's log, and what an administrator should look at */
+ol.log { list-style: none; padding-left: 0; font-size: 0.9em; }
+ol.log li { display: flex; gap: 0.75em; align-items: baseline; }
+ol.log li pre { margin: 0; white-space: pre-wrap; font-family: inherit; }
+ol.log li.error pre { color: var(--danger); }
+ul.alerts { list-style: none; padding-left: 0; }
+.status-done { background: #dafbe1; color: var(--ok); }
+.status-partial, .status-refused { background: #fff8c5; color: var(--warn); }
+.status-cancelled { background: #eaeef2; color: var(--muted); }

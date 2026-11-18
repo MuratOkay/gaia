@@ -19,6 +19,12 @@ and blind to what a whole run shares — §30b-6). A comparison also says how fa
 the two sides were made: the provider may change its model in between.
 
 Replays are never measurements (they reproduce a run); they are listed and left out.
+
+Phase 7C (D98): a golden set is edited — a question reworded, drafts accepted a few at a time
+— and every edit makes a new question set. A comparison therefore reads the questions **both
+sides share with the same wording**: an id whose question text differs between the sides is
+left out and named, so a baseline survives an edit of the set without comparing two different
+questions under one id. A comparison of builds may take its baseline from an earlier set.
 """
 
 from __future__ import annotations
@@ -34,8 +40,8 @@ from typing import Any
 from gaia.evaluation.net import is_regression, regressed_build
 
 __all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
-           "known_flaky", "named_breaks", "quality_report", "select_runs", "wilson",
-           "wrong_causes"]
+           "known_flaky", "named_breaks", "quality_report", "select_runs", "shared_questions",
+           "wilson", "wrong_causes"]
 
 THRESHOLD = -0.03  # P6-2: a change may not cost more than 3 points (lower bound)
 MIN_RUNS_FOR_BREAKS = 3  # P6-8: a break is named only with this many runs a side
@@ -62,6 +68,7 @@ class ItemView:
     sql: str | None = None
     detail: dict[str, Any] | None = None  # D84: what the final answer was made of
     repairs: int = 0
+    question: str | None = None  # D98: the wording asked (None for older imported runs)
 
 
 @dataclass
@@ -78,6 +85,8 @@ class RunView:
     meanings: dict[str, Any] = field(default_factory=dict)
     # P6-8: a deliberate regression's questions expected to break (``drop:``), when known
     expected_breaks: list[str] | None = None
+    # D98: the model ids the provider says answered (``CallRecord.answered_by``) and how often
+    answered_by: dict[str, int] = field(default_factory=dict)
 
     @property
     def measured(self) -> bool:
@@ -123,6 +132,25 @@ class Comparison:
     # D93: a full flip of a question known to be flaky — shown, but it decides nothing alone:
     # question -> the builds in which it was right in some runs and wrong in others
     flaky_flips: dict[str, list[str]] = field(default_factory=dict)
+    # D98: ids on both sides whose question wording differs — left out of the comparison
+    reworded: list[str] = field(default_factory=list)
+    only_one_side: int = 0  # questions one side has and the other does not
+
+
+def shared_questions(baseline: Sequence[RunView], candidate: Sequence[RunView]
+                     ) -> tuple[list[str], list[str], int]:
+    """(keys both sides have with the same wording, keys reworded, keys on one side only)."""
+    b_keys = set().union(*(r.items for r in baseline)) if baseline else set()
+    c_keys = set().union(*(r.items for r in candidate)) if candidate else set()
+    both = b_keys & c_keys
+    reworded = []
+    for k in sorted(both):
+        texts = {r.items[k].question for r in [*baseline, *candidate]
+                 if k in r.items and r.items[k].question}
+        if len(texts) > 1:
+            reworded.append(k)
+    keys = sorted(both - set(reworded))
+    return keys, reworded, len(b_keys ^ c_keys)
 
 
 def _scores(runs: Sequence[RunView], key: str) -> list[bool]:
@@ -167,12 +195,12 @@ def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
             history: Sequence[RunView] = ()) -> Comparison:
     """``history`` (D93): ordinary runs made before the candidate (the baseline's among them);
     a full flip of a question they show flaky within one build is reported, not named."""
-    keys = sorted(set().union(*(r.items for r in baseline)) & set().union(
-        *(r.items for r in candidate)))
+    keys, reworded, one_side = shared_questions(baseline, candidate)
     pairs = [(k, b, c) for k in keys
              if (b := _rate(baseline, k)) is not None and (c := _rate(candidate, k)) is not None]
     if not pairs:
-        return Comparison(0.0, 0.0, 0.0, 0, "cannot tell", [])
+        return Comparison(0.0, 0.0, 0.0, 0, "cannot tell", [], reworded=reworded,
+                          only_one_side=one_side)
     diffs = [c - b for _k, b, c in pairs]
     mean = sum(diffs) / len(diffs)
     # the interval: resample the runs of each side, then the questions (two-stage, P6-8)
@@ -211,7 +239,7 @@ def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
     gap = (min(r.started_at for r in candidate) - max(r.started_at for r in baseline)
            ).total_seconds() / 3600
     return Comparison(mean, low, high, len(pairs), verdict, moved, breaks, fixes, gap,
-                      flaky_flips)
+                      flaky_flips, reworded, one_side)
 
 
 @dataclass
@@ -277,6 +305,17 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
         if len(builds) >= 2:
             candidate = [r for r in ordinary if r.build == builds[0]]
             baseline = [r for r in ordinary if r.build == builds[1]]
+        else:  # D98: the build before may have run an earlier version of the set
+            everyone = [r for r in runs if r.measured and not is_regression(r.build)
+                        and _as_matches(r.as_login, as_login)]
+            earlier = [r for r in everyone if r.set_key != key and r.build != (
+                builds[0] if builds else None)]
+            if builds and earlier:
+                before = list(dict.fromkeys(r.build for r in reversed(earlier)))[0]
+                candidate = [r for r in ordinary if r.build == builds[0]]
+                newest_set = next(r.set_key for r in reversed(earlier) if r.build == before)
+                baseline = [r for r in earlier if r.build == before
+                            and r.set_key == newest_set]
     history: list[RunView] = []
     if baseline and candidate:
         chosen = {r.id: r for r in [*baseline, *candidate]}
@@ -549,7 +588,11 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                      + ") — not named: chance moves them"] if c.flaky_flips else []),
                   f"* correct, question by question: {_pct(c.difference)} points (95% interval "
                   f"{_pct(c.low)} to {_pct(c.high)}, runs and questions resampled) over "
-                  f"{c.questions} question(s)",
+                  f"{c.questions} question(s)"
+                  + (f" both sides share — {c.only_one_side} on one side only"
+                     if c.only_one_side else "")
+                  + (f"; left out, worded differently on the two sides: "
+                     f"{', '.join(c.reworded)}" if c.reworded else ""),
                   f"* verdict: {word}"]
         if c.gap_hours is not None and c.gap_hours > SESSION_HOURS:
             lines.append(f"* the baseline's last run was made {c.gap_hours:.0f} h before the "
@@ -590,5 +633,6 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                              "moved": [list(m) for m in c.moved], "meanings": doc_note,
                              "per_run": cost, "breaks": c.breaks, "fixes": c.fixes,
                              "gap_hours": c.gap_hours, "expected_breaks": expected or None,
-                             "flaky_flips": c.flaky_flips}
+                             "flaky_flips": c.flaky_flips, "reworded": c.reworded,
+                             "only_one_side": c.only_one_side}
     return "\n".join(lines) + "\n", doc

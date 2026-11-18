@@ -38,15 +38,17 @@ async def _run(args: argparse.Namespace) -> int:
             if args.sample:
                 result = await draw(session, source.id, cfg=settings.calibration)
                 await session.commit()
-                status = await sample_status(session, source.id)
+                status = await sample_status(session, source.id, cfg=settings.calibration)
                 short = "; ".join(f"{b}: {n} short" for b, n in
-                                  (result.get("short") or {}).items())
+                                  (status["this_week"].get("short") or {}).items())
                 print(f"{label}: the calibration sample of the week from "
                       f"{result['period']:%Y-%m-%d} — "
                       f"{'drawn now' if result['new'] else 'drawn before'}: "
                       f"{status['this_week']['drawn']} item(s), {status['this_week']['open']} "
                       f"waiting" + (f" ({short}: too few meanings in the band)" if short
                                     else ""))
+                print("  this week by band of Gaia's score: " + ", ".join(
+                    f"{b} {n}" for b, n in status["this_week"].get("bands", {}).items()))
                 print(f"  in all: {status['drawn']} drawn over {status['weeks']} week(s), "
                       f"{status['decided']} decided, {status['open']} waiting, "
                       f"{status['lapsed']} lapsed\n")

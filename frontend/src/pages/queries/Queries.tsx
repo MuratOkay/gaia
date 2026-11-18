@@ -4,6 +4,7 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 
 import { api, type QueryView, type RunsView } from "../../api/client";
 import { Busy, ErrorNote, useLoad, when } from "../../components/util";
+import { JobsPanel } from "../jobs/Jobs";
 
 const PAGE = 100;
 
@@ -142,7 +143,7 @@ export function QueryPage({ base = "/queries" }: { base?: string }) {
 }
 
 /** What ran to build Gaia's understanding, and what it cost (5E, read-only). */
-export function Runs() {
+export function Runs({ admin = false }: { admin?: boolean }) {
   const { t, i18n } = useTranslation();
   const [ds, setDs] = useState("");
   const { data, error, loading } = useLoad(() => api<RunsView>("/api/runs", { query: { data_source: ds || undefined } }), [ds]);
@@ -157,6 +158,7 @@ export function Runs() {
     <section>
       <h1>{t("runs.title")}</h1>
       <p className="muted">{t("runs.intro")}</p>
+      <JobsPanel admin={admin} />
       <label>{t("queries.dataSource")}
         <select value={ds} onChange={(e) => setDs(e.target.value)}>
           <option value="">{t("queries.any")}</option>

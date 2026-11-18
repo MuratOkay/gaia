@@ -489,6 +489,23 @@ class CalibrationConfig(BaseModel):
         return sorted(k for k, v in self.model_aliases.items() if v == model)
 
 
+class JobsConfig(BaseModel):
+    """Phase 7C (P7-6, P7-7): the worker, and what scheduled work may spend."""
+
+    poll_seconds: float = 10.0  # how often an idle worker looks for work
+    heartbeat_seconds: float = 15.0  # a running job says it is alive (and reads "cancel")
+    stale_after_minutes: int = 10  # a running job silent this long: its worker is gone
+    # P7-7: model tokens one refresh may spend on a data source (reasoning, the claim
+    # tests' re-reasoning); at the limit it stops between tables and says so. Its default
+    # should come from `make evaluate-cost` (OWNER_VERIFICATION §13d); 0: no limit.
+    refresh_token_budget: int = 2_000_000
+    refresh_claim_tests: bool = True  # Stage 3 and the re-reasoning it may cause
+    drift_runs: int = 3  # P6-8: a comparison needs three runs a side
+    # the golden set the drift watch runs, per data source (a schedule's params may override)
+    golden_files: dict[str, str] = Field(default_factory=dict)
+    runs_dir: str = "evaluations/jobs"  # where a job's golden runs keep their answers
+
+
 class Settings(BaseModel):
     app: AppSection
     targets: dict[str, TargetConfig]
@@ -504,6 +521,7 @@ class Settings(BaseModel):
     datasources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
+    jobs: JobsConfig = Field(default_factory=JobsConfig)
     unresolved_env: list[str] = Field(default_factory=list)
     # Unresolved placeholders per config section: "targets.<name>" for a
     # target, otherwise the top-level key ("llm", "embeddings", ...).

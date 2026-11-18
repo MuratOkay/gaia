@@ -99,7 +99,7 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
           <Route path="/chat/:id" element={<Only when={has("user", "sme", "admin")}><ChatPage me={me} /></Only>} />
           <Route path="/queries" element={<Only when={has("sme", "admin", "auditor")}><Queries /></Only>} />
           <Route path="/queries/:id" element={<Only when={has("sme", "admin", "auditor")}><QueryPage /></Only>} />
-          <Route path="/runs" element={<Only when={has("admin", "auditor")}><Runs /></Only>} />
+          <Route path="/runs" element={<Only when={has("admin", "auditor")}><Runs admin={has("admin")} /></Only>} />
           <Route path="/evaluation" element={<Only when={has("admin", "auditor")}><Evaluation /></Only>} />
           <Route path="/admin/categories" element={<Only when={has("admin")}><Categories /></Only>} />
           <Route path="/audit/categories" element={<Only when={has("auditor")}><AuditCategories /></Only>} />

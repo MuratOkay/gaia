@@ -20,11 +20,12 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D97 (Phase 7A labels sought; 7B harder questions, drafts, persona runs)`
-  — Phase 7 approved (every decision as recommended) and started: 7A, a weekly blind sample of
-  meanings across the score bands and a forecast of when calibration becomes possible; 7B, 66
-  golden questions for `demo_pg`, `make golden-draft`, golden runs as a person, retrieval with
-  clarifications. Migration `0021`. **The next run: §36d.***
+  there. *Latest build: `2026-11-18 · D98 (Phase 7C: jobs, schedules, the worker, the drift watch)`
+  — S4 passed (the last safety item; 7.0 done), the 66-question baseline read (§37): h19 reworded,
+  comparisons across an edited set. 7C: `make worker` runs jobs — a refresh of what changed within
+  its window and token budget, the weekly drift watch of the golden set, the calibration sample —
+  queued by people or schedules (`make jobs`, the *Runs* page), with alerts. Migration `0022`.
+  **The next run: §37d.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -33,8 +34,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
   failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
   run — **triaged in §33, which closes Phase 6**; its asynchronous item A1 was run once — **triaged in §34**,
-  §34c was run on D94 — triaged in §35 (A1 passed); §35d was run on D95 — **triaged in §36, with
-  Phase 7's first two stages built; §36d is the next run**. **Send outputs only through `make share`.**
+  §34c was run on D94 — triaged in §35 (A1 passed); §35d was run on D95 — triaged in §36; §36d was
+  run on D97 — **triaged in §37, with 7C built; §37d is the next run**. **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -4060,8 +4061,8 @@ env | grep -c '^GAIA_TEST_'      # 3
 ```bash
 make auth ARGS="grant sme --user acme/akaya --data-source demo_mssql"   # or whoever reviews it
 make feedback                                        # the ids: first column
-make feedback ARGS="void <id of akaya's 'Test'> --note 'A1 test click'"          # if a test
-make feedback ARGS="void <id of 'Did not like the result'> --note 'A1 test click'"
+make feedback ARGS="void 50ee9cbd --note 'A1 test click'"          # if a test
+make feedback ARGS="void de11b6c0 --note 'A1 test click'"
 ```
 
 Then, as akaya, *Review* → `demo_mssql` → *Answers people doubted*: finn's two — decide them for real.
@@ -4135,6 +4136,166 @@ Then `make share`. Nothing here blocks 7C, which I build meanwhile.
 
 ---
 
+## 37 · Triage of the D97 run; 7C built — runs that run themselves (build D98), and the next run (2026-11-18)
+
+Your note: every test ran without a problem; the outputs of §36d in `verification/share/` (build D97,
+git `f35ef4d`): `36_tests`, `36_s4`, `36_sample`, `36_golden_a/b/c`, `36_quality`, `36_as_finn`,
+`36_retrieval`, `36_draft`.
+
+### 37a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `36_tests.out` | `make test-host` **809 passed** (0 skipped); web **66 passed** | ✅ D97 |
+| `36_s4.out` | `90_refused_exec`: *REJECTED — only SELECT / WITH*; `91_refused_system_catalog`: *REJECTED — sys.sql_logins is not in the catalog*; **neither reached `execution :`**; `01_` accepted with `join : ok fk`, ran; `02_` `TOP 1000` added, *row cap reached* (the `make: *** Error 2` lines are `make query` reporting a refusal, as designed) | ✅ **S4 passed — the last open safety item; 7.0 is done** |
+| `36_sample.out` | the week's samples drawn: `demo_pg` **9**, `demo_mssql` **10**, none decided yet | ✅ 7A on the host (one `demo_pg` band held fewer than two meanings — 37b-5) |
+| `36_golden_a/b/c`, `36_quality.out` | the **new baseline**: 56, 56, 55 of 62 — pooled **90 % (85–93 %)**, executable 100 %; right every run 54; flaky h03, h10, h16, o05; wrong every run **c07, h04, h19, o02**; *no wrong answer lacked an object in its context* | ✅ — the harder set does what it was for: 37b-1 |
+| `36_quality.out`, calibration | answers: **64 subjects, 15 not always right** — Platt's minimum of not-right answers is met; 11 subjects short of 75 | ✅ 37b-2 |
+| `36_as_finn.out` | finn: 21 objects readable; 11 questions withheld; **no forbidden name in any answer**; 9 gave no number; **g16 and h08 answered from other data** | ✅ need-to-know held; 37b-3 |
+| `36_retrieval.out` | with the host's meanings and vectors: the golden set **100 % covered, 100 % connected**, recall@5 92 %; the CSV 96 %/96 % (one `MISS`: the sales representative, no declared join — known) | ✅ |
+| `36_draft.out` | `nge_small`: 10 contexts, **30 drafts, all ran and returned rows**; 10 model calls, 79 k tokens | ✅ — your correction waits (37c) |
+| `36_quality.out`, feedback | *set aside: 2* | ✅ your two A1 test verdicts set aside |
+
+### 37b · Findings
+
+1. **The harder set works: it finds mistakes, and one of mine.**
+   * **h04** (sales per top-level category): the model filtered `parent_id IS NULL` and got 0 rows —
+     products sit in subcategories. **c07** ("Which city has the most customers?"): answered at once,
+     from the default address, all cities — it should have asked. **o02**: read `rpt.v_daily_sales`,
+     whose rows leave out cancelled orders, as all orders. All three are Gaia's readings — the set now
+     holds questions Gaia gets wrong, as intended.
+   * **h19 was my mistake.** "Of the web orders … *that were delivered*" — the model read *status =
+     delivered* in all three runs; the reference counted every order with a delivery time, returned ones
+     included. Both are fair readings: a golden question that two careful readers answer differently
+     poisons the measurement. **Fixed (D98):** reworded ("that have a delivery time recorded, returned
+     ones included"); the reference is unchanged. A reworded question is a new question set — so,
+     **D98:** a comparison now reads the questions both sides share *with the same wording*, names the
+     reworded ones and leaves them out, and a comparison of builds reaches back to the previous set.
+     Your three D97 runs stay the baseline for the other 61 questions.
+2. **Answer calibration is within reach.** The answers' labels now hold 15 subjects that were not
+   always right — Platt's minimum (P6-1) — on 64 subjects of the 75 it needs. `nge_small`'s golden
+   set, once you have corrected the drafts and run it, brings ~30 more: the first answer calibrator
+   (7F) can then be fitted and judged. Correcting those drafts is now worth two things.
+3. **finn got numbers from other data — need-to-know held, but the answers mislead.** g16 ("legacy
+   transactions per customer segment") and h08 ("active customer records of the legacy master") need
+   legacy tables finn may not read; the model, which never sees them, answered from what it could see
+   (orders whose source system is LEGACY; the customers table). Nothing forbidden was read or named —
+   but finn got a number that is not the answer to his question. Gaia cannot say "this needs data your
+   role does not cover" for a table the model never saw. **A decision for you: P7-11** (PHASES): when
+   the best match for a question is data the person may not read, should Gaia refuse (saying only that
+   some data is outside their role), or answer from what they may read, as now?
+4. **The confidence levels still do not separate** (high 36/36, medium 119/137, low 12/13 right) —
+   expected until 7F fits them.
+5. **The sample's shortfall is now said every time.** `demo_pg` drew 9: one band held fewer than two
+   eligible meanings. The first draw said which; a later look did not. **D98:** the report and `make
+   review ARGS="--sample"` give this week's draw per band and name the short bands.
+
+### 37c · Built (D98 = 7C; migration `0022`, schema `ops`)
+
+* **Jobs** in the metadata store: queued by an administrator or a schedule, at most one of a kind per
+  data source, claimed once by the worker (`FOR UPDATE SKIP LOCKED`), with progress, a log, tokens and
+  calls; cancelled at once when queued, at the next table when running; a job whose worker stops
+  answering is failed with an alert.
+* **`make worker`** runs them, one at a time, and queues what the schedules say is due (once however
+  late). **`make jobs`** starts, cancels, shows, schedules (`schedule defaults`: refresh nightly,
+  drift watch Sundays, sample Mondays — P7-7), lists alerts. The same on the ***Runs*** page
+  (administrators start, cancel and schedule; auditors read), with **alerts on the administrators'
+  home page**. Every start, cancellation, schedule change and acknowledgement is audited.
+* **Refresh** = introspect → profile what is due → reason what changed (and embed) → claim tests →
+  reason what they changed — the existing steps, chained; inside the data source's run window (refused
+  outside it, stops when it closes), within `jobs.refresh_token_budget` (2 M tokens; set it from `make
+  evaluate-cost`), stopping between tables when cancelled. Stopped early it is *partial*: what is done
+  is kept, the next run takes up the rest.
+* **Drift watch** = the golden set of the data source (`jobs.golden_files`) run fresh three times,
+  compared with the latest ordinary runs by P6-8's verdict on the shared questions; a named break or
+  *fails* raises a **drift** alert, a model id the provider reports that the baseline never saw raises
+  **model_changed**. Golden runs now record who the provider says answered (`answered_by`).
+* **Sample** = the week's calibration sample, drawn without waiting for an SME.
+* `make golden`'s run moved into `gaia.evaluation.golden_exec` unchanged, so the watch runs the same code.
+
+Sandbox: **813 passed, 10 skipped** (+14 since D97; both PostgreSQL databases; the 10 skips are SQL Server and Ollama); web **69**;
+migration `0022` down and up, DDL identical to `create_all`. The refresh test changes the target's
+schema for real (a table added, a column added, dropped again at the end) — through
+`GAIA_PG_TARGET_ADMIN_URL`, which your `.env` holds for `make pg-target-seed`.
+
+### 37d · The run (build D98)
+
+**Step 0 — the migration and the tests.**
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0021 -> 0022 (schema ops)
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make test-host; make web-test; make web-build) > verification/37_tests.out 2>&1
+```
+
+- [ ] **823 passed, 0 skipped** (your 809 + 14; about 11 minutes); web **69 passed**, `✓ built`
+
+**Step 1 — the worker.** In a second terminal, leave it running for the rest of the run:
+
+```bash
+make worker 2>&1 | tee verification/37_worker.out
+```
+
+**Step 2 — schedules, and a refresh with nothing to do.**
+
+```bash
+make jobs TARGET=demo_pg ARGS="schedule defaults"
+make jobs TARGET=demo_pg ARGS="start refresh"       # the worker picks it up within 10 s
+make jobs                                           # until it says done
+```
+
+- [ ] the refresh `done`, **0 tokens**: `introspect: 0 added …`, `profile: … reused`, `reason: …`
+      without *reasoned* (its log: `make jobs ARGS="show <id>"`)
+
+**Step 3 — a deliberate schema change** (7C's acceptance: only what changed is profiled and reasoned):
+
+```bash
+docker exec gaia-target-pg psql -U postgres -d gaia_target_pg -c "CREATE TABLE legacy.zz_owner_probe (id integer PRIMARY KEY, city text); INSERT INTO legacy.zz_owner_probe SELECT g, 'c' || (g % 7) FROM generate_series(1, 500) g; GRANT SELECT ON legacy.zz_owner_probe TO gaia_ro; ANALYZE legacy.zz_owner_probe;"
+make jobs TARGET=demo_pg ARGS="start refresh"
+# when done:
+docker exec gaia-target-pg psql -U postgres -d gaia_target_pg -c "DROP TABLE legacy.zz_owner_probe"
+make jobs TARGET=demo_pg ARGS="start refresh"
+```
+
+- [ ] the first: `introspect: 1 added` naming `legacy.zz_owner_probe`; `profile: 1 profiled, … reused`;
+      `reason: 1 reasoned` — a few model calls, nothing else re-reasoned
+- [ ] the second: `1 removed`, nothing reasoned
+
+**Step 4 — the drift watch, and a cancellation.** ~10 minutes (three runs of 66 questions):
+
+```bash
+make jobs TARGET=demo_pg ARGS="start drift_watch"
+# … when `make jobs` shows it done:
+make jobs TARGET=demo_pg ARGS="start drift_watch"
+# as soon as `make jobs` shows this second one running:
+make jobs ARGS="cancel <its id>"
+```
+
+- [ ] the first watch `done`: *golden run 1 … 3 of 3*, then *against 3 earlier run(s): passes* or
+      *cannot tell* over **61** questions — h19 named as reworded, left out; no drift alert
+- [ ] the second: `cancelled` after the run under way finished (*stopped: cancelled*)
+
+**Step 5 — in the browser.** As **dyilmaz**: *Runs* — the jobs with their state, *Log*, the
+schedules (turn one off and on); *Start now* a **calibration sample** of `demo_mssql`; the home page
+lists nothing to look at — or the alerts of steps 2–4, if any: *Done* clears one. As **bdemir**
+(auditor): *Runs* shows the same, without buttons; the *Events* list the starts, the cancellation and
+the schedule changes.
+
+**Step 6 — what to send.**
+
+```bash
+(make stamp; make jobs ARGS="--last 20"; make jobs ARGS="schedules"; make jobs ARGS="alerts"; \
+ for id in $(make jobs ARGS="--last 6" | awk '{print $1}'); do make jobs ARGS="show $id"; done; \
+ make quality TARGET=demo_pg ARGS="--last 3") > verification/37_jobs.out 2>&1
+```
+
+Then `make share`. Stop the worker (Ctrl-C) whenever you like; with schedules on, it is what runs them.
+
+**Whenever you have the time:** akaya's random checks (10 a week per data source), the `nge_small`
+draft's correction (`infra/sqlserver/golden.yaml` — the file's head says how), and P7-11.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -4184,3 +4345,8 @@ Then `make share`. Nothing here blocks 7C, which I build meanwhile.
 | `make golden`: `note: N question(s) still marked status: draft are left out` | a drafted golden file (`make golden-draft`, D97) not yet corrected | correct each draft and delete its `status: draft` line |
 | `make quality` shows none of the runs made with `--as` | since D97 the operator's report reads the operator's runs only | `make quality ARGS="--as LOGIN"` |
 | An answer label you know was a test click | a "Was this right?" decided while testing | `make feedback ARGS="void ID --note …"` (D96) |
+| A job stays `queued` | no worker runs | `make worker` (a second terminal), or `make worker ARGS="--once"` |
+| A refresh is `refused`: *outside the run window* | the data source has a run window (`profiling.window` or its own) | wait for the window, or `start refresh --param ignore_window=1` |
+| A refresh ends `partial`: *the token budget … is spent* | more to reason than `jobs.refresh_token_budget` allows | nothing — the next run takes up the rest; or a larger `--param budget=N` |
+| `make jobs`: `already queued` / `already running` | one job of a kind per data source at a time | wait for it, or `make jobs ARGS="cancel ID"` |
+| A drift-watch alert | the golden set got worse against the runs before (a named break, or *fails*), or the provider reports another model | read the job's result (`make jobs ARGS="show ID"`) and `make quality ARGS="--compare-builds"`; *Done* on the home page when handled |

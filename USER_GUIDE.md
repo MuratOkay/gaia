@@ -704,7 +704,9 @@ interrupted run there. The report says at its top how many answers were asked no
 codes whose meaning only the data gives, a category hierarchy, percentages, weekday and quarter
 arithmetic, populations that must be stated. Some are meant to be missed: a set that is always right
 measures nothing. A new set is a new baseline — its first three fresh runs are what later runs are
-compared with; the 30-question runs stay in the store under their own set.
+compared with; the 30-question runs stay in the store under their own set. Since D98 a comparison
+reads the questions both sides share **with the same wording**, so a baseline survives an edit of the
+set (`h19` was reworded in D98: it is left out of comparisons with the D97 runs, and named).
 
 **As a person** (`--as LOGIN`, scored since 7B): every question is answered as the chat would answer that
 person. A question that needs an object they may not read — or personal data when they are not a PII
@@ -719,6 +721,45 @@ such runs — without `--as`, `make quality` reads the operator's runs only.
 a deliberately worse prompt, recorded under its own build label (`… + deliberate regression:
 joins-rule`). Three such runs against three of the build itself (`make quality ARGS=
 "--compare-builds"`) test whether the comparison catches a worse prompt. Never for anything else.
+
+### Runs that run themselves (`make worker`, `make jobs`, Phase 7C)
+
+```bash
+make worker                                          # runs queued and scheduled jobs; Ctrl-C stops it
+make worker ARGS="--once"                            # queue what is due, run it all, exit (cron)
+make jobs TARGET=demo_pg ARGS="schedule defaults"    # refresh nightly, drift watch Sundays, sample Mondays
+make jobs TARGET=demo_pg ARGS="start refresh"        # now; also drift_watch, sample
+make jobs                                            # the last jobs: state, who asked, tokens
+make jobs ARGS="show 1a2b3c4d"                       # one job's log and result
+make jobs ARGS="cancel 1a2b3c4d"                     # a running job stops at its next table
+make jobs ARGS="alerts"                              # what to look at; ARGS="ack ID" when handled
+```
+
+A **job** is one piece of work on a data source, queued by an administrator or a schedule and run by
+the **worker** — one at a time, one job of a kind per data source. Start the worker where Gaia runs
+and leave it running; with schedules set it is what keeps Gaia current.
+
+* **refresh** — what you did by hand each day (§4), chained: read the catalog and what changed;
+  profile what is due (a changed table, a moved row count, an old profile — the rest reused without
+  touching the data); reason only about what changed, and embed it; test the stored claims on the
+  data; reason again where a test changed something. It runs inside the data source's **run window**
+  (`profiling.window`, or the data source's own) — refused outside it, stopping when it closes — and
+  within a **token budget** (`jobs.refresh_token_budget`, 2 000 000; set it from `make evaluate-cost`).
+  Stopped early it ends *stopped early* (partial): what is done is kept, and the next run does the
+  rest. `--param budget=N`, `--param ignore_window=1`, `--param no_claim_tests=1` for one run.
+* **drift_watch** — the data source's golden set (`jobs.golden_files`) run fresh three times and
+  compared with the runs before it, question by question (P6-8): a question that breaks, or a set that
+  got worse, raises an alert; so does a model name the provider reports that the earlier runs never
+  saw ("always the latest" moved on). It compares the questions both sides share with the same
+  wording: a reworded golden question is left out and named.
+* **sample** — the week's random checks for the SMEs (7A), drawn without waiting for someone to open
+  *Review*.
+
+**On the screen** — *Runs* shows the jobs (state, step, who asked, tokens, the log) and the schedules:
+administrators start, cancel, schedule and turn schedules off; auditors read. What needs looking at —
+a job that failed or stopped early, a worker that stopped answering, a drift, a changed model — is on
+the administrators' home page until marked *Done*. Every start, cancellation, schedule change and
+acknowledgement is in the audit.
 
 ### Drafting a golden set (`make golden-draft`, Phase 7B)
 
@@ -1035,6 +1076,8 @@ lists each one; that footprint is one of the things being measured.
 | `make test-host` | The host's verification: the §9 exports required, any skip fails the run |
 | `make feedback` | Every "Was this right?" across data sources: who, where, verdict, note, status, who reviews it; `ARGS="void ID --note …"` sets one given while testing aside (7A) |
 | `make golden-draft` | Drafts a golden set for a person to correct — every question `status: draft` (7B) |
+| `make worker` | Runs queued and scheduled jobs: refresh, drift watch, calibration sample (7C) |
+| `make jobs` | Jobs, schedules, alerts: `start KIND`, `cancel ID`, `show ID`, `schedule defaults`, `alerts` (7C) |
 | `make review ARGS="--sample"` | Draws the week's calibration sample now, if not drawn yet (7A) |
 | `make auth ARGS="refusals"` | The last sign-ins and refusals, with the reason the sign-in screen does not show |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |

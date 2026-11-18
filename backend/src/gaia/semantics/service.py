@@ -109,6 +109,9 @@ class ReasoningOptions:
     # make rescore: never call the model; score the stored answers against
     # today's evidence (with force: every table, even with unchanged inputs)
     rescore_only: bool = False
+    # Phase 7C: asked before each table's model call; a reason stops the run there (the
+    # table is not started — a scheduled run's budget, its window, a cancellation)
+    stop: Any = None
 
 
 @dataclass
@@ -1228,8 +1231,11 @@ async def _execute(
     }
     counters = {"columns": 0, "failed": 0, "critiques_failed": 0, "reasoned_or_rescored": 0}
 
-    async def work(item: PlanItem) -> tuple[PlanItem, TableOutcome]:
+    async def work(item: PlanItem) -> tuple[PlanItem, TableOutcome | str]:
         async with semaphore:
+            why = ctx.options.stop.reason() if ctx.options.stop is not None else None
+            if why:  # 7C: not started; the next run takes it up (nothing was written)
+                return item, why
             evidence = item.context.rendered if item.context is not None else None
             bundle = _focused(item)
             if evidence is not None and bundle is not item.bundle:
@@ -1413,6 +1419,10 @@ async def _execute(
         try:
             for next_done in asyncio.as_completed(tasks):
                 item, outcome = await next_done
+                if isinstance(outcome, str):
+                    report.results.append(TableResult(
+                        item.table.qualified_name, "stopped", f"not started: {outcome}"))
+                    continue
                 await persist(item, outcome, "reasoned")
         finally:
             for task in tasks:
@@ -1485,6 +1495,10 @@ async def _execute(
     run.cached_tokens = totals["cached_tokens"]
     run.wall_ms = report.wall_ms
     notes = list(report.notes)
+    if report.count("stopped"):
+        notes.append(f"stopped: {report.count('stopped')} table(s) not started — "
+                     f"{ctx.options.stop.stopped if ctx.options.stop else 'stop'}; the next "
+                     "run takes them up")
     if report.count("rescored"):
         notes.append(f"re-scored without an LLM call: {report.count('rescored')} table(s)")
     run.notes = notes

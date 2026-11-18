@@ -74,6 +74,9 @@ async def test_the_calibration_sample(pg_session_factory, fake_llm, fake_embedde
     assert len(await _drawn(factory, ds, period_of(WEEK1))) == first["drawn"]
     for b, n in zip(strata, available, strict=True):  # two a band where the band has two
         assert sum(1 for r in drawn.values() if r.band_from == b.lo) == min(2, n)
+    async with factory() as s:  # D98: which band gave fewer, said every time it is asked
+        week = (await sample_status(s, ds, now=WEEK1, cfg=cfg))["this_week"]
+    assert sum(week["bands"].values()) == len(drawn) and week["short"] == first["short"]
     accepted = [r for r in drawn.values() if r.raw_score >= settings.profiling.accept_at]
     assert accepted, "the accepted meanings — never queued otherwise — are drawn too"
 
