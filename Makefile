@@ -39,6 +39,10 @@ share: ## Verification outputs safe to send: personal data replaced consistently
 strip-verification: ## Delete the first line (captured local `cd` echo) of verification outputs
 	@bash $(ROOT)/scripts/strip_verification_first_line.sh $(ARGS)
 
+.PHONY: export
+export: ## A clean, PII-safe copy of the project, zipped beside it (ARGS="--also 'A Name' --force")
+	@bash $(ROOT)/scripts/export_clean.sh $(ARGS)
+
 # --- stack -----------------------------------------------------------------
 
 .PHONY: up

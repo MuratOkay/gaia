@@ -1,0 +1,5 @@
+# Words ``make export`` must replace besides what the patterns know: a company,
+# an internal host name, a person's full name. One per line; '#' starts a comment.
+# They are replaced consistently (``<name-1>``) and the scan looks for them too.
+evren-llmapi.ssyz.org.tr
+evren
