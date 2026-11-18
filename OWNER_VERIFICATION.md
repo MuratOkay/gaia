@@ -20,9 +20,9 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D99 (onboarding workflow documented; a golden run of nothing refused)`
-  — D98 (7C: `make worker`, jobs, schedules, the drift watch; migration `0022`) plus the answers to
-  your three questions (§37e, USER_GUIDE §11). **The next run: §37d** (on D98 or D99).***
+  there. *Latest build: `2026-11-18 · D101 (Phase 7D: models registered, trialled, switched, rolled back)`
+  — D100 (two fixes the D98 run found) and 7D (`make model`, the *Models* page; migration `0023`).
+  **The next run: §38d** — it also names P7-8, the second model.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -32,7 +32,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
   run — **triaged in §33, which closes Phase 6**; its asynchronous item A1 was run once — **triaged in §34**,
   §34c was run on D94 — triaged in §35 (A1 passed); §35d was run on D95 — triaged in §36; §36d was
-  run on D97 — **triaged in §37, with 7C built; §37d is the next run**. **Send outputs only through `make share`.**
+  run on D97 — triaged in §37, with 7C built; §37d was run on D98 — **triaged in §38, with 7D built;
+  §38d is the next run**. **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -4343,6 +4344,205 @@ Optionally, as a person: `make golden TARGET=demo_mssql ARGS="--file infra/sqlse
 passes (one line instead of a traceback) — and the documentation: §37d runs the same on D98 or D99 (on D99
 expect **825 passed**, two tests more).
 
+## 38 · Triage of the D98 run; D100; 7D built — a change of model as a managed event (build D101), and the next run (2026-11-18)
+
+Your outputs of §37d in `verification/share/` (build D98, git `67bf0f2` for the tests, `28e0e64` for
+the jobs): `37_tests`, `37_worker`, `37_jobs` (`36_tests` is a run cut off by a closed terminal —
+*Hangup* — and is superseded by `37_tests`).
+
+### 38a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `37_tests.out` | **819 passed, 2 failed, 2 skipped**; web **69 passed**, `✓ built`. Both failures saw **your step-3 table**: `Legacy`'s keywords `['legacy', 'owner']` (from `zz_owner_probe`), and `demo_pg` counted **25 tables, 215 columns** (24 and 213 + the probe's 2) — the snapshot was taken at 18:37:48 UTC, between step 3's `CREATE` and its `DROP`. The 2 skips: *ollama unreachable at `localhost:11435`* | ⚠️ not the build: the tests ran while step 3 had changed `demo_pg` (38b-1); Ollama was down (38b-2) |
+| `37_worker.out`, `37_jobs.out` — step 2 | refresh `309c046e`: nothing structural (`added 0, removed 0, structure_changed 0`; 25 tables *data_changed*), profiles reused; but **99,290 tokens**: 6 claim tests were still pending, and after them 4 tables were re-reasoned and 4 re-scored (`reason_after_tests`) | ✅ — a one-off catch-up of Stage 3 work earlier runs had left (38b-3); "0 tokens" is what step 3's last refresh shows |
+| step 3 | refresh `e77b13d8`: `legacy.zz_owner_probe: added, +2 columns` — **1 profiled, 1 reasoned**, its claim test, reasoned once more after it (29,842 tokens), nothing else; refresh `d3858fe4` after the `DROP`: `removed, -2 columns`, **0 tokens** | ✅ **7C's acceptance: only what changed is profiled and reasoned** |
+| every refresh | `embedding failed after 3 attempts: … Connection refused` — yet each job ended *done* | ❌ **a silent failure — mine; fixed in D100** (38b-2) |
+| step 4 | drift watch `c2dff30b`: 94 %, 90 %, 92 % → *against 3 earlier run(s): **cannot tell**, +0.5 points (−4.9 to +6.6) over **61** question(s)*; h19 named as reworded, left out; `answered_by: deepseek-flash 418`; no alert | ✅ the watch compares by itself, on the shared questions |
+| step 4, cancel | watch `f647be0a`: cancellation asked 18:46:29; the golden run under way finished (89 %), then *cancelled* 18:47:40 (your `make jobs` listing caught it still running at 18:46) | ✅ — a golden run is the unit a watch stops between |
+| step 2, schedules | refresh daily 02:00 (23:00 UTC), drift watch Sundays 04:00, sample Mondays 06:00; **no open alert** | ✅ |
+| `make quality --last 3` | the watch's runs: **92 % (87–95 %)**, executable 99 %; right every run 53; wrong every run **c07, h03**; flaky g03, h04, h09, h10, o02, o05, o06; 14 of 15 wrong answers had every needed object in their context | ✅ steady against D97's 90 % (85–93 %); h03: 38b-4 |
+| the report, 7A | sample: 9 drawn, 5 waiting, **4 lapsed** (re-reasoned before anyone decided) | ✅ as designed — 38b-3 |
+| Step 5 (browser) | leaves no file | — tell me if anything there was off |
+
+### 38b · Findings
+
+1. **The two failed tests read the database your step 3 had just changed.** `test_object_inventory`
+   and the category-keyword test read `demo_pg`'s live catalog, which is what they are for — they
+   cannot be isolated from a change you make to `demo_pg` while they run. The rule for every run:
+   **the tests before or after a step that changes `demo_pg`, never at the same time.** The reverse
+   was mine and is fixed: D98's refresh test changed `demo_pg`'s schema for real (a table added and
+   dropped) — had your Gaia refreshed at that moment, it would have seen it. **D100:** that test now
+   creates its own database (`gaia_test_scratch`, six small tables, dropped at the end) through the
+   same `GAIA_PG_TARGET_ADMIN_URL`; the suite no longer changes anything your Gaia reads.
+2. **Ollama was down, and the jobs said *done*.** The refresh kept the meanings and skipped their
+   embeddings — correct — but said nothing: a meaning without a vector is found by its words only,
+   and nobody would have known. **D100:** a refresh whose embeddings fail ends **stopped early**
+   with an alert, *embeddings failed (…): the meanings are kept and found by words only until the
+   next refresh embeds them*; the next refresh embeds what is missing (tested with an embedder that
+   refuses, then one that works). Before the next run: `docker start ollama-code` (or however you
+   run it on port 11435), `make check-embed`.
+3. **Step 2's 99 k tokens were owed work, not waste.** Six claim tests (Stage 3) had never run —
+   your earlier runs were by hand, and the tests are a step of their own; the refresh ran them and
+   re-reasoned the 4 tables whose tests changed something. It happens once; a refresh with nothing to
+   do costs nothing (your `d3858fe4`). Most likely the same re-reasoning made **4 of the week's 9
+   sampled meanings lapse**: a sampled meaning re-reasoned before anyone decides it is no longer the
+   meaning that was drawn, and a decision on it would label a meaning that no longer exists. Next
+   Monday's draw is fresh.
+4. **h03 is a real Gaia error, and a good golden question.** "The supplier whose products had the most
+   returned units in 2025": the model grouped by the supplier's **name** — and three suppliers share
+   the name *Marmara Gida Ltd. Sti.* (27 supplier names in the seed are shared by two or three
+   suppliers), so their returns were added together — 262 units, where the supplier with the most on
+   its own is *Marmara Spor Co.* with 128; the reference groups by the supplier's key, with the name
+   beside it. A prompt rule would fix it ("group by the key, show the name"), but a prompt change
+   moves the net and needs fresh runs — **held** until 7D's trial has run on today's prompt, so that
+   a model's difference and a prompt's are never measured at once. c07
+   (answers at once from the default address) stays wrong by decision (P7-1).
+5. **7C's host acceptance is met but for its "week".** A schema change picked up with only the changed
+   object profiled and reasoned; a removal at 0 tokens; the cancellation; the drift watch by itself;
+   schedules set and audited. What is left: the schedules running for a week (they are on — let the
+   worker run), and a start outside the window refused (shown in the sandbox; on the host only if you
+   set a window). **Gate "7C's week → 7D": I treat it as running** — 7D is built meanwhile, as we did
+   for 7C.
+
+### 38c · Built (D100 = the fixes above; D101 = 7D; migration `0023`)
+
+**D100:** the refresh test on its own scratch database; a refresh whose embeddings fail is *stopped
+early* with an alert.
+
+**D101 — 7D, a change of model as a managed event** (PHASES 7D; P7-4, P7-5):
+
+* **Models registered beside the configured one** (`ops.model`): a name, the URL, the id sent, the
+  key — the name of an environment variable, or the key itself encrypted with `GAIA_MASTER_KEY` (never
+  shown again) —, a locality (a remote model sees values masked, D24), options. The model
+  `config/gaia.yaml` names is always listed and never edited here.
+* **Probed** before anything else: a plain answer and JSON mode must work (thinking is reported).
+* **Two purposes** — *reasoning* (meanings; the nightly refresh) and *answering* (the chat, `make
+  ask`, golden runs, drafts). `ops.model_assignment` says which model serves each, since when, the
+  one it replaced and until when a rollback may return to it. Every command, every job and the chat
+  read it when they start (the chat at each question): **a switch needs no restart**.
+* **The trial** (`make model ARGS="trial NAME"`, a `model_trial` job the worker runs): the golden set
+  three times by each model, **interleaved in one session**, compared as builds are (verdict, interval,
+  named breaks, tokens, seconds a question); the tables with the most SME decisions re-reasoned by
+  both models **in a shadow — nothing stored** — and every column judged against the SME's decision
+  by one rule for both; the **impact preview** (re-reasoning everything: tokens, nights of the refresh
+  budget, hours, cost with prices; SME decisions kept; *starts uncalibrated*). The candidate's golden
+  runs carry `… + model trial: NAME` and stay out of the ordinary report and the drift watch's baseline.
+* **Switch** — refused without a finished trial of that model for that purpose from the last 14 days,
+  unless forced (recorded). An alert tells every administrator. Switching *reasoning* rewrites
+  nothing at once: the refresh sees the model changed and re-reasons a part each night inside its
+  budget, SME decisions kept; `make model` and the page show the meanings per model.
+* **Rollback** to the replaced model within 30 days, no trial needed; **retire** refused while a model
+  serves or may still be rolled back to — its key is wiped, its meanings and runs stay.
+* `make model`, `/api/models`, the ***Models*** page (administrators; auditors read it under *Audit →
+  Models*); every registration, probe, trial, switch, rollback and retirement audited. `make ask` now
+  prints which model answered.
+* Not in 7D yet: **an embedding model change** (another vector size needs a new vector table; it is
+  the same event with its own preview — a later step of 7D, when you want one).
+
+Sandbox: **824 passed, 10 skipped** (+11 since D98: D99's 2, and 9 for 7D; the skips are SQL Server
+and Ollama); web **71**; migration `0023` down and up, DDL identical to `create_all`.
+
+### 38d · The run (build D101)
+
+You have not named P7-8 (the second model) yet — **the run is how you name it.** The recommendation
+stays *the gateway's other model*: the same provider, the same key, a different model; its id is in
+the gateway's list:
+
+```bash
+set -a; . ./.env; set +a
+curl -s -H "Authorization: Bearer $DEEPSEEK_API_KEY" "$GAIA_LLM_BASE_URL/models" | python3 -m json.tool | grep '"id"'
+```
+
+If the gateway offers only `deepseek-flash`, a **local** model through Ollama works too (the same
+Ollama as the embeddings, its OpenAI-compatible `/v1`): `docker exec ollama-code ollama pull
+qwen2.5:7b` — expect it much slower and worse (a yardstick of known direction), and give the trial a
+smaller set (step 3's note).
+
+**Step 0 — Ollama, the migration, the tests** (nothing else running against `demo_pg` meanwhile):
+
+```bash
+docker start ollama-code 2>/dev/null; make check-embed                 # bge-m3 answers
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..           # 0022 -> 0023
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make test-host; make web-test; make web-build) > verification/38_tests.out 2>&1
+```
+
+- [ ] **834 passed, 0 skipped** (your 823 of D98 + 11; about 12 minutes); web **71 passed**, `✓ built`
+
+**Step 1 — the worker** (a second terminal; restart it if it still runs D98):
+
+```bash
+make worker 2>&1 | tee verification/38_worker.out
+```
+
+**Step 2 — register and probe** (`NAME` is yours to choose; `MODEL_ID` from the list above):
+
+```bash
+make model ARGS="add NAME --base-url $GAIA_LLM_BASE_URL --model-id MODEL_ID --key-env DEEPSEEK_API_KEY"
+# or, local: make model ARGS="add qwen-local --base-url http://localhost:11435/v1 --model-id qwen2.5:7b --locality local"
+make model ARGS="probe NAME"
+```
+
+- [ ] `ok plain`, `ok json` (thinking: ok, or *none returned* — fine), **`NAME: verified`**
+
+**Step 3 — the trial on `demo_pg`** (~2.5 M tokens with the gateway; about 15–25 minutes):
+
+```bash
+make model TARGET=demo_pg ARGS="trial NAME"
+make jobs                                   # until the model_trial is done
+make model ARGS="show"
+```
+
+- [ ] *answering against deepseek-flash*: a verdict over the 62 questions with a reference, both
+      sides' right answers, tokens and seconds a question; *meanings against the SME's decisions*
+      on the tables you reviewed, both models; *if switched*: the re-reasoning cost in nights,
+      *starts uncalibrated*
+- [ ] `make quality TARGET=demo_pg ARGS="--last 3"`: the three runs of **deepseek-flash** only, with
+      *3 model-trial run(s) left out*
+
+*A local model:* `trial qwen-local --purpose answering --param file=<a copy of the golden file with
+10 questions>` first — a full trial on CPU can take hours.
+
+**Step 4 — switch answering, ask, roll back:**
+
+```bash
+make model ARGS="switch NAME --purpose answering --note 'P7-8 trial'"
+make ask TARGET=demo_pg ARGS="--question 'How many orders were placed in 2025?'"   # model : MODEL_ID
+make model                                   # answering: NAME since …, replacing deepseek-flash — rollback possible until …
+make model ARGS="rollback --purpose answering"
+make ask TARGET=demo_pg ARGS="--question 'How many orders were placed in 2025?'"   # model : deepseek-flash
+```
+
+- [ ] the switch accepted **without `--force`** (the trial counts); the first `make ask` says `model
+      : MODEL_ID`, the second `deepseek-flash`; an alert *The model changed* after each
+
+Do not switch *reasoning* on the host unless you want to: it would make the nightly refreshes
+re-reason `demo_pg` with the new model (the trial's preview says how many nights). Its trial is
+measured all the same.
+
+**Step 5 — in the browser.** As **dyilmaz**: *Models* — what serves each purpose (after the
+rollback *deepseek-flash* for both; the switch and the rollback under *Switches*), NAME with its
+probe, the trial's result, the meanings per model; the two alerts on the home page (*Done*). Then
+the page's own write path, with a model that cannot work: *Register a model* — name `bogus`, base URL
+`https://example.invalid/v1`, model id `x`, **the key itself** `x` (stored encrypted: the API needs
+`GAIA_MASTER_KEY`, as for a data source's password) — then *Probe*: **failed**, the plain answer's
+check saying why and the other two *not tried*; *Retire*: listed as retired, *none (wiped)* as its
+key. As **bdemir**: *Audit → Models*, the same without buttons; *Events* lists *a model
+registered*, *probed*, *switched*, *rolled back*, *retired*.
+
+**Step 6 — what to send.**
+
+```bash
+(make stamp; make model; make model ARGS="show"; make jobs ARGS="--last 6"; make jobs ARGS="alerts"; \
+ make quality TARGET=demo_pg ARGS="--last 3") > verification/38_models.out 2>&1
+```
+
+Then `make share`. With step 3's answer you will have named P7-8: I will write it into the decisions.
+
+**Still whenever you have the time:** `nge_small`'s drafts (§37e), akaya's weekly checks, and **P7-11,
+P7-12** — both still wait for your word (PHASES, *Decisions needed*).
+
 ---
 
 ## Troubleshooting
@@ -4399,3 +4599,10 @@ expect **825 passed**, two tests more).
 | A refresh ends `partial`: *the token budget … is spent* | more to reason than `jobs.refresh_token_budget` allows | nothing — the next run takes up the rest; or a larger `--param budget=N` |
 | `make jobs`: `already queued` / `already running` | one job of a kind per data source at a time | wait for it, or `make jobs ARGS="cancel ID"` |
 | A drift-watch alert | the golden set got worse against the runs before (a named break, or *fails*), or the provider reports another model | read the job's result (`make jobs ARGS="show ID"`) and `make quality ARGS="--compare-builds"`; *Done* on the home page when handled |
+| A test fails counting `demo_pg`'s tables or columns, or naming a category keyword you never saw | it ran while something changed `demo_pg` (a step of a run, your own experiment) | run `make test-host` before or after such a step, never during (§38b-1) |
+| A refresh ends *stopped early*: *embeddings failed* | Ollama is down (D100) | start it (`docker start ollama-code`), `make check-embed`; the next refresh embeds what is missing |
+| `make model ARGS="probe …"`: `FAIL key … the environment variable X is not set` | the key's variable is not in the environment of that process | put it in `.env` and restart the API and the worker — every process that uses the model reads it |
+| `REFUSED: … is unverified: probe it first` / `is failed` | the model's probe has not passed | `make model ARGS="probe NAME"`; its lines say which check failed and why |
+| `REFUSED: no trial of NAME for answering in the last 14 days` | a switch needs a finished trial of that model for that purpose | `make model TARGET=… ARGS="trial NAME --purpose answering"` and wait for it; or `--force` (recorded as such) |
+| `REFUSED: … may still roll back to NAME until …` / `… serves …: switch first` | retiring a model that serves, or that a purpose may still return to | switch first; or wait for the rollback period (`models.rollback_days`) |
+| After a switch of reasoning, meanings of two models side by side | by design: the nightly refresh re-reasons a part each night within its budget | `make model` shows the meanings per model; a larger `--param budget=N` for one night goes faster |

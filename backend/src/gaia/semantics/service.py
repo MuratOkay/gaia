@@ -112,6 +112,9 @@ class ReasoningOptions:
     # Phase 7C: asked before each table's model call; a reason stops the run there (the
     # table is not started — a scheduled run's budget, its window, a cancellation)
     stop: Any = None
+    # Phase 7D: the model's answers for the tables in scope, written nowhere (a model trial);
+    # give it with force (every table asked); no lock is taken
+    shadow: bool = False
 
 
 @dataclass
@@ -154,6 +157,8 @@ class ReasoningReport:
     review: dict[str, int] = field(default_factory=dict)
     coverage: dict[str, int] = field(default_factory=dict)
     rescore_only: bool = False
+    # 7D: table -> {"outcome": TableOutcome, "seconds": float} (``ReasoningOptions.shadow``)
+    shadow: dict[str, Any] = field(default_factory=dict)
 
     def count(self, action: str) -> int:
         return sum(1 for r in self.results if r.action == action)
@@ -806,7 +811,7 @@ async def run_reasoning(
     A dry run writes nothing and takes no lock."""
     kwargs = {"llm_factory": llm_factory, "embedder": embedder, "cache": cache,
               "snapshot_loader": snapshot_loader, "evidence_source": evidence_source}
-    if options.dry_run:
+    if options.dry_run or options.shadow:
         return await _run_reasoning(settings, session, options, **kwargs)
     label = options.target or settings.app.default_target
     data_source = await SemanticsStore(session).data_source(label)
@@ -959,6 +964,26 @@ async def _run_reasoning(
     tables = [t for t in scope if t.kind != "view"]
     views = [t for t in scope if t.kind == "view"]
     first = await _plan(ctx, tables)
+    if options.shadow:  # 7D: ask the model, write nothing
+        sem = asyncio.Semaphore(max(1, settings.llm.concurrency))
+
+        async def ask(item: PlanItem) -> tuple[PlanItem, TableOutcome, float]:
+            async with sem:
+                evidence = item.context.rendered if item.context is not None else None
+                bundle = _focused(item)
+                if evidence is not None and bundle is not item.bundle:
+                    evidence = evidence.subset(item.focus)
+                t0 = time.perf_counter()
+                outcome = await asyncio.to_thread(get_reasoner().run, bundle, evidence)
+                return item, outcome, time.perf_counter() - t0
+
+        asked = [i for i in first if i.action == "reason"]
+        if asked:
+            get_reasoner()
+        for item, outcome, secs in await asyncio.gather(*(ask(i) for i in asked)):
+            report.shadow[item.table.qualified_name] = {"outcome": outcome, "seconds": secs}
+        report.wall_ms = int((time.perf_counter() - started) * 1000)
+        return report
     if options.dry_run:
         reasoned = {i.table.qualified_name for i in first if i.action == "reason"}
         second = await _plan(ctx, views, assume_reasoned=reasoned)

@@ -13,7 +13,7 @@ import asyncio
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 
 import psycopg
 import pytest
@@ -36,29 +36,78 @@ from gaia.jobs.worker import Worker
 URL = os.environ.get("GAIA_TEST_PG_TARGET_URL")
 pytestmark = pytest.mark.skipif(not URL, reason="GAIA_TEST_PG_TARGET_URL not set")
 ROOT = Path(__file__).resolve().parents[2]
-PROBES = ("legacy.zz_gaia_probe", "legacy.zz_gaia_probe2")
 
 
 def _admin_url() -> str | None:
-    """The target's owner — to make a deliberate schema change (the seed's own setting)."""
+    """The target server's owner (the seed's own setting) — to make a deliberate schema change,
+    in a scratch database of its own (D100: never in the database the suite, and the owner's
+    Gaia, read)."""
     url = os.environ.get("GAIA_PG_TARGET_ADMIN_URL")
     if not url:
         from dotenv import dotenv_values
 
         url = dotenv_values(ROOT / ".env").get("GAIA_PG_TARGET_ADMIN_URL")
-    if url and urlsplit(url).path != urlsplit(URL or "").path:
-        return None  # another database than the tests read
+    if not url or urlsplit(url).hostname != urlsplit(URL or "").hostname \
+            or urlsplit(url).port != urlsplit(URL or "").port:
+        return None  # another server than the tests read
     return url
 
 
-def _target_sql(*statements: str) -> None:
-    with psycopg.connect(_admin_url(), autocommit=True) as conn:
+SCRATCH = "gaia_test_scratch"
+
+
+def _on(database: str) -> str:
+    parts = urlsplit(_admin_url())
+    return urlunsplit(parts._replace(path=f"/{database}"))
+
+
+def _scratch_sql(*statements: str) -> None:
+    with psycopg.connect(_on(SCRATCH), autocommit=True) as conn:
         for st in statements:
             conn.execute(st)
 
 
-def _drop_probes() -> None:
-    _target_sql(*(f"DROP TABLE IF EXISTS {t}" for t in PROBES))
+def _scratch_create() -> None:
+    """A small shop of six tables, readable by the tests' read-only role."""
+    role = urlsplit(URL).username
+    _scratch_drop()
+    with psycopg.connect(_on("postgres"), autocommit=True) as conn:
+        conn.execute(f'CREATE DATABASE "{SCRATCH}" ENCODING \'UTF8\' TEMPLATE template0')
+        conn.execute(f'GRANT CONNECT ON DATABASE "{SCRATCH}" TO "{role}"')
+    _scratch_sql(
+        "CREATE SCHEMA shop",
+        f'GRANT USAGE ON SCHEMA shop TO "{role}"',
+        f'ALTER DEFAULT PRIVILEGES IN SCHEMA shop GRANT SELECT ON TABLES TO "{role}"',
+        "CREATE TABLE shop.stores (store_id integer PRIMARY KEY, city text NOT NULL)",
+        "CREATE TABLE shop.customers (customer_id integer PRIMARY KEY, segment text NOT NULL, "
+        "store_id integer REFERENCES shop.stores)",
+        "CREATE TABLE shop.products (product_id integer PRIMARY KEY, name text NOT NULL, "
+        "list_price numeric(10,2) NOT NULL)",
+        "CREATE TABLE shop.orders (order_id integer PRIMARY KEY, customer_id integer NOT NULL "
+        "REFERENCES shop.customers, ordered_on date NOT NULL, status text NOT NULL, "
+        "total_amount numeric(12,2) NOT NULL)",
+        "CREATE TABLE shop.order_lines (line_id integer PRIMARY KEY, order_id integer NOT NULL "
+        "REFERENCES shop.orders, product_id integer NOT NULL REFERENCES shop.products, "
+        "quantity integer NOT NULL)",
+        "CREATE TABLE shop.payments (payment_id integer PRIMARY KEY, order_id integer NOT NULL "
+        "REFERENCES shop.orders, amount numeric(12,2) NOT NULL, method text NOT NULL)",
+        "INSERT INTO shop.stores SELECT g, (ARRAY['Ankara','Izmir','Bursa'])[1 + g % 3] "
+        "FROM generate_series(1, 6) g",
+        "INSERT INTO shop.customers SELECT g, (ARRAY['retail','vip'])[1 + g % 2], 1 + g % 6 "
+        "FROM generate_series(1, 200) g",
+        "INSERT INTO shop.products SELECT g, 'product ' || g, 10 + g FROM generate_series(1, 50) g",
+        "INSERT INTO shop.orders SELECT g, 1 + g % 200, DATE '2025-01-01' + g % 365, "
+        "(ARRAY['paid','shipped','cancelled'])[1 + g % 3], g % 500 FROM generate_series(1, 2000) g",
+        "INSERT INTO shop.order_lines SELECT g, 1 + g % 2000, 1 + g % 50, 1 + g % 4 "
+        "FROM generate_series(1, 5000) g",
+        "INSERT INTO shop.payments SELECT g, 1 + g % 2000, g % 500, (ARRAY['card','cash'])[1 + g % 2] "
+        "FROM generate_series(1, 2500) g",
+        "ANALYZE")
+
+
+def _scratch_drop() -> None:
+    with psycopg.connect(_on("postgres"), autocommit=True) as conn:
+        conn.execute(f'DROP DATABASE IF EXISTS "{SCRATCH}" WITH (FORCE)')
 
 
 def _settings(**jobs):
@@ -74,9 +123,9 @@ async def _job(factory, job_id) -> Job:
         return await s.get(Job, job_id)
 
 
-async def _start(factory, kind, params=None, who="admin") -> Job:
+async def _start(factory, kind, params=None, who="admin", data_source="demo_pg") -> Job:
     async with factory() as s:
-        job = await enqueue(s, kind, "demo_pg", requested_by=who, params=params or {})
+        job = await enqueue(s, kind, data_source, requested_by=who, params=params or {})
         await s.commit()
         return job
 
@@ -156,59 +205,64 @@ async def test_the_queue_and_the_schedules(pg_session_factory):
 @pytest.mark.asyncio
 async def test_a_refresh_runs_what_changed_within_its_budget_window_and_cancellation(
         pg_session_factory, fake_llm, fake_embedder):
+    """On a scratch database of its own (D100): the suite never changes the database that it —
+    and the owner's Gaia — read."""
     if not _admin_url():
-        pytest.skip("GAIA_PG_TARGET_ADMIN_URL not set (the target's owner, as for "
-                    "`make pg-target-seed`): needed to change the target's schema")
+        pytest.skip("GAIA_PG_TARGET_ADMIN_URL not set (the target server's owner, as for "
+                    "`make pg-target-seed`): needed to change a schema")
+    from test_profiling_pg import _target
+
+    from gaia.core.config import AppSection
+
     factory = pg_session_factory
-    settings = _settings()
+    base = _settings()
+    scratch = _target().model_copy(update={"database": SCRATCH})
+    settings = base.model_copy(update={"app": AppSection(default_target="scratch", locale="en"),
+                                       "targets": {"scratch": scratch}})
     deps = JobDeps(llm_factory=lambda: fake_llm, embedder_factory=lambda: fake_embedder)
     worker = Worker(settings, factory, deps=deps)
-    _drop_probes()
+
+    async def start(params=None, w=None):
+        job = await _start(factory, "refresh", params, data_source="scratch")
+        await (w or worker).tick()
+        return await _job(factory, job.id)
+
+    _scratch_create()
     try:
         # the first night: everything is new — the budget stops reasoning part of the way
-        job = await _start(factory, "refresh", {"budget": 5000})
-        assert (await worker.tick()).id == job.id
-        j = await _job(factory, job.id)
+        j = await start({"budget": 5000})
         assert j.state == "partial", (j.state, j.error)
         r = j.result
-        assert r["introspect"]["first"] is True and r["profile"]["profiled"] >= 20
+        assert r["introspect"]["first"] is True and r["profile"]["profiled"] == 6
         assert r["reason"]["stopped"] > 0 and r["reason"]["reasoned"] >= 1
         assert r["stopped"] == "the token budget of 5,000 is spent"
         assert j.tokens >= 5000 and j.calls >= 2
         assert "claim_tests" not in r  # nothing after the budget is spent
         # the next night takes up the rest
-        job = await _start(factory, "refresh", {"budget": 0})
-        await worker.tick()
-        j = await _job(factory, job.id)
+        j = await start({"budget": 0})
         assert j.state == "done", (j.state, j.error, j.result)
         assert j.result["reason"].get("stopped", 0) == 0
         assert j.result["reason"]["reasoned"] == r["reason"]["stopped"]
         # nothing changed: no data query for profiles, no model call
         calls = fake_llm.calls.total()
-        job = await _start(factory, "refresh")
-        await worker.tick()
-        j = await _job(factory, job.id)
+        j = await start()
         assert j.state == "done" and j.tokens == 0 and fake_llm.calls.total() == calls
         assert j.result["introspect"]["added"] == 0
-        assert "profiled" not in j.result["profile"] and j.result["profile"]["reused"] >= 20
+        assert "profiled" not in j.result["profile"] and j.result["profile"]["reused"] == 6
         assert "reasoned" not in j.result["reason"]
 
-        # the target gains a table: exactly it is profiled and reasoned
-        role = urlsplit(URL).username
-        _target_sql("CREATE TABLE legacy.zz_gaia_probe (id integer PRIMARY KEY, note text)",
-                    "INSERT INTO legacy.zz_gaia_probe SELECT g, 'n' || g "
-                    "FROM generate_series(1, 50) g",
-                    f'GRANT SELECT ON legacy.zz_gaia_probe TO "{role}"',
-                    "ANALYZE legacy.zz_gaia_probe")
-        job = await _start(factory, "refresh")
-        await worker.tick()
-        j = await _job(factory, job.id)
+        # the database gains a table: exactly it is profiled and reasoned
+        _scratch_sql("CREATE TABLE shop.returns (return_id integer PRIMARY KEY, "
+                     "line_id integer REFERENCES shop.order_lines, qty integer NOT NULL)",
+                     "INSERT INTO shop.returns SELECT g, g, 1 FROM generate_series(1, 50) g",
+                     "ANALYZE shop.returns")
+        j = await start()
         assert j.state == "done", (j.error, j.result)
         assert j.result["introspect"]["added"] == 1
-        assert any("zz_gaia_probe" in c for c in j.result["introspect"]["changes"])
+        assert j.result["introspect"]["changes"] == ["shop.returns: added, +3 columns"]
         assert j.result["profile"].get("profiled") == 1
         assert j.result["reason"].get("reasoned") == 1
-        assert fake_llm.tables[("semantics", "legacy.zz_gaia_probe")] == 1
+        assert fake_llm.tables[("semantics", "shop.returns")] == 1
 
         # outside its window: refused before anything runs
         narrow = settings.model_copy(update={"profiling": settings.profiling.model_copy(
@@ -217,15 +271,12 @@ async def test_a_refresh_runs_what_changed_within_its_budget_window_and_cancella
         w2 = Worker(narrow, factory, deps=JobDeps(llm_factory=lambda: fake_llm,
                                                   embedder_factory=lambda: fake_embedder,
                                                   clock=lambda: noon.astimezone(UTC)))
-        job = await _start(factory, "refresh")
-        await w2.tick()
-        j = await _job(factory, job.id)
+        j = await start(w=w2)
         assert j.state == "refused" and "outside the run window 01:00-02:00" in j.error
 
         # cancelled while reasoning: the table under way finishes, the next is not started
-        _target_sql("ALTER TABLE legacy.zz_gaia_probe ADD COLUMN extra integer",
-                    "CREATE TABLE legacy.zz_gaia_probe2 (id integer PRIMARY KEY)",
-                    f'GRANT SELECT ON legacy.zz_gaia_probe2 TO "{role}"')
+        _scratch_sql("ALTER TABLE shop.returns ADD COLUMN reason text",
+                     "CREATE TABLE shop.notes (note_id integer PRIMARY KEY, body text)")
         one = settings.model_copy(update={"llm": settings.llm.model_copy(
             update={"concurrency": 1})})
 
@@ -239,23 +290,40 @@ async def test_a_refresh_runs_what_changed_within_its_budget_window_and_cancella
 
         w3 = Worker(one, factory, deps=JobDeps(llm_factory=Cancelling,
                                                embedder_factory=lambda: fake_embedder))
-        job = await _start(factory, "refresh")
-        await w3.tick()
-        j = await _job(factory, job.id)
+        j = await start(w=w3)
         assert j.state == "cancelled" and j.result["stopped"] == "cancelled"
-        assert j.result["reason"] == {"reasoned": 1, "stopped": 1, "embeddings": 0} or (
-            j.result["reason"]["reasoned"] == 1 and j.result["reason"]["stopped"] == 1)
-        # the worker notices, the next run does the rest
-        job = await _start(factory, "refresh")
-        await worker.tick()
-        j = await _job(factory, job.id)
+        assert j.result["reason"]["reasoned"] == 1 and j.result["reason"]["stopped"] == 1
+        # the next run does the rest
+        j = await start()
         assert j.state == "done" and j.result["reason"]["reasoned"] == 1
+
+        # the embedding service down: what was reasoned is kept, the job says so (D100)
+        _scratch_sql("CREATE TABLE shop.tags (tag_id integer PRIMARY KEY, label text)")
+
+        class Down:
+            def embed(self, texts):
+                raise ConnectionError("Connection refused")
+
+            def close(self):
+                pass
+
+        w4 = Worker(settings, factory, deps=JobDeps(llm_factory=lambda: fake_llm,
+                                                    embedder_factory=Down))
+        j = await start(w=w4)
+        assert j.state == "partial" and j.result["reason"]["reasoned"] == 1
+        assert j.result["stopped"].startswith("embeddings failed")
+        async with factory() as s:
+            kinds = (await s.scalars(sa.select(Alert.kind).where(Alert.job_id == j.id))).all()
+        assert kinds == ["job_partial"]
+        j = await start()  # the service back: the next refresh embeds what is missing
+        assert j.state == "done" and j.result["reason"]["embeddings"] > 0
+        assert "reasoned" not in j.result["reason"]
     finally:
-        _drop_probes()
+        _scratch_drop()
     async with factory() as s:
         events = (await s.scalars(sa.text(
             "SELECT message FROM ops.job_event WHERE message LIKE 'introspect:%'"))).all()
-    assert any("zz_gaia_probe" in m for m in events)
+    assert any("shop.returns" in m for m in events)
 
 
 def _subset(tmp_path: Path, ids: list[str]) -> Path:

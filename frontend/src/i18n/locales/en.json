@@ -26,7 +26,8 @@
     "verified": "verified",
     "failed": "failed",
     "disabled": "disabled",
-    "tombstoned": "removed"
+    "tombstoned": "removed",
+    "retired": "retired"
   },
   "role": {
     "user": "user",
@@ -83,7 +84,8 @@
     "queries": "Queries",
     "categories": "Data categories",
     "runs": "Runs",
-    "evaluation": "Evaluation"
+    "evaluation": "Evaluation",
+    "models": "Models"
   },
   "home": {
     "title": "Welcome, {{name}}",
@@ -316,7 +318,12 @@
       "job_started": "a job started",
       "job_cancelled": "a job cancelled",
       "schedule_changed": "a schedule changed",
-      "alert_acknowledged": "an alert acknowledged"
+      "alert_acknowledged": "an alert acknowledged",
+      "model_added": "a model registered",
+      "model_probed": "a model probed",
+      "model_switched": "a model switched",
+      "model_rolled_back": "a model rolled back",
+      "model_retired": "a model retired"
     },
     "categories": "Data categories",
     "categoriesTitle": "Data categories: what is in them, who may read them",
@@ -332,7 +339,8 @@
     "refusalCodes": {
       "forbidden": "outside their categories",
       "personal_data": "personal data used, not only shown"
-    }
+    },
+    "models": "Models"
   },
   "review": {
     "title": "Review",
@@ -835,7 +843,8 @@
     "kinds": {
       "refresh": "refresh",
       "drift_watch": "drift watch",
-      "sample": "calibration sample"
+      "sample": "calibration sample",
+      "model_trial": "model trial"
     },
     "states": {
       "queued": "queued",
@@ -872,7 +881,8 @@
       "job_partial": "A job stopped early",
       "drift": "The golden set got worse",
       "model_changed": "The provider's model changed",
-      "worker_lost": "The worker stopped answering"
+      "worker_lost": "The worker stopped answering",
+      "model_switched": "The model changed"
     }
   },
   "evaluation": {
@@ -960,5 +970,68 @@
       "miss": "wrong: {{object}} — proposed {{proposed}}, people said {{confirmed}}",
       "seen": "The proposals people saw: {{kept}} of {{n}} kept. They saw them while deciding, so this leans towards agreement."
     }
+  },
+  "models": {
+    "title": "Models",
+    "intro": "The model config/gaia.yaml names serves until another is switched in. Each purpose — reasoning (the meanings of columns) and answering (SQL and its narration) — is served by one model. A new model is registered beside the old one, probed, and tried on a data source before it may serve; a switch is undone by a rollback while its rollback period runs. Meanings, runs and labels stay per model: nothing is lost by a switch.",
+    "serving": "Serving now",
+    "purpose": "Purpose",
+    "model": "Model",
+    "since": "Since",
+    "replacing": "Replacing",
+    "purposes": {
+      "reasoning": "reasoning",
+      "answering": "answering",
+      "both": "both"
+    },
+    "forced": "switched without a trial",
+    "fromConfig": "from configuration",
+    "rollbackUntil": "rollback possible until {{date}}",
+    "rollback": "Roll back to {{model}}",
+    "rolledBack": "{{purpose}} is served by {{model}} again.",
+    "registered": "Registered models",
+    "name": "Name",
+    "modelId": "Model id",
+    "locality": "Locality",
+    "localities": {
+      "remote": "remote (sees data values masked)",
+      "local": "local (sees data values)"
+    },
+    "key": "Key",
+    "keyConfig": "from the configuration (.env)",
+    "keyEnv": "environment variable {{name}}",
+    "keyUnset": "not set",
+    "keyStored": "stored encrypted",
+    "keyNone": "none needed",
+    "keyWiped": "none (wiped)",
+    "serves": "Serves",
+    "probedAt": "probed {{date}}",
+    "probe": "Probe",
+    "probed": "{{name}} probed.",
+    "retire": "Retire",
+    "retired": "{{name}} retired: its key wiped; its meanings and runs stay.",
+    "change": "Try and switch",
+    "changeIntro": "A trial runs in the worker (make worker): the golden set with both models, interleaved, and the tables with the most SME decisions re-reasoned in a shadow — nothing is written. A switch needs a trial of that model for that purpose from the last {{days}} days, or \"without a trial\", which is recorded. The model replaced stays ready for {{rollback}} days.",
+    "trialFor": "Trial of",
+    "startTrial": "Start a trial",
+    "trialQueued": "A trial of {{name}} is queued: the worker runs it.",
+    "note": "Note",
+    "force": "without a trial (recorded)",
+    "switch": "Switch to {{name}}",
+    "switched": "{{purpose}} is now served by {{name}}.",
+    "trials": "Trials",
+    "noTrials": "No trial yet.",
+    "trialOf": "Trial of {{name}}",
+    "meanings": "Meanings by model",
+    "meaningsIntro": "The current meanings of each data source by the model that reasoned them; an SME's decisions apart (a switch keeps them). After a switch of reasoning the nightly refresh re-reasons a part each night, within its token budget.",
+    "byModel": "Columns",
+    "add": "Register a model",
+    "addIntro": "An OpenAI-compatible endpoint (a provider, a gateway, or a local server such as Ollama at http://localhost:11434/v1). Give the name of the environment variable that holds the key, or the key itself (stored encrypted with GAIA_MASTER_KEY, never shown again); a local server needs neither.",
+    "baseUrl": "Base URL",
+    "keyEnvField": "Key: environment variable",
+    "keyField": "or the key itself",
+    "addButton": "Register",
+    "added": "{{name}} registered: probe it next.",
+    "history": "Switches"
   }
 }

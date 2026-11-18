@@ -770,7 +770,7 @@ export interface CalibrationTrial {
 
 // -- jobs, schedules, alerts (7C, D98) ---------------------------------------------------------
 
-export type JobKind = "refresh" | "drift_watch" | "sample";
+export type JobKind = "refresh" | "drift_watch" | "sample" | "model_trial";
 export type JobState = "queued" | "running" | "done" | "partial" | "cancelled" | "failed" | "refused";
 
 export interface JobView {
@@ -825,4 +825,50 @@ export interface AlertView {
   created_at: string;
   acknowledged_at: string | null;
   acknowledged_by: string | null;
+}
+
+// -- models (7D, D101) -------------------------------------------------------------------------
+
+export type ModelPurpose = "reasoning" | "answering";
+
+export interface ModelView {
+  name: string;
+  origin: "config" | "admin";
+  base_url: string;
+  model_id: string;
+  locality: "local" | "remote";
+  status: "config" | "unverified" | "verified" | "failed" | "retired";
+  options: Record<string, unknown>;
+  key_env: string | null;
+  has_key: boolean;
+  probe: (Check & { seconds?: number })[] | null;
+  probed_at: string | null;
+  created_by: string | null;
+  serves: ModelPurpose[];
+  usable: boolean;
+}
+
+export interface ModelAssignmentView {
+  purpose: ModelPurpose;
+  model: string;
+  previous: string | null;
+  since: string;
+  rollback_until: string | null;
+  forced: boolean;
+  by: string;
+  note: string | null;
+  trial_job_id: string | null;
+}
+
+export interface ModelsView {
+  models: ModelView[];
+  purposes: ModelPurpose[];
+  serving: Record<ModelPurpose, string>;
+  assignments: Partial<Record<ModelPurpose, ModelAssignmentView>>;
+  history: ModelAssignmentView[];
+  trials: (JobView & { lines: string[] })[];
+  data_sources: string[];
+  meanings: Record<string, Record<string, number>>;
+  rollback_days: number;
+  trial_valid_days: number;
 }

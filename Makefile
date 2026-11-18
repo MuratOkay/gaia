@@ -314,6 +314,10 @@ worker: ## 7C: run queued and scheduled jobs (ARGS="--once" to run what is due, 
 jobs: ## 7C: jobs, schedules, alerts (TARGET=...; ARGS="list | show ID | start KIND | cancel ID | schedule … | alerts")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.jobs $(TARGET_ARG) $(ARGS)
 
+.PHONY: model
+model: ## 7D: models — add, probe, trial, switch, rollback (TARGET=...; ARGS="list | add … | trial NAME | switch NAME --purpose P")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.model $(TARGET_ARG) $(ARGS)
+
 .PHONY: feedback
 feedback: ## 6D: every "Was this right?" across data sources, and who reviews each (ARGS="--last 10")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.feedback $(ARGS)

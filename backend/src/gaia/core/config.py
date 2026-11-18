@@ -506,6 +506,15 @@ class JobsConfig(BaseModel):
     runs_dir: str = "evaluations/jobs"  # where a job's golden runs keep their answers
 
 
+class ModelsConfig(BaseModel):
+    """Phase 7D (P7-4, P7-5): a change of model as a managed event."""
+
+    rollback_days: int = 30  # P7-5: the model replaced stays ready for a rollback this long
+    trial_valid_days: int = 14  # a switch needs a trial of that model this recent (or force)
+    trial_runs: int = 3  # golden runs a side, in one session (P6-8)
+    trial_tables: int = 8  # tables re-reasoned in a shadow: those with the most SME decisions
+
+
 class Settings(BaseModel):
     app: AppSection
     targets: dict[str, TargetConfig]
@@ -522,6 +531,7 @@ class Settings(BaseModel):
     auth: AuthConfig = Field(default_factory=AuthConfig)
     calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     jobs: JobsConfig = Field(default_factory=JobsConfig)
+    models: ModelsConfig = Field(default_factory=ModelsConfig)
     unresolved_env: list[str] = Field(default_factory=list)
     # Unresolved placeholders per config section: "targets.<name>" for a
     # target, otherwise the top-level key ("llm", "embeddings", ...).

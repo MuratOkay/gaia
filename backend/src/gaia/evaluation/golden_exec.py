@@ -74,6 +74,9 @@ class GoldenOptions:
     as_login: str | None = None
     directory: str | None = None
     regress: str | None = None
+    # 7D: a model trial's candidate runs carry "<build> + model trial: NAME" (kept out of the
+    # ordinary report, as deliberate regressions are)
+    build_suffix: str | None = None
 
 
 @dataclass
@@ -126,7 +129,7 @@ async def execute_golden(settings: Settings, factory, args: GoldenOptions, *,
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     llm = RecordingLLMClient(llm_inner if llm_inner is not None
                              else llm_client(settings, args.replay), out / "llm")
-    build = gaia.BUILD
+    build = gaia.BUILD + (args.build_suffix or "")
     model_client = llm
     dropped: str | None = None
     expected: list[str] = []

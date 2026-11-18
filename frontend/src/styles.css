@@ -161,3 +161,4 @@ ul.alerts { list-style: none; padding-left: 0; }
 .status-done { background: #dafbe1; color: var(--ok); }
 .status-partial, .status-refused { background: #fff8c5; color: var(--warn); }
 .status-cancelled { background: #eaeef2; color: var(--muted); }
+pre.trial { font-size: 0.85em; }

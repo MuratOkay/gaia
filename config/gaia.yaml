@@ -280,6 +280,16 @@ jobs:
     demo_mssql: infra/sqlserver/golden.yaml
   runs_dir: evaluations/jobs
 
+models:
+  # Phase 7D (P7-4, P7-5): models registered beside the one above (`make model`, the *Models*
+  # page) serve "reasoning" (meanings) or "answering" (SQL and narration) once switched to —
+  # after a trial (`make model ARGS="trial NAME"`) no older than trial_valid_days. The model
+  # replaced stays ready for a rollback for rollback_days; the new one starts uncalibrated.
+  rollback_days: 30
+  trial_valid_days: 14
+  trial_runs: 3
+  trial_tables: 8
+
 retrieval:
   # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).
   max_objects: 6              # objects found by relevance; bridges on join paths come on top

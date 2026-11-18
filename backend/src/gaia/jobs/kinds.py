@@ -46,7 +46,9 @@ class Refused(RuntimeError):
 class JobDeps:
     """What a job calls out to — the real services by default; tests put scripted ones in."""
 
-    llm_factory: Callable[[], Any] | None = None  # the reasoning / answering model
+    llm_factory: Callable[[], Any] | None = None  # one model for every purpose (tests)
+    # 7D: a client for a given model's settings (tests: a scripted model per model id)
+    client_factory: Callable[[Any], Any] | None = None
     embedder_factory: Callable[[], Any] | None = None
     profiler_factory: Callable[..., Any] | None = None
     clock: Callable[[], datetime] | None = None  # windows (tests)
@@ -59,22 +61,33 @@ class JobContext:
     job: Job
     signal: StopSignal
     deps: JobDeps
-    log: Callable[[str], Awaitable[None]]
+    log: Callable[..., Awaitable[None]]
     progress: dict[str, Any] = field(default_factory=dict)
+    # 7D: the settings of each purpose — the model that serves it now (``gaia.models``)
+    purposes: dict[str, Settings] = field(default_factory=dict)
 
     def step(self, name: str, **info: Any) -> None:
         self.progress.clear()
         self.progress.update({"step": name, **info})
 
-    def llm(self) -> Any:
-        """The model client, metered into the job's budget."""
-        if self.deps.llm_factory is not None:
+    def settings_for(self, purpose: str) -> Settings:
+        return self.purposes.get(purpose, self.settings)
+
+    def client(self, cfg: Any) -> Any:
+        """A client of the model ``cfg`` (an ``LLMConfig``), metered into the job's budget."""
+        if self.deps.client_factory is not None:
+            inner = self.deps.client_factory(cfg)
+        elif self.deps.llm_factory is not None:
             inner = self.deps.llm_factory()
         else:
             from gaia.tools.ask import llm_client
 
-            inner = llm_client(self.settings, None)
+            inner = llm_client(self.settings.model_copy(update={"llm": cfg}), None)
         return MeteredLLM(inner, self.signal)
+
+    def llm(self, purpose: str = "reasoning") -> Any:
+        """The client of the model serving ``purpose``, metered into the job's budget."""
+        return self.client(self.settings_for(purpose).llm)
 
     def embedder(self) -> Any:
         if self.deps.embedder_factory is not None:
@@ -174,8 +187,10 @@ async def refresh(ctx: JobContext) -> JobOutcome:
         embedder = ctx.embedder()
         try:
             async with ctx.factory() as s:
-                rep = await run_reasoning(settings, s, ReasoningOptions(target=label, stop=sig),
-                                          llm_factory=ctx.llm, embedder=embedder)
+                rep = await run_reasoning(ctx.settings_for("reasoning"), s,
+                                          ReasoningOptions(target=label, stop=sig),
+                                          llm_factory=lambda: ctx.llm("reasoning"),
+                                          embedder=embedder)
         except DataSourceBusy as exc:
             raise Refused(str(exc)) from None
         finally:
@@ -184,7 +199,14 @@ async def refresh(ctx: JobContext) -> JobOutcome:
                 close()
         result[step] = {**_counts(rep.results), "embeddings": rep.embeddings_written}
         await ctx.log(f"{step}: " + _say(result[step]))
+        # D100: meanings without vectors are found by words only — the job says so, and the
+        # next refresh embeds exactly what is missing
+        for note in rep.notes:
+            if note.startswith(("embedding failed", "embedding skipped")):
+                problems.append(note)
+                await ctx.log(f"{step}: {note}", "warning")
 
+    problems: list[str] = []
     await reason("reason")
 
     # 4. the stored claims tested on the data, then meanings again where a test changed them
@@ -203,6 +225,11 @@ async def refresh(ctx: JobContext) -> JobOutcome:
         await reason("reason_after_tests")
 
     result["tokens"] = sig.used_tokens
+    if problems and not sig.stopped:
+        result["stopped"] = (f"embeddings failed ({problems[-1][:160]}): the meanings are kept "
+                             "and found by words only until the next refresh embeds them")
+        await ctx.log(f"stopped: {result['stopped']}")
+        return JobOutcome("partial", result)
     if sig.stopped:
         result["stopped"] = sig.stopped
         await ctx.log(f"stopped: {sig.stopped} — what is done is kept; the next run takes up "
@@ -222,14 +249,15 @@ def _baseline(runs: list[Any], candidate_ids: set[str], n: int) -> list[Any]:
     """The latest ``n`` ordinary measured runs made before the candidate (the operator's,
     not regressions, not replays) — of the candidate's question set when there are enough,
     else of the newest set they come from (compared on shared questions)."""
-    from gaia.evaluation.net import is_regression
+    from gaia.evaluation.net import is_regression, is_trial
 
     cand = [r for r in runs if r.id in candidate_ids]
     if not cand:
         return []
     first = min(r.started_at for r in cand)
     before = [r for r in runs if r.id not in candidate_ids and r.measured and not r.as_login
-              and not is_regression(r.build) and r.started_at < first]
+              and not is_regression(r.build) and not is_trial(r.build)
+              and r.started_at < first]
     same = [r for r in before if r.set_key == cand[0].set_key]
     if len(same) >= n:
         return same[-n:]
@@ -266,10 +294,10 @@ async def drift_watch(ctx: JobContext) -> JobOutcome:
         lines: list[str] = []
         try:
             execution = await execute_golden(
-                settings, ctx.factory,
+                ctx.settings_for("answering"), ctx.factory,
                 GoldenOptions(file=str(file), out=str(base / f"run{i}"), target=label,
                               no_vectors=bool(params.get("no_vectors"))),
-                llm_inner=ctx.llm(),
+                llm_inner=ctx.llm("answering"),
                 echo=lambda *a, _l=lines, **_k: _l.append(" ".join(map(str, a))),
                 created_by=f"job:{str(job.id)[:8]}")
         except GoldenRefused as exc:
@@ -353,5 +381,16 @@ async def sample(ctx: JobContext) -> JobOutcome:
     return JobOutcome("done", result)
 
 
+# -- a model trial (7D) ---------------------------------------------------------------------
+
+
+async def model_trial(ctx: JobContext) -> JobOutcome:
+    from gaia.models.trial import run_trial
+
+    result = await run_trial(ctx)
+    return JobOutcome("partial" if result.get("stopped") else "done", result)
+
+
 KINDS: dict[str, Callable[[JobContext], Awaitable[JobOutcome]]] = {
-    "refresh": refresh, "drift_watch": drift_watch, "sample": sample}
+    "refresh": refresh, "drift_watch": drift_watch, "sample": sample,
+    "model_trial": model_trial}

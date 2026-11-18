@@ -83,7 +83,7 @@ async def _run(args: argparse.Namespace) -> int:
         text, _doc = quality_report(sel.shown, data_source=label, question_set_key=sel.set_key,
                                     excluded=sel.excluded, baseline=sel.baseline,
                                     candidate=sel.candidate, regressions=sel.regressions,
-                                    history=sel.history)
+                                    history=sel.history, trials=sel.trials)
         text += extra
         print(text)
         out = ROOT / "evaluations" / f"quality_{label}_{datetime.now(UTC):%Y%m%d_%H%M}.md"

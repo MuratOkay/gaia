@@ -68,5 +68,5 @@ async def report(data_source: str, last: int = 3, compare_builds: bool = False,
     text, doc = quality_report(sel.shown, data_source=data_source, question_set_key=sel.set_key,
                                excluded=sel.excluded, baseline=sel.baseline,
                                candidate=sel.candidate, regressions=sel.regressions,
-                               history=sel.history)
+                               history=sel.history, trials=sel.trials)
     return {**doc, **extra_doc, "markdown": text + extra}

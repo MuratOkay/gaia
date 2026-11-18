@@ -22,6 +22,7 @@ export function AuditNav() {
       <NavLink to="/audit/queries">{t("nav.queries")}</NavLink>
       <NavLink to="/audit/runs">{t("nav.runs")}</NavLink>
       <NavLink to="/audit/evaluation">{t("nav.evaluation")}</NavLink>
+      <NavLink to="/audit/models">{t("nav.models")}</NavLink>
     </nav>
   );
 }

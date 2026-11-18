@@ -762,6 +762,74 @@ a job that failed or stopped early, a worker that stopped answering, a drift, a 
 the administrators' home page until marked *Done*. Every start, cancellation, schedule change and
 acknowledgement is in the audit.
 
+### Changing the model (`make model`, the *Models* page, Phase 7D)
+
+```bash
+make model                                                 # the models, what each serves, meanings per model
+make model ARGS="add qwen --base-url https://gateway/v1 --model-id qwen-max --key-env DEEPSEEK_API_KEY"
+make model ARGS="add llama --base-url http://localhost:11435/v1 --model-id llama3.1:8b --locality local"
+make model ARGS="add other --base-url https://api.other/v1 --model-id m-1 --key"   # the key typed, stored encrypted
+make model ARGS="probe qwen"                               # plain answer, JSON mode, thinking
+make model TARGET=demo_pg ARGS="trial qwen"                # a job: answering and meanings, both models
+make model ARGS="show"                                     # the last trial's result (or: show JOB)
+make model ARGS="switch qwen --purpose answering"          # needs a trial of it for that purpose (or --force)
+make model ARGS="rollback --purpose answering"             # back to the model it replaced
+make model ARGS="retire qwen"
+```
+
+The model `config/gaia.yaml` names (`llm:`) is always there and serves everything until a **switch**
+says otherwise. Gaia uses a model for two **purposes**: *reasoning* (the meanings of columns, with
+their critique; the nightly refresh) and *answering* (SQL, its repairs and the narration; the chat,
+`make ask`, golden runs, drafts). Each purpose is served by one model at a time; every command, job
+and the chat read which one at the moment they start (the chat at every question), so a switch needs
+no restart.
+
+1. **Register** the new model *beside* the current one: its URL (any OpenAI-compatible endpoint — the
+   gateway, another provider, a local Ollama's `/v1`), the id it is sent, and its key — the **name of
+   an environment variable** that holds it (`--key-env`, read by every process that uses it, so it
+   belongs in `.env`) or **the key itself** (`--key`, typed and stored encrypted with
+   `GAIA_MASTER_KEY`, never shown again); a `--locality local` server needs neither. The locality
+   matters: a **remote** model sees data values only masked (D24), a **local** one sees them.
+   Options: `--option concurrency=2`, `timeout_s=…`, `max_output_tokens=…`, `json_mode=false`,
+   `price_in_per_million=…` (for the cost in the trial's preview).
+2. **Probe** it: a plain answer and JSON mode must work (thinking is reported, not required). Until
+   it passes it is *unverified* (or *failed*) and can neither be tried nor switched to.
+3. **Try it** on a data source — a `model_trial` job the worker runs:
+   * *answering*: the data source's golden set run `models.trial_runs` (3) times by each model,
+     **interleaved in one session** (current, candidate, current, …), compared question by question
+     as builds are (P6-8): a verdict, the difference with its interval, the questions the candidate
+     breaks or fixes, tokens and seconds per question. The candidate's runs are recorded under the
+     build label `… + model trial: NAME` and left out of the ordinary report;
+   * *reasoning*: the tables with the most SME decisions (`models.trial_tables`, 8) re-reasoned by
+     both models **in a shadow — nothing is stored** — and each column's answer judged against the
+     SME's decision by one rule for both: *wrong* when the role differs, *partly* when the name shares
+     under half its words or the entity or unit differ, *right* otherwise;
+   * the **impact preview**: what re-reasoning every table would cost at the candidate's measured
+     rate (tokens, nights of the refresh budget, hours, money if prices are given), that SME
+     decisions are kept, and that the new model starts **uncalibrated**.
+   A trial costs about six golden runs and a few tables' reasoning (~2.5 M tokens on `demo_pg`).
+4. **Switch** a purpose to it. Refused without a finished trial of that model for that purpose from
+   the last `models.trial_valid_days` (14) — or with `--force`, which is recorded as such. Every
+   administrator gets an alert; the audit records who, when, the note.
+   * *answering*: the next question is answered by the new model.
+   * *reasoning*: stored meanings are **not** touched at once. The nightly refresh sees that the
+     model changed and re-reasons, a part each night within its token budget — SME decisions stay
+     as they are. `make model` shows per data source how many meanings each model made.
+5. **Roll back** within `models.rollback_days` (30): the purpose returns to the model it replaced, no
+   trial needed. (A rollback of reasoning re-reasons again, the same way.)
+6. **Retire** a model no longer wanted: refused while it serves, or while a purpose may still roll
+   back to it. Its key is wiped; the meanings, runs and labels it made stay, as they are.
+
+Nothing a model produced is ever overwritten by a switch: meanings, golden runs and labels are kept
+per model id, and so are calibrators — a new model is uncalibrated until its own labels exist (a
+rename of the same model is declared in `calibration.model_aliases`, P6-9). **Embeddings are not
+part of this** yet: a different embedding model, with another vector size, needs a new vector table
+(a later step).
+
+On the screen: ***Models*** (administrators) — what serves each purpose and since when, with *Roll
+back*; the registered models with their probe; *Try and switch*; the trials' results; the meanings per
+model; *Register a model*. Auditors read the same under *Audit → Models*.
+
 ### Drafting a golden set (`make golden-draft`, Phase 7B)
 
 ```bash
@@ -1079,6 +1147,7 @@ lists each one; that footprint is one of the things being measured.
 | `make golden-draft` | Drafts a golden set for a person to correct — every question `status: draft` (7B) |
 | `make worker` | Runs queued and scheduled jobs: refresh, drift watch, calibration sample (7C) |
 | `make jobs` | Jobs, schedules, alerts: `start KIND`, `cancel ID`, `show ID`, `schedule defaults`, `alerts` (7C) |
+| `make model` | Models: `add`, `probe`, `trial`, `show`, `switch`, `rollback`, `retire` (7D) |
 | `make review ARGS="--sample"` | Draws the week's calibration sample now, if not drawn yet (7A) |
 | `make auth ARGS="refusals"` | The last sign-ins and refusals, with the reason the sign-in screen does not show |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |
@@ -1530,7 +1599,9 @@ make check-embed
 ```
 
 Semantics are already persisted; you can backfill embeddings later by re-running
-without `--no-embed`.
+without `--no-embed`. A **refresh** job whose embeddings fail (since D100) ends *stopped early* with
+an alert — *embeddings failed: the meanings are kept and found by words only until the next refresh
+embeds them* — and the next refresh, with Ollama back, embeds what is missing.
 
 ### `make profile`: `REFUSED: outside the profiling window`
 

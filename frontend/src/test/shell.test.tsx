@@ -26,7 +26,7 @@ describe("navigation follows the roles", () => {
   it("an administrator sees the administration", () => {
     render(<MemoryRouter><Shell me={me(["admin", "user"])} onSignedOut={vi.fn()} /></MemoryRouter>);
     expect(links()).toEqual(["Home", "Chat", "Queries", "Data sources", "Directories", "Data categories",
-                             "Roles & grants", "Accounts", "Runs", "Evaluation"]);
+                             "Roles & grants", "Accounts", "Runs", "Evaluation", "Models"]);
   });
 
   it("an auditor sees the audit, and a page outside their role says so", () => {

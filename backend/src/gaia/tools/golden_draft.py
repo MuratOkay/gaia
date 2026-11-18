@@ -47,6 +47,9 @@ def _path(text: str) -> Path:
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
+    from gaia.models.registry import settings_of
+
+    settings = await settings_of(settings, "answering")  # 7D: the model serving it now
     label = args.target or settings.app.default_target
     out = _path(args.out)
     if out.exists() and not args.force:

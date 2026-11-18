@@ -28,7 +28,8 @@ from typing import Any
 
 __all__ = ["DROP", "OUTCOME_FIELDS", "REGRESSIONS", "REGRESSION_MARK", "FingerprintingLLM",
            "PromptRegression", "differences", "drop_object", "expected_breaks", "fingerprint",
-           "is_regression", "parse_regression", "question_of", "regressed_build", "snapshot"]
+           "is_regression", "is_trial", "parse_regression", "question_of", "regressed_build",
+           "snapshot", "TRIAL_MARK"]
 
 OUTCOME_FIELDS = ("first_status", "final_status", "correct", "correct_first", "executable",
                   "best_guess", "repairs", "calls", "reason")
@@ -146,6 +147,15 @@ REGRESSION_MARK = " + deliberate regression: "
 def is_regression(build: str | None) -> bool:
     """Whether a run's build label says it was a deliberate regression (6E part 2)."""
     return bool(build) and REGRESSION_MARK in build
+
+
+TRIAL_MARK = " + model trial: "  # 7D: a candidate model's runs in a trial
+
+
+def is_trial(build: str | None) -> bool:
+    """Whether a run was a candidate model's, in a model trial (7D): a measurement of that
+    model — a label for it — but never an ordinary run of the build."""
+    return bool(build) and TRIAL_MARK in build
 
 
 def regressed_build(build: str | None) -> str | None:

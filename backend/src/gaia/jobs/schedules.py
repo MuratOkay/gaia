@@ -21,12 +21,13 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from gaia.db.models.ops import JOB_KINDS, Schedule
+from gaia.db.models.ops import Schedule
 from gaia.jobs.queue import JobRefused, enqueue
 
 __all__ = ["DEFAULTS", "WEEKDAYS", "add_schedule", "enqueue_due", "next_due", "parse_when",
            "schedule_view"]
 
+SCHEDULED = ("refresh", "drift_watch", "sample")  # a model trial is started, never scheduled
 WEEKDAYS = ("mon", "tue", "wed", "thu", "fri", "sat", "sun")
 # P7-7: what `schedule defaults` sets up — (kind, every, weekday, at)
 DEFAULTS = (("refresh", "daily", None, "02:00"), ("drift_watch", "weekly", 6, "04:00"),
@@ -70,8 +71,8 @@ async def add_schedule(session: AsyncSession, data_source: str, kind: str, when:
                        now: datetime | None = None, known: set[str] | None = None
                        ) -> Schedule:
     """Create or replace the schedule of ``kind`` for ``data_source`` (one each)."""
-    if kind not in JOB_KINDS:
-        raise JobRefused(f"kind is one of {', '.join(JOB_KINDS)}")
+    if kind not in SCHEDULED:
+        raise JobRefused(f"a schedule's kind is one of {', '.join(SCHEDULED)}")
     if known is not None and data_source not in known:
         raise JobRefused(f"no data source {data_source!r}")
     every, weekday, at = parse_when(when)

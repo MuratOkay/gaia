@@ -27,6 +27,7 @@ from gaia.api.auth import router as auth_router
 from gaia.api.chat import router as chat_router
 from gaia.api.evaluation import router as evaluation_router
 from gaia.api.jobs import router as jobs_router
+from gaia.api.models import router as models_router
 from gaia.api.queries import router as queries_router
 from gaia.api.review import router as review_router
 from gaia.auth.deps import require
@@ -71,6 +72,7 @@ app.include_router(access_router)  # data categories: the admin role (Phase 5C)
 app.include_router(queries_router)  # the SQL of answers, runs (Phase 5D, 5E)
 app.include_router(evaluation_router)  # golden runs and the quality report (Phase 6A)
 app.include_router(jobs_router)  # jobs, schedules, alerts (Phase 7C)
+app.include_router(models_router)  # models registered, trialled, switched (Phase 7D)
 
 app.add_middleware(
     CORSMiddleware,

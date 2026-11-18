@@ -37,7 +37,7 @@ from datetime import datetime
 from statistics import median
 from typing import Any
 
-from gaia.evaluation.net import is_regression, regressed_build
+from gaia.evaluation.net import is_regression, is_trial, regressed_build
 
 __all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
            "known_flaky", "named_breaks", "quality_report", "select_runs", "shared_questions",
@@ -251,6 +251,7 @@ class Selection:
     candidate: list[RunView] | None = None
     regressions: list[RunView] = field(default_factory=list)  # left out: they measure the net
     history: list[RunView] = field(default_factory=list)  # D93: ordinary runs before the candidate
+    trials: list[RunView] = field(default_factory=list)  # 7D: a candidate model's, left out
 
 
 def _as_matches(run_as: str | None, wanted: str | None) -> bool:
@@ -290,6 +291,9 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
     pool = [r for r in pool if r.set_key == key]
     measured = [r for r in pool if r.measured]
     excluded = [r for r in pool if not r.measured]
+    # 7D: a candidate model's runs in a trial measure that model, not the build in use
+    trials = [] if ids else [r for r in measured if is_trial(r.build)]
+    measured = [r for r in measured if r not in trials]
     regressions = [] if ids else [r for r in measured if is_regression(r.build)]
     ordinary = [r for r in measured if r not in regressions]
     baseline = candidate = None
@@ -307,7 +311,7 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
             baseline = [r for r in ordinary if r.build == builds[1]]
         else:  # D98: the build before may have run an earlier version of the set
             everyone = [r for r in runs if r.measured and not is_regression(r.build)
-                        and _as_matches(r.as_login, as_login)]
+                        and not is_trial(r.build) and _as_matches(r.as_login, as_login)]
             earlier = [r for r in everyone if r.set_key != key and r.build != (
                 builds[0] if builds else None)]
             if builds and earlier:
@@ -327,7 +331,7 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
     else:
         baseline = candidate = None
         shown = measured if ids else ordinary[-last:]
-    return Selection(key, shown, excluded, baseline, candidate, regressions, history)
+    return Selection(key, shown, excluded, baseline, candidate, regressions, history, trials)
 
 
 def _meanings(r: RunView) -> str:
@@ -423,17 +427,21 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                    excluded: Iterable[RunView] = (), baseline: Sequence[RunView] | None = None,
                    candidate: Sequence[RunView] | None = None,
                    regressions: Iterable[RunView] = (),
-                   history: Sequence[RunView] = ()) -> tuple[str, dict[str, Any]]:
+                   history: Sequence[RunView] = (),
+                   trials: Iterable[RunView] = ()) -> tuple[str, dict[str, Any]]:
     """The report over measured runs, and the same numbers as a document."""
     runs = [r for r in runs if r.measured]
     excluded = list(excluded)
+    trials = list(trials)
     regressions = list(regressions)
     lines = [f"# Quality — {data_source}", "",
              f"Question set `{question_set_key}` · {len(runs)} measured run(s)"
              + (f" · {len(excluded)} replay(s) left out (they reproduce a run)" if excluded
                 else "")
              + (f" · {len(regressions)} deliberate-regression run(s) left out (they measure "
-                "the net, not a build)" if regressions else ""), ""]
+                "the net, not a build)" if regressions else "")
+             + (f" · {len(trials)} model-trial run(s) left out (a candidate model's: "
+                "make model ARGS=\"show\")" if trials else ""), ""]
     doc: dict[str, Any] = {"data_source": data_source, "question_set_key": question_set_key,
                            "runs": [r.id for r in runs], "excluded": [r.id for r in excluded],
                            "regressions_left_out": [r.id for r in regressions]}

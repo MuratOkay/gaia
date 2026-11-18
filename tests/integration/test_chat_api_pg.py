@@ -122,9 +122,9 @@ async def test_chat_api(pg_session_factory):
     loads = []
     original = service.index
 
-    async def counting(session, name, ds_id):
-        before = dict(service._indexes)
-        index = await original(session, name, ds_id)
+    async def counting(session, name, ds_id, settings=None):
+        before = {k[0]: v for k, v in service._indexes.items()}
+        index = await original(session, name, ds_id, settings)
         loads.append(before.get(name, (None, None, None))[2] is not index)
         return index
 

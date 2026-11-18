@@ -2141,3 +2141,30 @@ workload evidence, known-product recognition — waits under *Later* in PHASES.
   both sides share with the same wording and name the reworded ones, so correcting one question costs
   one question's history, not the whole baseline's.
 
+
+## 49. A change of model as a managed event (D100–D101, build D101, 2026-11-18)
+
+* **A failure that does no harm today must still be said.** With the embedding service down, a night's
+  refresh kept its meanings and skipped their vectors — right — and reported *done*. Nothing broke,
+  but retrieval quietly fell back to words; nobody would have looked. A job that could not do all it
+  was for is *partial*, with an alert, even when what it did is sound.
+* **A test must not change what it is a test of.** A suite run on the owner's machine shares the
+  databases the owner's Gaia reads. A test that needs a schema change makes its own database; a test
+  that reads the live catalog is run when nobody is changing it.
+* **Beside, not instead.** A new model is registered next to the current one, never in its place: both
+  stay reachable, so they can be measured against each other in one session and the old one can be
+  returned to. The configured model is the floor everything falls back to.
+* **Two purposes, not one model.** Reasoning about meanings and answering questions are different
+  work with different costs: a cheaper model may answer well and reason badly, or the reverse. Each
+  purpose has its model, and everything that does that work asks which one when it starts — so a
+  switch needs no restart and no component knows more than its purpose.
+* **Measure before the switch, on people's ground truth.** The golden set, interleaved in one session
+  (a provider's drift between sessions must not pass for the models' difference); and the meanings an
+  SME decided, re-reasoned by both models in a shadow that stores nothing and judged by one fixed rule
+  — never by a model. The trial also says what the switch would cost: nights of re-reasoning, tokens,
+  what is kept.
+* **A switch is a decision with a record, and a way back.** It needs a recent trial or says that it had
+  none; it alerts every administrator; the model replaced stays ready for a rollback for a month.
+  Nothing a model made is rewritten at the switch: meanings are re-reasoned a part each night within
+  the budget, SME decisions stay, and every measurement remains attached to the model that produced
+  it — a new model starts uncalibrated, as it should.

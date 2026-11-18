@@ -93,6 +93,9 @@ def llm_client(settings: Settings, replay: str | None):
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
+    from gaia.models.registry import settings_of
+
+    settings = await settings_of(settings, "answering")  # 7D: the model serving it now
     label = args.target or settings.app.default_target
     today = date.fromisoformat(args.as_of) if args.as_of else (
         settings.query.as_of or date.today())
@@ -257,8 +260,9 @@ def _print(a: Answer, args: argparse.Namespace) -> None:
     for n in a.notes:
         print(f"note           : {n}")
     tokens = sum(c.usage.prompt_tokens + c.usage.completion_tokens for c in a.calls)
-    print(f"model          : {len(a.calls)} call(s), {tokens:,} tokens; "
-          f"{a.elapsed_ms / 1000:.1f} s")
+    used = sorted({c.model for c in a.calls if c.model})  # 7D: which model answered
+    print(f"model          : {', '.join(used) or '—'}: {len(a.calls)} call(s), "
+          f"{tokens:,} tokens; {a.elapsed_ms / 1000:.1f} s")
 
 
 def main(argv: list[str] | None = None) -> int:

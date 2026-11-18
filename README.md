@@ -11,18 +11,22 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 Adding a new database — every step, who starts it, its API, how to undo it: **[USER_GUIDE §11](USER_GUIDE.md#11-adding-a-database--the-workflow-and-who-starts-each-step)**.
 
 > Status (2026-11-18): **Phases 0–6 complete; Phase 7 — ready to be run by others — in progress**
-> (approved 2026-11-18, every decision as recommended); build **D99**. Phase 6 gave one evaluation store
+> (approved 2026-11-18, every decision as recommended); build **D101**. Phase 6 gave one evaluation store
 > and report, labels from people, calibrators used only when they beat the identity, "Was this right?"
 > decided by the data source's SME, two regression nets and category proposals measured. Phase 7 so
 > far: **7A** — a weekly blind sample of meanings across the score bands and a forecast of when
 > calibration becomes possible; **7B** — 66 golden questions for `demo_pg` (90 % on the host, 85–93 %),
 > `make golden-draft`, golden runs as a person, retrieval with clarifications; **7C** — `make worker`
 > runs jobs by itself: a refresh of what changed within its window and token budget, the weekly drift
-> watch of the golden set, the calibration sample (`make jobs`, the *Runs* page, alerts). SQL Server's
-> guard passed live (S4). Next: **7D**, a change of model as a managed event.
+> watch of the golden set, the calibration sample (`make jobs`, the *Runs* page, alerts) — verified
+> on the host; **7D** — a change of model as a managed event: models registered beside the configured
+> one, probed, tried against it (the golden set interleaved, SME-decided meanings re-reasoned in a
+> shadow, the cost of a switch), switched per purpose (reasoning, answering) and rolled back (`make
+> model`, the *Models* page). SQL Server's guard passed live (S4). Next: 7D on the host with a real
+> second model, then **7E** — the data Gaia keeps, and TLS.
 > Send verification outputs only through `make share`. PostgreSQL is the main dialect (D52); SQL
 > Server is verified asynchronously (D56). What to run on your machine:
-> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§37d).
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§38d).
 > See [PHASES.md](PHASES.md).
 ---
 
@@ -324,6 +328,7 @@ Key decisions already fixed:
 | `make export` | a clean copy to hand over, zipped beside the project: git-tracked files plus `verification/share/` only, no `.env`/`gaia-env`/caches, personal data replaced and the copy scanned (`ARGS="--also 'A Name' --force"`) |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make worker` / `make jobs` | 7C: the worker runs jobs — a refresh of what changed (within the run window and a token budget), the drift watch of the golden set, the calibration sample — queued by people or schedules; `make jobs` starts, cancels, schedules and shows them and the alerts |
+| `make model` | 7D: models beside the configured one — `add`, `probe`, `trial` (a job: golden set interleaved, SME-decided meanings in a shadow, the cost of a switch), `show`, `switch` per purpose, `rollback`, `retire` |
 | `make golden-draft` | 7B: draft a golden set for a database that has none — every reference checked and run, every question `status: draft` until a person corrects it |
 | `make feedback` | 6D/7A: every "Was this right?" across data sources and who reviews it; `void ID --note …` sets a test verdict aside |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |

@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**the D97 run triaged — S4 passed, 7.0 done; 7C built (D98); the onboarding workflow documented: build `2026-11-18 · D99 (onboarding workflow documented; a golden run of nothing refused)`**) · Status: **Phases 0–6 complete; Phase 7 in progress** — 7.0 done (S4 passed, §37); 7A and 7B verified on the host but for `nge_small`'s corrected golden set; 7C (D98) built and verified in the sandbox, its host run in OWNER_VERIFICATION §37d · **Next: the owner's §37 run, P7-11 and P7-12; meanwhile 7D (which needs P7-8's model name)**
+> Last updated: 2026-11-18 (**the D98 run triaged — 7C's host acceptance met but for its week; D100 fixes; 7D built: build `2026-11-18 · D101 (Phase 7D: models registered, trialled, switched, rolled back)`**) · Status: **Phases 0–6 complete; Phase 7 in progress** — 7.0 done; 7A and 7B verified on the host but for `nge_small`'s corrected golden set; 7C verified on the host (§38a) — its week of schedules running; 7D (D101) built and verified in the sandbox, its host run in OWNER_VERIFICATION §38d, which also names P7-8 · **Next: the owner's §38 run; P7-11 and P7-12; then 7E**
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -42,7 +42,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **DONE** — 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
 | 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision **passed on the host** (A1, §34–§35) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
-| 7 | Ready to be run by others: labels sought rather than awaited, more and harder questions in both dialects, runs that run themselves, a change of model as a managed event, the data Gaia keeps; what Phase 6 carried over (P6-10) | **in progress** — approved 2026-11-18 (P7-0 … P7-10 as recommended); 7.0 done (S4 passed, §37); 7A (D96) and 7B (D97) verified on the host but for `nge_small`'s golden set; 7C (D98) built, host run §37d | ✅ approved 2026-11-18 |
+| 7 | Ready to be run by others: labels sought rather than awaited, more and harder questions in both dialects, runs that run themselves, a change of model as a managed event, the data Gaia keeps; what Phase 6 carried over (P6-10) | **in progress** — approved 2026-11-18 (P7-0 … P7-10 as recommended); 7.0 done (S4 passed, §37); 7A (D96) and 7B (D97) verified on the host but for `nge_small`'s golden set; 7C (D98) verified on the host (§38a; its week running); 7D (D101) built, host run §38d | ✅ approved 2026-11-18 |
 | Later | Scale-out: further dialects, multi-tenant, row-level need-to-know, workload evidence, known products | backlog, not planned | — |
 
 ### Environment as it stands
@@ -51,7 +51,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 |---|---|
 | Metadata store | PostgreSQL 18 + pgvector on `127.0.0.1:5433`, healthy |
 | Extensions | `vector 0.8.7`, `pg_trgm`, `unaccent`, `btree_gin`, `pgcrypto`, `pg_stat_statements` |
-| Schemas | `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`, `auth` (5A), `ops` (7C) |
+| Schemas | `catalog`, `profiling`, `semantics`, `chat`, `evaluation`, `audit`, `auth` (5A), `ops` (7C; models since 7D) |
 | Redis | `127.0.0.1:6380`, healthy |
 | Target | SQL Server 2025 CU7, `nge_small`, login `gaia_ro` (read-only, proven) |
 | Catalog captured | 71 objects, 607 columns, 93 FKs, 166 indexes, **0 comments** |
@@ -61,10 +61,10 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | host, 2026-11-16: `nge_small` all 71 objects / 607 columns (231 accepted; queue 289); `demo_pg` all 28 objects / 213 columns (108 accepted) |
-| Tests | build D99: **815 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — **825 passed expected on the host, 0 skipped** (823 on D98; D97 on the host: **809 passed, 0 skipped**, §37a); the web UI: **69** (vitest); the replayed golden net covers the 66 questions of `demo_pg` (6E, 7B)
+| Tests | build D101: **824 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — **834 passed expected on the host, 0 skipped** (D98 on the host: 819 passed, 2 failed while the owner's step 3 changed `demo_pg`, 2 skipped with Ollama down — §38a); the web UI: **71** (vitest); the replayed golden net covers the 66 questions of `demo_pg` (6E, 7B)
 | Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
 | Sandbox (2026-11-17, D76) | Also a **real LDAPS directory** with the Samba script's people and groups and a Samba-shaped certificate chain (`ldaptor`), a **headless Chromium** driving the web UI, and an OpenAI-compatible **scripted model** and embedding stub: sign-in, review, chat, refusals and the admin pages run through uvicorn and Vite as on the host. Still no SQL Server, no LLM gateway, no Docker
-| Migrations | `0001`–`0022` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store, `0019` = D81 a run's meanings and an item's SQL, `0020` = D84–D87 an item's detail, labels, calibrators, feedback, `0021` = D96 the calibration sample and feedback set aside, `0022` = D98 schema `ops`: jobs, schedules, their log, alerts) |
+| Migrations | `0001`–`0023` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store, `0019` = D81 a run's meanings and an item's SQL, `0020` = D84–D87 an item's detail, labels, calibrators, feedback, `0021` = D96 the calibration sample and feedback set aside, `0022` = D98 schema `ops`: jobs, schedules, their log, alerts, `0023` = D101 `ops.model`, `ops.model_assignment`, job kind `model_trial`, alert kind `model_switched`) |
 | Web UI (Phase 5) | `frontend/`: Vite 8 + React 19 + TypeScript 5.9 + i18next, pnpm; `make web-install`, `make dev-web` (127.0.0.1:5173, proxies `/api`), `make web-test`, `make web-build` |
 
 ---
@@ -3507,8 +3507,8 @@ Everything under *Later* stays out.
 | 7.0 ✅ (D95, D61 (b), S4 passed §37) | D95's run; S4; D61 (b) decided; the categories' words | D95 fully | §35d; S4 on SQL Server |
 | 7A ✅ (built, D96) | the calibration sample (blind, across bands, accepted included); the forecast in the report and on the page | fully, with synthetic decisions | ~15 minutes a week of an SME per data source; the `nge_small` SME pass |
 | 7B ✅ (built, D97) | `golden-draft`; `demo_pg` to ~60 with references; persona runs with refusals; `retrieval-eval` with clarifications | drafting with the scripted model; the `demo_pg` questions against the seed | the owner's corrections (an hour); T-SQL golden runs ×3; fresh `demo_pg` runs ×3 |
-| 7C ✅ (built, D98) | job table and worker; the refresh chain; windows, budget, cancellation, resume; drift watch; *Runs* start, stop, schedule; alerts | fully (a schema change made with the seed tool; the scripted model) | a week of nightly runs on `demo_pg`; one on `nge_small` inside its window |
-| 7D | model registry and probe; trial with shadow re-reasoning; impact preview; switch, rollback, staged re-reasoning; embedding preview; *Models* page | fully, with two scripted models that differ on known questions and columns | a real second model (P7-8): trial, switch and rollback on `demo_pg` |
+| 7C ✅ (built, D98; host §38a) | job table and worker; the refresh chain; windows, budget, cancellation, resume; drift watch; *Runs* start, stop, schedule; alerts | fully (a schema change made on a scratch database; the scripted model) | a week of nightly runs on `demo_pg` (running); one on `nge_small` inside its window |
+| 7D ✅ (built, D101) but the embedding change | model registry and probe; trial with shadow re-reasoning; impact preview; switch, rollback, staged re-reasoning; *Models* page — *the embedding change's preview and vector table: not yet* | fully, with two scripted models that differ on known questions and columns | a real second model (P7-8): trial, switch and rollback on `demo_pg` (§38d) |
 | 7E | inventory; shapes and encryption at rest; retention sweep; the seeded-values proof; TLS and `make serve` | fully | the proof on the host's store; the proxy on the owner's machine |
 | 7F | calibrate, fit the levels, fit the weights | with synthetic labels (as in 6C) | when the labels exist |
 
@@ -3661,10 +3661,80 @@ nightly at the window's start or 02:00, drift watch Sundays 04:00, sample Monday
 read) and the alerts on the administrators' home page; every start, cancellation, schedule change and
 acknowledgement audited.
 
+### The D98 host run — 7C on the host (2026-11-18)
+
+OWNER_VERIFICATION §38. **Confirmed:** a refresh after a deliberate schema change found exactly
+`legacy.zz_owner_probe` (*added, +2 columns*) and profiled and reasoned **only it** (29,842 tokens);
+after its removal a refresh cost **0 tokens**; the first refresh of the night cost 99,290 tokens of
+owed Stage 3 work (6 pending claim tests, 4 tables re-reasoned after them — once); the drift watch
+ran three fresh runs by itself (94, 90, 92 %) and compared them with D97's baseline: *cannot tell*,
++0.5 points (−4.9 to +6.6) over the **61** shared questions, h19 named as reworded; a second watch
+cancelled between golden runs; schedules on (refresh 02:00, watch Sundays, sample Mondays); no alert.
+`make quality`: 92 % (87–95 %); wrong every run c07 (by decision, P7-1) and **h03 — a real error**:
+grouped by the supplier's name where three suppliers share one (held for a prompt change after 7D's
+trial). `make test-host`: 819 passed — **2 failed because they read `demo_pg` while step 3 had
+changed it**, 2 skipped because Ollama was down. **Found:** every refresh's embeddings had failed
+(Ollama down) and the jobs still said *done* — a silent failure (D100); D98's own refresh test changed
+`demo_pg` for real, which the owner's Gaia reads (D100).
+
+### D100, and 7D results (2026-11-18, sandbox; D101)
+
+**D100.** The refresh test makes and drops its own database (`gaia_test_scratch`) through the target
+server's owner; the suite changes nothing the owner's Gaia reads. A refresh whose embeddings fail ends
+*partial* with an alert — the meanings kept and found by words only until the next refresh embeds
+them (it does).
+
+**Models** (`gaia.models`, migration `0023`): `ops.model` — a model registered beside the configured
+one: name, URL, the id sent, the key as an environment variable's name or encrypted with the master
+key (bound to the row, as a data source's password is), locality (D24), options, the probe and its
+status (*unverified*, *verified*, *failed*, *retired*); the configured model is always listed,
+read-only. `ops.model_assignment` — which model serves **reasoning** (meanings and critique; the
+refresh) and **answering** (SQL, repairs, narration; chat, `make ask`, golden runs, drafts), since
+when, the model replaced, the rollback deadline, the trial it rests on, *forced*, who and why; one
+current row per purpose (none: the configured model). Every tool, job and the chat resolve their
+purpose's model when they start — the chat at every question, with its retrieval index per locality
+so that a remote answering model never sees values a local configured one may.
+
+**The probe**: `check-llm`'s checks on the registered model — a plain answer and JSON mode required,
+thinking reported; two retries, two minutes a call; a model that does not answer at all is not asked
+twice more.
+
+**The trial** (`model_trial` job): *answering* — the golden set `models.trial_runs` (3) times a side,
+current and candidate **interleaved in one session** (P6-8), compared on the shared questions with
+the verdict, interval and named breaks; the candidate's runs under `<build> + model trial: NAME`, left
+out of `--last`, the comparisons and the drift watch's baseline. *Reasoning* — the
+`models.trial_tables` (8) tables with the most SME accept/correct decisions re-reasoned by both models
+in a **shadow** (`ReasoningOptions.shadow`: planned, asked, kept nowhere, no lock), each decided
+column judged by one rule for both — wrong if the role differs; partly if under half the name's words
+are shared or the entity or unit differ; right otherwise (never the LLM judge, P6-0). *The impact
+preview* — every live table re-reasoned at the candidate's measured tokens and seconds a table: tokens,
+nights of `jobs.refresh_token_budget`, hours, cost with `price_in_per_million`; SME decisions kept;
+the calibrators in use for it (none: *starts uncalibrated*). Verified with two scripted models: the
+candidate breaks g01 — named, verdict *fails*; the shadow judged 3 of 3 right for the current model and
+3 partly for a candidate that names every column "Field"; **the store's meanings counted before and
+after the shadow: unchanged**.
+
+**Switch, rollback, retire**: a switch needs the model *verified* (or the configured one) and a finished
+trial of it for that purpose from the last `models.trial_valid_days` (14), or `force` — recorded;
+rollback to the replaced model within `models.rollback_days` (30), no trial; retire refused while the
+model serves or may be rolled back to, its key wiped. After a switch of reasoning the next refresh
+re-reasoned every table of `demo_pg` with the new model (the skip key sees the model), **the SME's 3
+decisions kept**, and the meanings per model read *qwen-max* and *SME-decided 3*. Every change audited
+(`model_added`, `model_probed`, `model_switched`, `model_rolled_back`, `model_retired`, `job_started`);
+a switch or rollback alerts every administrator (`model_switched`).
+
+**Surfaces**: `make model` (list, add, probe, trial, show, switch, rollback, retire); `/api/models`;
+the ***Models*** page (administrators; auditors under *Audit → Models*); `make ask` prints the model
+that answered.
+
+**Not built (7D's remainder):** an embedding model change — another vector size needs a new vector
+table beside the old, built and then switched, with its own preview (texts, time, retrieval recall
+before and after). It waits for a reason to change the embedding model.
+
 ### Deliverables
 
 - Back end: the calibration sample (7A); `tools/golden_draft.py` (7B); `jobs/` — worker, job kinds,
-  schedules (7C); a model registry and `evaluation/model_trial.py` (7D); at-rest protection and the
+  schedules (7C); `models/` — the registry and the trial (7D); at-rest protection and the
   retention sweep (7E); migrations for jobs and schedules, models and their purposes, and the
   at-rest changes (numbers at creation, R4)
 - CLI: `make golden-draft`, `make jobs ARGS="list | start KIND | cancel ID | schedule …"`,
@@ -3778,7 +3848,9 @@ week.
       SMEs' weekly work)*
 - [ ] 7B's question sets accepted and run in both dialects → 7C *(`demo_pg` ✅ §37a; `nge_small`:
       the 30 drafts wait for the owner's correction. 7C built meanwhile, as agreed in §36)*
-- [ ] 7C's week of scheduled runs → 7D
+- [ ] 7C's week of scheduled runs → 7D *(§38a: the schema change, the removal at 0 tokens, the
+      cancellation and the drift watch passed on the host; the week runs on its schedules. 7D built
+      meanwhile, D101)*
 - [ ] 7D's trial, switch and rollback with a real second model → 7E
 - [ ] 7E's proof and TLS on the host → **Phase 7 done** (7F recorded as done or waiting for labels)
 
@@ -3934,6 +4006,8 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D97 | new (2026-11-18, Phase 7B; P6-6, P7-3, D61) | **More and harder questions, drafts, and need-to-know measured.** `demo_pg`'s golden set: 66 questions (a new question set, a new baseline); `personal: true` and `status: draft` in the format (drafts never run or counted). `make golden-draft` drafts a set from small contexts of connected tables, every reference checked by the guard and run, for a person to correct. A golden run as a person withholds questions needing what they may not read or use (right only without a number), searches every answer for forbidden names (a leak is wrong), runs references with the operator's rights; `make quality` keeps such runs apart (`--as`). `retrieval-eval` reads clarified questions and golden sets. D61 (b) rejected for now (P7-1) |
 | D98 | new (2026-11-18, Phase 7C; P5-12, P7-6, P7-7; triage of the D97 run) | **Runs that run themselves.** Schema `ops` (migration `0022`): jobs (one queued or running per kind and data source; claimed with `SKIP LOCKED`; heartbeat, progress, log, tokens), schedules (daily or weekly, host-local, queued once however late), alerts. `make worker` runs them one at a time; `make jobs`, `/api/jobs`, the *Runs* page and the administrators' home page manage and show them, audited. **Refresh** chains introspect, profile, reason, claim tests and reason, stopping between tables at its run window, its token budget (`jobs.refresh_token_budget`) or a cancellation — partial, the rest left for the next run. **Drift watch**: the golden set three times, compared with the runs before by P6-8's verdict, alerting on a break or a model id the provider newly reports (`answered_by`, recorded by every golden run). **Sample**: the calibration sample as a job. Comparisons read only questions both sides share with the same wording; h19 reworded |
 | D99 | new (2026-11-18, the owner's questions) | **Adding a database, documented against the code** (USER_GUIDE §11): every step marked manual or automatic, its CLI and API, what follows by itself, how to undo it; the gaps → P7-12. What a refresh reads (the whole catalog, every time — cheap, and the only way to see what disappeared) and what it redoes (only what changed: profiles by P3-6's rules, meanings by the skip key, embeddings and claim tests only where missing). A golden run with no question left to run (all drafts, or `--only` naming none) is refused before anything is recorded; a reference that no longer passes the guard or fails on the database stops the run in one line, before any question is asked |
+| D100 | new (2026-11-18, triage of the D98 run) | **The suite changes nothing the owner's Gaia reads; a refresh says when embeddings fail.** The refresh test creates, changes and drops its own database (`gaia_test_scratch`) through the target server's owner. A refresh whose embeddings failed ends *partial* with an alert (*embeddings failed: the meanings are kept and found by words only until the next refresh embeds them*); the next refresh embeds what is missing. Tests that read `demo_pg`'s live catalog are never run while `demo_pg` is being changed (OWNER_VERIFICATION §38b-1) |
+| D101 | new (2026-11-18, Phase 7D; P7-4, P7-5, P6-7) | **A change of model is a managed event.** Models are registered beside the configured one (`ops.model`, migration `0023`: URL, id, key by environment variable or encrypted, locality, options) and probed (plain answer and JSON mode required) before use. Two purposes — *reasoning* and *answering* — each served by one model (`ops.model_assignment`), resolved by every tool, job and the chat when they start. A **trial** (`model_trial` job) runs the golden set interleaved with both models (P6-8's verdict; the candidate's runs labelled `+ model trial: NAME` and left out of ordinary reports and baselines) and re-reasons the tables with the most SME decisions in a **shadow** that stores nothing, judging both models against the SME by one rule; it previews the cost of re-reasoning everything. A **switch** needs a trial from the last 14 days or is *forced* (recorded), alerts the administrators, and rewrites nothing at once — the refresh re-reasons under its budget, SME decisions kept; a **rollback** within 30 days needs no trial; a model serving or still a rollback target cannot be retired. Calibrators stay per model (P6-9). An embedding model change is not part of D101 |
 
 ## Definition of done (per phase)
 
@@ -3959,20 +4033,24 @@ D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B
 D80 run → §28, build D83 (D81–D83).*
 
 *2026-11-18: Phase 6 closed (P6-10); A1 passed (§35); Phase 7 approved (P7-0 … P7-10); 7A, 7B built
-(D96–D97) and run on the host (§37: S4 passed, 7.0 done); 7C built (D98).*
+(D96–D97) and run on the host (§37: S4 passed, 7.0 done); 7C built (D98) and run on the host (§38a:
+passed but for its week, which runs); D100 (two fixes the run found); 7D built (D101).*
 
-1. **Owner — the §37 run (build D98):** the migration, `make test-host`; the worker; schedules; a
-   refresh with nothing to do and one after a deliberate schema change; the drift watch, and a
-   cancellation; the *Runs* page as administrator and auditor.
-2. **Owner — P7-11** (a question whose answer lies in data the person may not read) and **P7-12**
-   (onboarding and upkeep automation: the gaps of USER_GUIDE §11.4).
+1. **Owner — the §38 run (build D101):** Ollama up; the migration (`0023`), `make test-host` (not
+   while anything changes `demo_pg`); the worker; **name P7-8 by registering it** — the gateway's
+   other model (recommended) or a local Ollama model —, probe, trial on `demo_pg`, switch answering,
+   `make ask`, rollback; the *Models* page as administrator and auditor.
+2. **Owner — P7-11** (a question whose answer lies in data the person may not read; recommended (b)
+   with a *discreet* category flag) and **P7-12** (onboarding and upkeep automation, the five gaps of
+   USER_GUIDE §11.4; recommended all five). Both still wait for your word; 7E needs P7-11.
 3. **Owner, when you have the hour:** `nge_small`'s drafts corrected (`infra/sqlserver/golden.yaml`),
    then three T-SQL golden runs (S8) — they also bring the answer labels to P6-1's minimum (7F).
    The weekly random checks (akaya). `make evaluate-cost` (§13d; sets `jobs.refresh_token_budget`).
-4. **Owner, for 7D:** P7-8 — the second model the gateway offers.
-5. **Assistant — next: 7D** (a model change as a managed event) once P7-8 is named; 7E (data at rest,
-   TLS) can go first if you prefer.
-6. **Owner:** P4-5/6 — built on the recommendations (D65); say if either should change.
+   Leave the worker running: 7C's week is its schedules.
+4. **Assistant — next:** the §38 triage; then **7E** (what Gaia keeps of the data, retention, TLS and
+   `make serve`) — with P7-12's automation if you accept it; h03's prompt rule
+   ("group by the key, show the name") after 7D's trial, with fresh runs.
+5. **Owner:** P4-5/6 — built on the recommendations (D65); say if either should change.
 
 Resolved, kept for the record:
 

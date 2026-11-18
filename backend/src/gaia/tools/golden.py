@@ -51,6 +51,9 @@ async def _run(args: argparse.Namespace) -> int:
     """The run itself is ``gaia.evaluation.golden_exec.execute_golden`` (7C: the drift watch
     runs the same code in the worker)."""
     settings = get_settings()
+    from gaia.models.registry import settings_of
+
+    settings = await settings_of(settings, "answering")  # 7D: the model serving it now
     opts = GoldenOptions(**{k: getattr(args, k) for k in GoldenOptions.__dataclass_fields__})
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:

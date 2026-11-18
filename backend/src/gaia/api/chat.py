@@ -137,9 +137,10 @@ class ChatService:
         self.factory = session_factory
         self._llm_factory = llm_factory
         self._llm = None
+        self._llms: dict[tuple[str, str], Any] = {}
         self._embedder_factory = embedder_factory
         self.use_vectors = use_vectors
-        self._indexes: dict[str, tuple[tuple, float, RetrievalIndex]] = {}
+        self._indexes: dict[tuple[str, bool], tuple[tuple, float, RetrievalIndex]] = {}
         # need-to-know (5C): per data source, the facts (with the index they belong to) and
         # the restricted indexes of the category sets seen since
         self._facts: dict[str, tuple[RetrievalIndex, Any]] = {}
@@ -158,6 +159,18 @@ class ChatService:
                 self._llm = llm_client(self.settings, None)
         return self._llm
 
+    def llm_for(self, cfg):
+        """The client of the answering model ``cfg`` (7D): one per model, kept; a test's
+        ``llm_factory`` answers for every model."""
+        if self._llm_factory is not None or cfg is self.settings.llm:
+            return self.llm
+        key = (cfg.base_url, cfg.model)
+        if key not in self._llms:
+            from gaia.tools.ask import llm_client
+
+            self._llms[key] = llm_client(self.settings.model_copy(update={"llm": cfg}), None)
+        return self._llms[key]
+
     def _embedder(self):
         if not self.use_vectors:
             return None
@@ -167,10 +180,14 @@ class ChatService:
 
         return build_embedding_client(self.settings.embeddings)
 
-    async def index(self, session, data_source: str, ds_id: uuid.UUID) -> RetrievalIndex:
+    async def index(self, session, data_source: str, ds_id: uuid.UUID,
+                    settings=None) -> RetrievalIndex:
         """The retrieval index, reloaded when the snapshot, the meanings (an SME's decision
         included), the glossary, the join hints or the tests changed (or after
-        ``INDEX_TTL_S``)."""
+        ``INDEX_TTL_S``). ``settings``: the answering model's (7D) — whether it may see data
+        values unmasked is its locality's (D24), so each locality has its own index."""
+        settings = settings or self.settings
+        raw = settings.llm.locality == "local" or settings.profiling.allow_raw_to_remote
         row = (await session.execute(text("""
             SELECT (SELECT id::text FROM catalog.snapshots WHERE data_source_id = :ds
                     ORDER BY captured_at DESC LIMIT 1),
@@ -189,11 +206,11 @@ class ChatService:
                    (SELECT max(coalesce(retired_at, created_at))::text FROM auth.category)
         """), {"ds": ds_id})).one()
         fingerprint = tuple(row)
-        cached = self._indexes.get(data_source)
+        cached = self._indexes.get((data_source, raw))
         if cached and cached[0] == fingerprint and time.monotonic() - cached[1] < INDEX_TTL_S:
             return cached[2]
-        index = await load_retrieval_index(session, data_source, self.settings)
-        self._indexes[data_source] = (fingerprint, time.monotonic(), index)
+        index = await load_retrieval_index(session, data_source, settings)
+        self._indexes[(data_source, raw)] = (fingerprint, time.monotonic(), index)
         return index
 
     # need-to-know (5C)
@@ -369,7 +386,11 @@ class ChatService:
         async with lock, self.factory() as session:
             conv, ds, messages = await self._load(session, conversation_id, owner)
             store = QueryStore(session)
-            full_index = await self.index(session, ds.name, ds.id)
+            from gaia.models.registry import effective_settings
+
+            # 7D: the model answering now (a switch is seen at the next question)
+            answering = await effective_settings(session, self.settings, "answering")
+            full_index = await self.index(session, ds.name, ds.id, answering)
             policy = await self.policy(session, ds, full_index, effective, asked_by or "?")
             index = self.restricted(ds.name, full_index, policy)
             last = messages[-1] if messages else None
@@ -410,7 +431,7 @@ class ChatService:
 
             from gaia.tools.ask import answer_calibrator_for, ask_settings
 
-            calibrator = await answer_calibrator_for(session, self.settings)  # 6D
+            calibrator = await answer_calibrator_for(session, answering)  # 6D
 
             label = ds.name
             today = body.as_of or self.settings.query.as_of or date.today()
@@ -431,8 +452,8 @@ class ChatService:
             guard = build_access_guard(self.settings, label, index, full_index.catalog, policy)
             work = asyncio.ensure_future(asyncio.to_thread(
                 ask, question, index=index, guard=guard,
-                target=self.settings.target(label), llm=self.llm,
-                settings=ask_settings(self.settings, label, calibrator), today=today,
+                target=self.settings.target(label), llm=self.llm_for(answering.llm),
+                settings=ask_settings(answering, label, calibrator), today=today,
                 clarifications=clarifications, vector_hits=hits,
                 retrieval=self.settings.retrieval.to_settings(), notes=notes, preset=preset,
                 history=history, progress=progress))

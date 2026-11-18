@@ -168,6 +168,9 @@ def _print_report(report: ReasoningReport, *, cost_report: bool) -> None:
 
 async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
+    from gaia.models.registry import settings_of
+
+    settings = await settings_of(settings, "reasoning")  # 7D: the model serving it now
     if args.replay:
         settings = settings.model_copy(
             update={"llm": settings.llm.model_copy(

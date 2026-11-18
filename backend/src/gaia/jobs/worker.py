@@ -90,6 +90,11 @@ class Worker:
             self.echo(f"  {message}")
 
         ctx = JobContext(self.settings, self.factory, job, signal, self.deps, log)
+        from gaia.models.registry import effective_settings
+
+        async with self.factory() as s:  # 7D: the model serving each purpose, now
+            for purpose in ("reasoning", "answering"):
+                ctx.purposes[purpose] = await effective_settings(s, self.settings, purpose)
         beat = asyncio.create_task(self._beat(job.id, signal, ctx.progress))
         state, result, error = "failed", None, None
         try:

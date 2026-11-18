@@ -76,6 +76,7 @@ MATRIX = [  # (method, path, who may: set of logins)
     ("GET", "/api/audit/summary", {"bdemir"}),
     ("GET", "/api/audit/access", {"bdemir"}),
     ("GET", "/api/audit/events", {"bdemir"}),
+    ("GET", "/api/models", {"dyilmaz", "bdemir"}),  # 7D: the administrator changes, auditor reads
 ]
 
 
