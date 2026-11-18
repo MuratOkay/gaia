@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**the D90 host run triaged — the fresh net's acceptance test passed; build `2026-11-18 · D92 ("Was this right?" sent on the click; D91 o06 retrieval; D90)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6: every criterion met on the host but one** ("high" ≥ 95 %, not measurable yet) — the gate is P6-10, after §32e · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) — **§32e is the next run**
+> Last updated: 2026-11-18 (**§31f and §32e triaged — Phase 6 closed; build `2026-11-18 · D93 (Phase 6 closed: flaky flips not named; D78 noticed once; D92)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6 complete** (P6-10: "high ≥ 95 %" recorded as not met; its carried items in Phase 7's backlog; one asynchronous host item, OWNER_VERIFICATION §33d) · **Next: Phase 7's plan** · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) §33
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -41,7 +41,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **VERIFIED ON THE HOST — awaiting the owner's gate**: 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 |
-| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **CLOSING (P6-10, 2026-11-18)** — 6.0, 6A–6E and 6G's measurement built (D78–D92) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration and 6G's weights carried to Phase 7; the last host run §32e ("Was this right?" end to end, D91's o06 runs) closes it | ✅ approved 2026-11-17 · closing 2026-11-18 |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision on the host: asynchronous (§33d) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence; a change of model or provider as a managed event; what Phase 6 carried over (P6-10) | **backlog — to be planned next** | ⬜ |
 
 ### Environment as it stands
@@ -2820,7 +2820,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e); the gate: P6-10 decided 2026-11-18 — close after §32e**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e); **complete 2026-11-18 (P6-10)**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -3188,6 +3188,25 @@ never reached the expert.
 (web 62); the scripts executable again. The backend is D91's. Tests: **772 passed, 10 skipped**;
 web **62**.
 
+### §31f and §32e, and D93 — Phase 6 closed (2026-11-18)
+
+OWNER_VERIFICATION §33. `make test-host` **782 passed, 0 skipped** on D91 and D92; web 62. **D91
+fixed o06**: right in all six D91 and D92 runs after wrong in every run since D80; named *fixed*
+against D90, no named break, and no wrong answer since lacked an object in its context. D92: 30,
+29, 27 of 30 (the first 30 of 30); D91 + D92 pooled 94 % (90–97 %). **Found:** D92 — a UI-only
+build — was credited with *fixing* o03, a question right 1, 2, 0 and 3 times in three runs of
+four builds: P6-8's flip rule names chance where a question flips within builds. finn's sign-in
+was D78 doing its job (his AD object re-created, §28b-3).
+
+**D93 (no migration):** `known_flaky` — a question right and wrong within one build, among the
+last twelve ordinary runs before the candidate, has its full flip shown and not named (replayed on
+the owner's runs: o03's "fix" is no longer named; o06's fix and every regression catch still are;
+simulated false alarms 3.7 % → 0.3 %, a one-question break still named 100 %); `refusals` shows a
+D78 change once, as *NOTICED*, with the relink command. Tests: **773 passed, 10 skipped** (+1: the owner's runs replayed, flaky flips).
+
+**Phase 6 is complete** (P6-10). The SME's half of "Was this right?" on the host is asynchronous
+(A1, after the owner's AD rebuild).
+
 ### Raised for Phase 7: a change of model or provider in production (2026-11-18)
 
 The owner's question: a customer changes the LLM provider some time in production — what then?
@@ -3231,7 +3250,7 @@ models from the screen, with an impact preview" (P5-12) is where this belongs.
 
 ### Acceptance criteria
 
-*On the owner's host as of §31e (OWNER_VERIFICATION §32d):*
+*On the owner's host (OWNER_VERIFICATION §32d, §33):*
 
 - [x] One command (`make quality`) produces the report for a data source and model: correct and
       executable answers with intervals, clarification metrics with intervals, retrieval recall,
@@ -3250,7 +3269,8 @@ models from the screen, with an impact preview" (P5-12) is where this belongs.
 - [x] The golden run is reported over three runs, and a change is compared question by question
       with its baseline (P6-2, P6-8)
 - [ ] "High" confidence answers are right at least as often as their threshold says, with the
-      interval shown (6D; P6-2) — **not met**: shown (high right 16 of 17, 94 %, interval 73–99 %),
+      interval shown (6D; P6-2) — **not met**: shown (high right 16 of 17, 94 %, interval 73–99 %,
+      on D88; 22 of 22 on D91 + D92, interval 85–100 % — 95 % needs ~73 right in a row),
       but the 95 % cannot be shown until the levels are fitted, which needs P6-1's answer labels
       (75 questions, 15 not right) — more than the 30 golden questions give; it needs 6F's
       questions and decided feedback from real use (P6-10)
@@ -3315,13 +3335,14 @@ today's speed) per prompt change; calibration and the replayed net make none.
       the same day, D78–D80)*
 - [x] 6A → 6B (a real quality report on the host: §28a — 86 of 90 over four D80 runs; §29a — the
       D83 runs with their meanings, and 13 labels from the owner's decisions)
-- [ ] 6C, 6D part 1, 6E part 2 verified on the host *(done: the 3C import with κ 0.65 (§31a),
-      o06's cause (§30b-3), P6-8's acceptance test (§32a); open: "Was this right?" end to end with
-      the SME's decision — §32e step 3)*
+- [x] 6C, 6D part 1, 6E part 2 verified on the host *(the 3C import with κ 0.65 (§31a), o06's
+      cause (§30b-3) and its fix (§33a), P6-8's acceptance test (§32a), "Was this right?" sent on
+      the click (§33a); the SME's decision on the host is asynchronous item A1 (§33d), verified in
+      the sandbox over HTTP and in a browser)*
 - [x] P6-10 decided — **the Phase 6 gate** (close with "high ≥ 95 %" recorded as not met; 6F,
       6D part 2, the first real calibration and 6G's weights to Phase 7) *(owner, 2026-11-18)*
-- [ ] **Phase 6 complete** — after §32e's outputs are triaged (the SME's half of "Was this
-      right?" seen on the host; D91's runs read)
+- [x] **Phase 6 complete** *(2026-11-18, OWNER_VERIFICATION §33: D91's runs read — o06 fixed;
+      the owner skipped the SME's half of "Was this right?" until the AD is rebuilt — A1)*
 
 ---
 
@@ -3509,13 +3530,13 @@ D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B
 D80 run → §28, build D83 (D81–D83).*
 
 1. **Owner — the Phase 5 gate**: everything of Phase 5 is verified on your host (§28a).
-2. **Owner — the next run: OWNER_VERIFICATION §32e** (build D92): `make test-host`; Samba
-   started and sign-in; three fresh runs for o06 (D91) against D90; "Was this right?" end to end
-   with akaya deciding; the *Evaluation* page; then **P6-10, the Phase 6 gate**.
-3. **Owner, any time:** the categories' words on `demo_mssql` (§32b-4) — *payment*, *ledger*,
-   *credit* to Finance, *inventory* to Product, if that is what they mean to you.
-4. **Assistant — next:** triage of §32e; then Phase 7's plan (its backlog now holds 6F, 6D part
-   2, the first real calibration, 6G's weights, and the change of model as a managed event).
+2. **Assistant — next: Phase 7's plan** — its backlog ordered (Phase 6's carried items first:
+   6F, 6D part 2, the first real calibration, 6G's weights, the change of model as a managed
+   event), the decisions it needs, for the owner's approval.
+3. **Owner, asynchronous:** A1 — "Was this right?" end to end once the AD is rebuilt (finn
+   re-linked, or `relink acme --all` after a rebuild; OWNER_VERIFICATION §33d); `make test-host`
+   on D93; the categories' words on `demo_mssql` (§32b-4).
+4. **Owner:** the Phase 5 gate's tick (everything of Phase 5 verified on the host, §28a).
 5. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
    evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
 6. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %

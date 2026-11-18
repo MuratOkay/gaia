@@ -34,10 +34,12 @@ from typing import Any
 from gaia.evaluation.net import is_regression, regressed_build
 
 __all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
-           "named_breaks", "quality_report", "select_runs", "wilson", "wrong_causes"]
+           "known_flaky", "named_breaks", "quality_report", "select_runs", "wilson",
+           "wrong_causes"]
 
 THRESHOLD = -0.03  # P6-2: a change may not cost more than 3 points (lower bound)
 MIN_RUNS_FOR_BREAKS = 3  # P6-8: a break is named only with this many runs a side
+HISTORY_RUNS = 12  # D93: the ordinary runs before a candidate that say which questions are flaky
 SESSION_HOURS = 6.0  # P6-8: sides made further apart may differ by the provider's model
 Z = 1.959964
 
@@ -118,6 +120,9 @@ class Comparison:
     breaks: list[str] = field(default_factory=list)  # right in every baseline run, wrong in all
     fixes: list[str] = field(default_factory=list)  # the other way round
     gap_hours: float | None = None  # from the baseline's last run to the candidate's first
+    # D93: a full flip of a question known to be flaky — shown, but it decides nothing alone:
+    # question -> the builds in which it was right in some runs and wrong in others
+    flaky_flips: dict[str, list[str]] = field(default_factory=dict)
 
 
 def _scores(runs: Sequence[RunView], key: str) -> list[bool]:
@@ -141,8 +146,27 @@ def named_breaks(baseline: Sequence[RunView], candidate: Sequence[RunView],
     return breaks, fixes
 
 
+def known_flaky(runs: Iterable[RunView]) -> dict[str, list[str]]:
+    """Questions right in some and wrong in other runs **of one build** (D93): within one build
+    nothing but chance moves them. question -> those builds (labels, oldest first)."""
+    by_build: dict[str | None, list[RunView]] = {}
+    for r in sorted(runs, key=lambda r: r.started_at):
+        by_build.setdefault(r.build, []).append(r)
+    out: dict[str, list[str]] = {}
+    for build, group in by_build.items():
+        keys = set().union(*(r.items for r in group))
+        for k in sorted(keys):
+            got = _scores(group, k)
+            if len(got) >= 2 and any(got) and not all(got):
+                out.setdefault(k, []).append(build or "—")
+    return out
+
+
 def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
-            iterations: int = 4000, seed: int = 7, threshold: float = THRESHOLD) -> Comparison:
+            iterations: int = 4000, seed: int = 7, threshold: float = THRESHOLD,
+            history: Sequence[RunView] = ()) -> Comparison:
+    """``history`` (D93): ordinary runs made before the candidate (the baseline's among them);
+    a full flip of a question they show flaky within one build is reported, not named."""
     keys = sorted(set().union(*(r.items for r in baseline)) & set().union(
         *(r.items for r in candidate)))
     pairs = [(k, b, c) for k in keys
@@ -177,12 +201,17 @@ def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
     boots.sort()
     low, high = boots[int(0.025 * iterations)], boots[int(0.975 * iterations) - 1]
     breaks, fixes = named_breaks(baseline, candidate, qkeys)
+    flaky = known_flaky([*history, *baseline])
+    flaky_flips = {k: flaky[k] for k in [*breaks, *fixes] if k in flaky}
+    breaks = [k for k in breaks if k not in flaky]
+    fixes = [k for k in fixes if k not in flaky]
     verdict = ("fails" if breaks or high < threshold else
                "passes" if low > threshold else "cannot tell")
     moved = [(k, b, c) for k, b, c in pairs if abs(c - b) >= 0.5]
     gap = (min(r.started_at for r in candidate) - max(r.started_at for r in baseline)
            ).total_seconds() / 3600
-    return Comparison(mean, low, high, len(pairs), verdict, moved, breaks, fixes, gap)
+    return Comparison(mean, low, high, len(pairs), verdict, moved, breaks, fixes, gap,
+                      flaky_flips)
 
 
 @dataclass
@@ -193,6 +222,7 @@ class Selection:
     baseline: list[RunView] | None = None
     candidate: list[RunView] | None = None
     regressions: list[RunView] = field(default_factory=list)  # left out: they measure the net
+    history: list[RunView] = field(default_factory=list)  # D93: ordinary runs before the candidate
 
 
 def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: str | None = None,
@@ -229,14 +259,18 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
         if len(builds) >= 2:
             candidate = [r for r in ordinary if r.build == builds[0]]
             baseline = [r for r in ordinary if r.build == builds[1]]
+    history: list[RunView] = []
     if baseline and candidate:
         chosen = {r.id: r for r in [*baseline, *candidate]}
         shown = sorted(chosen.values(), key=lambda r: r.started_at)
         regressions = [r for r in regressions if r.id not in chosen]
+        first = min(r.started_at for r in candidate)
+        history = [r for r in measured if not is_regression(r.build)
+                   and r.id not in chosen and r.started_at < first][-HISTORY_RUNS:]
     else:
         baseline = candidate = None
         shown = measured if ids else ordinary[-last:]
-    return Selection(key, shown, excluded, baseline, candidate, regressions)
+    return Selection(key, shown, excluded, baseline, candidate, regressions, history)
 
 
 def _meanings(r: RunView) -> str:
@@ -331,7 +365,8 @@ def _pct(x: float) -> str:
 def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_key: str,
                    excluded: Iterable[RunView] = (), baseline: Sequence[RunView] | None = None,
                    candidate: Sequence[RunView] | None = None,
-                   regressions: Iterable[RunView] = ()) -> tuple[str, dict[str, Any]]:
+                   regressions: Iterable[RunView] = (),
+                   history: Sequence[RunView] = ()) -> tuple[str, dict[str, Any]]:
     """The report over measured runs, and the same numbers as a document."""
     runs = [r for r in runs if r.measured]
     excluded = list(excluded)
@@ -474,7 +509,7 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                   "percentile"]
 
     if baseline and candidate:
-        c = compare(baseline, candidate)
+        c = compare(baseline, candidate, history=history)
         word = {"passes": "**passes**",
                 "fails": "**fails**" + (f" — broken: {', '.join(c.breaks)}" if c.breaks else ""),
                 "cannot tell": "**cannot tell** — no question broke, but the overall difference "
@@ -490,6 +525,10 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                      "none" if min(len(baseline), len(candidate)) >= MIN_RUNS_FOR_BREAKS else
                      f"not looked for (fewer than {MIN_RUNS_FOR_BREAKS} runs a side)")
                   + (f"; fixed: {', '.join(c.fixes)}" if c.fixes else ""),
+                  *(["* flipped, but known to be flaky (right and wrong within one build: "
+                     + "; ".join(f"{k} in {', '.join(sorted(set(b)))}"
+                                 for k, b in sorted(c.flaky_flips.items()))
+                     + ") — not named: chance moves them"] if c.flaky_flips else []),
                   f"* correct, question by question: {_pct(c.difference)} points (95% interval "
                   f"{_pct(c.low)} to {_pct(c.high)}, runs and questions resampled) over "
                   f"{c.questions} question(s)",
@@ -532,5 +571,6 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                              "questions": c.questions, "verdict": c.verdict,
                              "moved": [list(m) for m in c.moved], "meanings": doc_note,
                              "per_run": cost, "breaks": c.breaks, "fixes": c.fixes,
-                             "gap_hours": c.gap_hours, "expected_breaks": expected or None}
+                             "gap_hours": c.gap_hours, "expected_breaks": expected or None,
+                             "flaky_flips": c.flaky_flips}
     return "\n".join(lines) + "\n", doc

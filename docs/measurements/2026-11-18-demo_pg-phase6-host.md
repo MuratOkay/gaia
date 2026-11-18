@@ -17,10 +17,13 @@ rows), Ollama `bge-m3`, model `deepseek-flash` through the gateway; golden set
 | D90 (SQL prompt v4) | 27, 27, 28 | 82 / 90 = 91 % | — | 100 % | 73 calls, ~211 k tokens |
 | D90 + regression `drop:store.stores` | 26, 24, 24 | 74 / 90 = 82 % | — | — | 71 calls, ~202 k tokens |
 | D90 + regression `drop:finance.invoices` | 26, 25, 27 | 78 / 90 = 87 % | — | — | 72 calls, ~214 k tokens |
+| D91 (vectors read the clarified question) | 27, 28, 29 | 84 / 90 = 93 % | — | 100 % | 73 calls, ~216 k tokens |
+| D92 (UI only) | 30, 29, 27 | 86 / 90 = 96 % | D91 + D92: 170 / 180 = 94 % (90–97 %) | 100 % | 72 calls, ~212 k tokens |
 
 A run takes about two minutes (3.3 s median per question, 7–8 s at the 95th percentile).
-Flaky across D88–D90: g03, g05, o02, o03, o05; wrong in every run until D90: o06 (retrieval —
-the context lacked `sales.orders`; D91 addresses it).
+Flaky across D88–D92: g03, g05, o02, o03, o05, o07; o06 wrong in every run through D90 (retrieval
+— the context lacked `sales.orders`) and **right in all six D91 and D92 runs**; since D91 no wrong
+answer lacked an object in its context. D92's first run was the first 30 of 30.
 
 ## Comparisons
 
@@ -32,12 +35,17 @@ the context lacked `sales.orders`; D91 addresses it).
 | D88 → D90 | +1.1 | −6.7 to +8.9 | none | cannot tell | the SQL prompt v4 (the chasm trap named) |
 | D90 → D90 + `drop:store.stores` | −8.9 | −25.6 to +6.7 | **c03, g02, g17** (fixed: o06) | **fails** | expected c03, g02, g09, g17, o03 — 3 of 5 named: o03 flaky in the baseline (2/3), g09 answered from `store.inventory` alone |
 | D90 → D90 + `drop:finance.invoices` | −4.4 | −16.7 to +6.7 | **g07** | **fails** | expected g07 — 1 of 1 |
+| D90 → D91 | +2.2 | −7.8 to +13.3 | none; **fixed: o06** | cannot tell | o06 0/3 → 3/3 |
+| D91 → D92 | +2.2 | −7.8 to +13.3 | none; *fixed: o03* under P6-8 alone | cannot tell | D92 changed only the chat screen: o03 is flaky within builds (D88 1/3, D90 2/3) — since D93 such a flip is shown, not named |
 
 The P6-8 interval resamples runs as well as questions. Simulated on these runs' flakiness (3 runs
 a side, 150 trials each): a question that breaks in every run is named 100 % of the time, from one
 broken question up; an unchanged build is failed 2.7 % of the time and *passes* 11 % (otherwise
 *cannot tell*). The questions-only bootstrap needed ~6 broken questions (20 points) to *fail*
-reliably and passed an unchanged build ~40 % of the time.
+reliably and passed an unchanged build ~40 % of the time. With D93's history rule (a full flip of
+a question right and wrong within one of the last builds' runs is not named; 3 earlier builds of 3
+runs as history, 300 trials): false alarms 3.7 % → **0.3 %**, a one-question deterministic break
+still named 100 %; every catch of the owner's runs unchanged (replayed in `test_quality.py`).
 
 ## The confidence shown, against the reference
 
@@ -45,8 +53,10 @@ reliably and passed an unchanged build ~40 % of the time.
 |---|---|---|---|
 | D88 (3 runs) | 8 / 8 (68–100 %) | 65 / 72 = 90 % (81–95 %) | 8 / 10 = 80 % (49–94 %) |
 | D88 + `joins-rule` (6 runs) | 16 / 17 = 94 % (73–99 %) | 135 / 147 = 92 % (86–95 %) | 12 / 16 = 75 % (51–90 %) |
+| D91 + D92 (6 runs) | 22 / 22 = 100 % (85–100 %) | 131 / 140 = 94 % (88–97 %) | 17 / 18 = 94 % (74–99 %) |
 
-"High ≥ 95 %" (P6-2) cannot be shown: the lower bound is far below, and the levels are not fitted.
+"High ≥ 95 %" (P6-2) cannot be shown: even 22 of 22 gives a lower bound of 85 % (about 73 right in
+a row would be needed for 95 %), and the levels are not fitted — carried to Phase 7 (P6-10).
 
 ## Labels from people
 
@@ -57,7 +67,8 @@ reliably and passed an unchanged build ~40 % of the time.
 
 Calibration (P6-1, counted per subject; P6-9 pools `deepseek-v4.1-flash`,
 `deepseek/deepseek-v4.1-flash` into `deepseek-flash`): meanings 30 labels, 1 not right — too few
-(75 / 15 needed for Platt); answers 180 labels on 30 questions, 6 not always right — too few.
+(75 / 15 needed for Platt); answers 360 labels on 30 questions (D88–D92), 7 not always right —
+too few: repeats of 30 questions can never reach 75.
 Identity: meanings ECE 0.294, Brier 0.144; answers ECE 0.194, Brier 0.122.
 
 ## Category proposals, against people (6G)

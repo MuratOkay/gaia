@@ -11,21 +11,18 @@ Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status (2026-11-18): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
 > built and verified on the owner's host**; the owner's gate closes it. **Phase 6 (evaluation and
-> calibration) is closing** (P6-10 decided 2026-11-18; the last host run, §32e, closes it;
-> what waits for labels from real use goes to Phase 7) — build **D92**: the fresh net's acceptance test passed on the
-> owner's host; "Was this right?" sends every verdict on the click; D91: the vector search reads the
-> clarified question too (o06's missing `sales.orders`). D90 before it: P6-8's fresh net (`make golden --regress
-> drop:<object>` — a regression whose damage is known in advance; named breaks; an interval that
-> resamples runs; the session gap), the guard refuses the chasm trap and the SQL prompt
-> (`generate_sql.v4`) no longer advises it, P6-9's model aliases for a provider's rename, the
-> narrative shown the same rows on every server, `make auth ARGS="refusals"`. D89 before it:
-> `make test-host`, regression runs out of reports and calibration, P6-1 counted per subject.
-> Built earlier in Phase 6: `make quality` and the *Evaluation* page (6A), labels and the judge's
-> κ (6B), `make calibrate` (6C), "Was this right?" (6D), the replayed net (6E), category proposals
-> against people (6G). Send verification outputs only through `make share`. PostgreSQL is the
-> main dialect (D52); SQL Server is verified asynchronously (D56). What to run on your machine:
-> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§32: the D90 run triaged, the Phase 6 gate;
-> §32e, the last run of Phase 6, on D92). See [PHASES.md](PHASES.md).
+> calibration) complete** (P6-10) — build **D93**: one evaluation store and report (`make
+> quality`, the *Evaluation* page), labels from people with the LLM judge measured against them
+> (κ 0.65), calibrators used only when they beat the identity (`make calibrate`), "Was this
+> right?" decided by the data source's SME, two regression nets (replayed in every `make test`;
+> fresh over three runs, with deliberate regressions of known damage — `--regress drop:<object>`
+> — named breaks, flaky questions recognised), category proposals measured. On the host the
+> golden set now runs 94 % correct (90–97 %), o06 fixed (D91). "High" confidence right ≥ 95 % is
+> not yet measurable: that, `nge_small`'s golden set and the first real calibration go to Phase 7.
+> Send verification outputs only through `make share`. PostgreSQL is the main dialect (D52); SQL
+> Server is verified asynchronously (D56). What to run on your machine:
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§33: Phase 6 closed, one asynchronous item).
+> See [PHASES.md](PHASES.md).
 ---
 
 ## Layout

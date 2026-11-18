@@ -20,19 +20,19 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D92 ("Was this right?" sent on the click; D91 o06
-  retrieval; D90)` — the §31e run triaged (§32): the fresh net's acceptance test **passed**;
-  "Partly" and "No" now reach the expert on the click (two of yours never did); the Samba
-  script is executable again; D91's o06 retrieval is in this build. **The next run: §32e — the
-  last one of Phase 6 (P6-10 decided: it closes on §32e's outputs).***
+  there. *Latest build: `2026-11-18 · D93 (Phase 6 closed: flaky flips not named; D78 noticed
+  once; D92)` — §31f and §32e triaged (§33): o06 fixed by D91, **Phase 6 closed** (P6-10). A
+  full flip of a question already seen flaky within a build is no longer named a break or a fix;
+  `refusals` shows a D78 identity change once, as *NOTICED*, with the command. **Next: Phase 7's
+  plan; one asynchronous item (§33d).***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
   D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
-  failed) — triaged in §31; §31e was run on D90 — **triaged in §32**, and **§32e is the next run**
-  (build D92; it includes §31f). **Send outputs only through `make share`.**
+  failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
+  run — **triaged in §33, which closes Phase 6**; one asynchronous item remains (§33d). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3658,6 +3658,9 @@ it.
 
 ### 32e · The run (build D92) — the last of Phase 6
 
+*Run with §31f (the `31f_*` and `32_*` outputs) up to step 2; step 3 waits for finn (D78, §33b-2).
+Triaged in §33.*
+
 Outputs `verification/32_*.out`, each starting with `make stamp`; a new `--out` for every golden
 run; at the end `make share`.
 
@@ -3728,6 +3731,78 @@ the calibration cards with the pooled names, the feedback. As bdemir: *Audit →
 
 **Step 5 — send.** `make share` → send `verification/share/`. P6-10 is decided: the triage of
 these outputs closes Phase 6 (and says so if anything in them should hold it open).
+
+---
+
+## 33 · Triage of §31f and §32e — Phase 6 closed (2026-11-18)
+
+I read the `31f_*` (build D91, git `45ec867`) and `32_*` files (build D92, git `87317b1`) and your
+note: finn still fails at sign-in — you read it as a glitch of an earlier, unfinished
+verification, will rebuild the AD and check; skip it for now.
+
+### 33a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `31f_tests.out`, `32_tests.out` | `make test-host`: **782 passed, 0 skipped** on D91 and on D92 | ✅ |
+| `32_web.out` | **62 passed**, `✓ built` | ✅ D92's "Was this right?" |
+| `32_signin.out` | Samba running, the CA matches, `acme`'s probe passes all four checks; akaya, bdemir, dyilmaz **signed in**; finn **refused — the directory object behind this login changed** (D78) | ✅ the directory; finn: 33b-2 |
+| `31f_golden_*`, `31f_quality.out` | D91: 27, 28, 29 of 30; against D90: **named breaks none, fixed: o06** (0 of 3 → 3 of 3); +2.2 points, *cannot tell*; no wrong answer lacked an object in its context | ✅ **o06 fixed by D91** — the retrieval diagnosis of §30b-3, confirmed |
+| `32_golden_*`, `32_quality.out` | D92: **30**, 29, 27 of 30 — the first 30 of 30; D91 + D92 pooled 170 of 180 = 94 % (90–97 %); against D91: named breaks none, *fixed: o03* | ✅ — but D92 changed only the chat screen: 33b-1 |
+
+### 33b · Findings
+
+1. **A flaky question was named "fixed" — the other way round it would have failed a build for
+   nothing.** D92 cannot have changed o03 (it changed the chat screen only), yet o03 went from
+   wrong in every D91 run to right in every D92 run. o03 is close to a coin: 1 of 3 on D88, 2 of 3
+   on D90, 0 of 3 on D91, 3 of 3 on D92. P6-8's rule looks at three runs a side; a question that
+   flips within a build by chance flips between builds too. **Fixed (D93):** a question right in
+   some and wrong in other runs *of one build*, among the last twelve ordinary runs before the
+   candidate, is *known flaky*: its full flip is shown — *flipped, but known to be flaky (right
+   and wrong within one build: o03 in D88, D90) — not named* — and decides nothing alone; the
+   overall interval still counts it. o06 was never mixed within a build (wrong in every run up to
+   D90, right in every run since D91), so its fix stays named; the drop regressions' catches (c03,
+   g02, g17; g07) stay named. Replayed on your runs as a test; simulated, false alarms fall from
+   3.7 % to 0.3 % a comparison, and a single question that breaks every time is still named 100 %.
+2. **finn: not a glitch — D78 doing its job.** `refusals` says why: *the directory object behind
+   this login changed*. finn was dropped and re-created in the directory (§28b-3), so the AD's finn
+   is a new object, and Gaia will not hand the old account — its grants, its history — to a new
+   object without a person saying it is the same one. The fix is one command, no rebuild:
+   `make auth ARGS="account relink acme/finn"` (or the *Accounts* banner as dyilmaz). If you rebuild
+   the AD anyway, **every** account's object is new — then `make auth ARGS="account relink acme
+   --all"`, once. **Fixed (D93), cosmetic:** `refusals` showed the detection as a second *REFUSED*
+   line for the same attempt; it is now one *NOTICED* line with that command.
+3. **The SME's half of "Was this right?" is still unseen on the host** (no `32_feedback.out`):
+   akaya deciding a doubted answer. The loop is verified in the sandbox — over HTTP and in a
+   browser (D87) — and D92's click was the one flaw your run found. Not a reason to hold Phase 6
+   open: 33d.
+
+### 33c · Built (D93; no migration)
+
+* `gaia.evaluation.quality.known_flaky` and the comparison's history (33b-1); `make quality` and
+  the *Evaluation* page say which flips were known flaky.
+* `make auth ARGS="refusals"`: a D78 identity change shown once, as *NOTICED*, with the relink
+  command (33b-2).
+
+Sandbox: **773 passed, 10 skipped** (+1: the owner's runs replayed, flaky flips); web **62**.
+
+### 33d · Phase 6 is closed — and what stays open
+
+**Closed** (P6-10, decided 2026-11-18): every acceptance criterion met on the host but *"high" is
+right ≥ 95 %* — D91 + D92 showed *high* right 22 of 22, whose lower bound is 85 %; 95 % needs about
+73 right in a row and fitted levels. Carried to Phase 7's backlog: 6F, 6D part 2, the first real
+calibration, 6G's weights, the change of model as a managed event.
+
+**One asynchronous item, non-blocking** (like the SQL Server track):
+
+| Id | What | When | Output |
+|---|---|---|---|
+| A1 | "Was this right?" end to end on D93: finn re-linked (`make auth ARGS="account relink acme/finn"`; or after an AD rebuild, `… relink acme --all`); as finn three answers — *Yes*, *Partly* (with a note), *No*; as akaya decide both; as finn see the decisions. Then `(make stamp; make auth ARGS="refusals --last 10"; make quality TARGET=demo_pg ARGS="--last 3") > verification/33_feedback.out 2>&1` | whenever the AD is ready | *People's feedback*: 2 yes, 1 partly, 1 no (bdemir's yes stays); decided 2 |
+
+Also, whenever you like: `make test-host` on D93 (**783 passed, 0 skipped**), and the
+categories' words on `demo_mssql` (§32b-4).
+
+**Next:** Phase 7's plan — its backlog, ordered, with the decisions it needs.
 
 ---
 

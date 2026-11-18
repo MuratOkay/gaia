@@ -7,7 +7,7 @@
 >
 > Status (2026-11-18): Phases 0–4 done (3C accepted, P6-0); **Phase 5 verified on the host** —
 > sign-in through a real AD and a real Entra tenant, four roles, need-to-know, the SME review, the
-> chat (§38–§41); **Phase 6 closing** (P6-10) — the evaluation store and quality report, labels
+> chat (§38–§41); **Phase 6 complete** (P6-10, 2026-11-18) — the evaluation store and quality report, labels
 > from people, calibrators judged on held-out labels, "Was this right?", two regression nets and
 > category proposals measured (§42–§45); what waits for labels from real use goes to Phase 7.
 > Delivery state, gates and
@@ -2006,7 +2006,7 @@ time* — but only where the promise has been measured:
   of Gaia. A check that fails for reasons outside the code teaches people to ignore it; the net now
   treats such rows as a set, as the scorer always did.
 
-## 45. A measurement must be measured too (D89–D92, build D92, 2026-11-18 — Phase 6 closes)
+## 45. A measurement must be measured too (D89–D93, build D93, 2026-11-18 — Phase 6 closed)
 
 The last four builds of Phase 6 found every one of their defects in the measuring, not in the
 thing measured. Each is a rule now:
@@ -2028,7 +2028,9 @@ thing measured. Each is a rule now:
   deterministic; an always-right question does not flip by chance), and the overall difference
   gets an interval that resamples runs as well as questions — its usual honest answer for an
   unchanged build is *cannot tell*. Runs made hours apart may differ by the provider's model,
-  not the build: the report says so.
+  not the build: the report says so. And a question already seen right and wrong *within* one
+  build flips between builds by chance too: its flip is shown, never named (D93 — a UI-only
+  build was once credited with "fixing" such a question).
 * **Repeats are not evidence.** Six runs of thirty questions are 180 labels about thirty things;
   counting them as 180 offered a calibrator that "beat the identity" on six questions' mistakes.
   P6-1's minimums count subjects. And a run made with a deliberately worse prompt is never a

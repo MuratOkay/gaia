@@ -80,7 +80,8 @@ async def _run(args: argparse.Namespace) -> int:
                   "--baseline and --candidate, or record runs of two builds", file=sys.stderr)
         text, _doc = quality_report(sel.shown, data_source=label, question_set_key=sel.set_key,
                                     excluded=sel.excluded, baseline=sel.baseline,
-                                    candidate=sel.candidate, regressions=sel.regressions)
+                                    candidate=sel.candidate, regressions=sel.regressions,
+                                    history=sel.history)
         text += extra
         print(text)
         out = ROOT / "evaluations" / f"quality_{label}_{datetime.now(UTC):%Y%m%d_%H%M}.md"

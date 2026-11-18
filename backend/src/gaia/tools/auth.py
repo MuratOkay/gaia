@@ -226,9 +226,13 @@ async def _run(args: argparse.Namespace) -> int:
             if not rows:
                 print("no sign-in recorded yet")
             for e in reversed(rows):
-                what = {"sign_in": "signed in", "identity_changed": "REFUSED — the directory "
-                        "object changed (D78: make auth ARGS=\"account relink DIR/LOGIN\" if "
-                        "it is the same person)"}.get(e.action)
+                # identity_changed is noticed once, beside the refusal of the same attempt
+                what = {"sign_in": "signed in", "identity_changed": "NOTICED — this login's "
+                        "directory object is a new one (D78): make auth ARGS=\"account relink "
+                        f"{e.subject or 'DIR'}/{e.actor or 'LOGIN'}\" if it is the same person, "
+                        "\"account relink "
+                        f"{e.subject or 'DIR'} --all\" after a directory built anew"
+                        }.get(e.action)
                 reason = what or f"REFUSED — {(e.detail or {}).get('reason', '?')}"
                 print(f"  {e.at:%Y-%m-%d %H:%M:%S}  {e.actor or '—':<24} "
                       f"{e.subject or '—':<10} {reason}")

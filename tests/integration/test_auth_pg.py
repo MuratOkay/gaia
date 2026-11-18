@@ -249,10 +249,18 @@ async def test_the_operator_reads_why_sign_ins_were_refused(world, monkeypatch, 
             await svc.sign_in(login, password)
     await svc.grant("user", actor="admin1", role=("acme", "GAIA-Finance"))
     await svc.sign_in("akaya", PASSWORDS["akaya"])
+    async with factory() as s:  # D78 noticed — once, beside the refusal it causes (§33)
+        await audit.record(s, "identity_changed", actor="finn", subject="acme",
+                           detail={"login": "finn"})
+        await s.commit()
     monkeypatch.setenv("GAIA_METADATA_URL", os.environ["GAIA_TEST_DATABASE_URL"])
     await dispose_engine()
     assert await auth_tool._run(argparse.Namespace(command="refusals", last=10)) == 0
     out = capsys.readouterr().out.splitlines()
+    noticed = out.pop()
+    assert "finn" in noticed and "NOTICED — this login's directory object is a new one" in noticed
+    assert 'account relink acme/finn" if it is the same person' in noticed
+    assert "REFUSED" not in noticed
     assert [line.split()[2] for line in out] == ["akaya", "nobody", "akaya"]
     assert "REFUSED — no Gaia role (no grant to the account or its directory roles)" in out[0]
     assert "REFUSED — wrong password or unknown login" in out[1]

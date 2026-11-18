@@ -705,7 +705,9 @@ spread per run, the questions right in every run, in some (**flaky**, with count
 listed and never counted, and so are deliberate-regression runs (below) unless they are the
 comparison asked for. A comparison takes two sets of runs of the same questions and compares them
 **question by question**, in two parts (P6-8): a question right in every baseline run and wrong in
-every candidate run is a **named break** and fails the candidate by itself; otherwise the overall
+every candidate run is a **named break** and fails the candidate by itself — unless the question
+was already right in some and wrong in other runs of one build lately (*known flaky*: its flip is
+shown, not named, D93); otherwise the overall
 difference decides — **passes** when even the low end of its interval costs less than 3 points,
 **fails** when even the high end costs more, else **cannot tell** (with 30 questions, the usual
 reading of an unchanged build). It also says when the two sides were run more than 6 hours apart.
@@ -1207,7 +1209,7 @@ make auth ARGS="refusals --last 40"
 |---|---|
 | `directory acme: … connect …` | the directory is not answering — for the Samba test AD after a reboot: `bash infra/auth/samba-ad-test.sh start` |
 | `directory acme: … certificate …` | its CA changed (a test domain provisioned again): `infra/auth/samba-ad-test.sh ca`, then `make auth ARGS="directory probe acme"` |
-| `the directory object changed` | D78: the same login, a new directory object — `make auth ARGS="account relink acme/LOGIN"` if it is the same person (`acme --all` for a test domain provisioned again) |
+| `NOTICED — this login's directory object is a new one` / `the directory object changed` | D78: the same login, a new directory object (the person re-created in the directory, or the domain built anew) — `make auth ARGS="account relink acme/LOGIN"` if it is the same person (`acme --all` for a test domain provisioned again) |
 | `locked after repeated failures` | 5 failures lock an account for 15 minutes (`auth.lockout_minutes`) — wait, then fix the first cause |
 | `no Gaia role …` | the account and its directory roles have no grant: `make auth ARGS="grant …"` |
 | `Microsoft refused: …` | the Entra side, with Microsoft's own reason |

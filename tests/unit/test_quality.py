@@ -266,3 +266,75 @@ def test_a_dropped_object_says_how_many_of_its_questions_were_named():
            "— named: 3 of 4" in text
     assert doc["comparison"]["expected_breaks"] == ["q01", "q02", "q03", "q04"]
     assert "made" not in text.split("## Candidate")[1].split("per run")[0]  # same session
+
+
+HOST_QUESTIONS = [f"g{i:02d}" for i in range(1, 22)] + [
+    "c01", "c03", "o01", "o02", "o03", "o04", "o05", "o06", "o07"]
+# the owner's runs of 2026-11-17/18, by what each got wrong (OWNER_VERIFICATION §28–§33)
+HOST_RUNS = [
+    ("D83", [{"o06", "o02"}, {"o06"}, {"o06"}]),
+    ("D88", [{"o03", "o06"}, {"o03", "o02", "o06", "o05"}, {"g03", "o02", "o06"}]),
+    ("D90", [{"g03", "o02", "o06"}, {"g05", "o02", "o06"}, {"o03", "o06"}]),
+    ("D90 + deliberate regression: drop:store.stores",
+     [{"g02", "g17", "c03", "o03"}, {"g02", "g03", "g17", "c03", "o03", "o05"},
+      {"g02", "g17", "c01", "c03", "o03", "o05"}]),
+    ("D90 + deliberate regression: drop:finance.invoices",
+     [{"g05", "g06", "g07", "o06"}, {"g07", "c01", "o02", "o05", "o06"}, {"g07", "c01", "o06"}]),
+    ("D91", [{"o03", "o02", "o05"}, {"o03", "o02"}, {"o03"}]),
+    ("D92", [set(), {"o02"}, {"g03", "o02", "o07"}]),
+]
+
+
+def _host(upto: str) -> list[RunView]:
+    out, n = [], 0
+    for build, wrongs in HOST_RUNS:
+        for w in wrongs:
+            items = {k: ItemView(k, "answer", k not in w, True, "answered", "answered")
+                     for k in HOST_QUESTIONS}
+            out.append(RunView(f"{build[:3].lower()}{n}", T0 + timedelta(minutes=5 * n), build,
+                               "m", "fresh", items=items, set_key="S"))
+            n += 1
+        if build == upto:
+            break
+    return out
+
+
+def test_a_flaky_question_flipping_decides_nothing_alone():
+    """D93 (OWNER_VERIFICATION §33): D92 changed only the chat screen, yet o03 went from wrong in
+    every D91 run to right in every D92 run — "fixed". o03 had been right and wrong within one
+    build twice (D88 1/3, D90 2/3): chance moves it, and the other way round it would have failed
+    a build for nothing. Such a flip is shown, not named; every real catch of the owner's runs
+    stays as it was."""
+    from gaia.evaluation.quality import known_flaky
+
+    runs = _host("D92")
+    flaky = known_flaky([r for r in runs if "regression" not in (r.build or "")])
+    assert flaky["o03"] == ["D88", "D90"] and "o06" not in flaky and "g07" not in flaky
+
+    sel = select_runs(runs, compare_builds=True)  # D92 against D91
+    assert {r.build for r in sel.baseline} == {"D91"}
+    assert {r.build for r in sel.candidate} == {"D92"}
+    c = compare(sel.baseline, sel.candidate, history=sel.history)
+    assert c.breaks == [] and c.fixes == [] and c.flaky_flips == {"o03": ["D88", "D90"]}
+    text, doc = quality_report(sel.shown, data_source="d", question_set_key="S",
+                               baseline=sel.baseline, candidate=sel.candidate,
+                               history=sel.history)
+    assert "flipped, but known to be flaky (right and wrong within one build: o03 in D88, D90)" \
+        in text
+    assert doc["comparison"]["fixes"] == []
+    assert compare(sel.baseline, sel.candidate).fixes == ["o03"]  # what P6-8 alone said
+
+    sel = select_runs(_host("D91"), compare_builds=True)  # D91 against D90: o06 really fixed
+    c = compare(sel.baseline, sel.candidate, history=sel.history)
+    assert c.fixes == ["o06"] and c.breaks == [] and c.flaky_flips == {}
+
+    runs = _host("D90 + deliberate regression: drop:store.stores")
+    sel = select_runs(runs, compare_builds=True)
+    c = compare(sel.baseline, sel.candidate, history=sel.history)
+    assert c.breaks == ["c03", "g02", "g17"] and c.fixes == ["o06"] and c.verdict == "fails"
+
+    runs = _host("D90 + deliberate regression: drop:finance.invoices")
+    sel = select_runs(runs, compare_builds=True)
+    c = compare(sel.baseline, sel.candidate, history=sel.history)
+    assert c.breaks == ["g07"] and c.verdict == "fails"
+    assert all("regression" not in (r.build or "") for r in sel.history)
