@@ -25,6 +25,9 @@ export function ReviewSources() {
             {d.stale > 0 && (
               <p className="warn"><Link to={`/review/${enc(d.name)}?status=stale`}>{t("review.staleCount", { count: d.stale })}</Link></p>
             )}
+            {(d.feedback_open ?? 0) > 0 && (
+              <p className="warn"><Link to={`/review/${enc(d.name)}/answers`}>{t("review.answers.count", { count: d.feedback_open })}</Link></p>
+            )}
           </li>
         ))}
       </ul>

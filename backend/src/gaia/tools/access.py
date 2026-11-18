@@ -6,6 +6,7 @@
     make access TARGET=demo_pg ARGS="from-schemas"          # one category per schema
     make access TARGET=demo_pg ARGS="propose"               # Gaia's proposals
     make access TARGET=demo_pg ARGS="objects [--why]"       # every object, its category (and why)
+    make access TARGET=demo_pg ARGS="accuracy"              # 6G: proposals against confirmations
     make access TARGET=demo_pg ARGS="place finance.invoices Finance --note 'SME said so'"
     make access ARGS="suggestions"                          # directory roles -> categories
     make access TARGET=demo_pg ARGS="policy akaya [--directory acme]"   # what they may read
@@ -107,6 +108,31 @@ async def _run(args: argparse.Namespace) -> int:
             r = await svc.assign(target, table_id, args.category, actor=actor, source="admin",
                                  note=args.note)
             print(f"{r['object']}: {r['category']} (confirmed)")
+        elif c == "accuracy":
+            r = await svc.accuracy(target)
+            rule, seen = r["rule"], r["seen"]
+            print(f"{target}: {rule['n']} object(s) confirmed by people")
+            if rule["n"]:
+                proposed = rule["n"] - rule["none"]
+                print(f"today's rule, each confirmation hidden in turn: proposes {proposed} of "
+                      f"them, {rule['agree']} as people confirmed"
+                      + (f" ({rule['agree'] / proposed:.0%})" if proposed else ""))
+                for basis, (k, n) in sorted(rule["by_basis"].items()):
+                    print(f"  {basis:<8} {k} of {n} ({k / n:.0%})")
+                for m in rule["misses"]:
+                    print(f"  wrong: {m['object']} — proposed {m['proposed']} ({m['basis']}), "
+                          f"people said {m['confirmed']}")
+                    if args.why:
+                        print(f"         {m['why']}")
+                for m in rule["unproposed"]:
+                    print(f"  no proposal: {m['object']} (people said {m['confirmed']})"
+                          + (f" — {m['why']}" if args.why else ""))
+            if seen["n"]:
+                print(f"the proposals people saw: {seen['kept']} of "
+                      f"{seen['n'] - seen['no_proposal']} kept; {seen['no_proposal']} "
+                      "confirmed without a proposal before")
+                for basis, (k, n) in sorted(seen["by_basis"].items()):
+                    print(f"  {basis:<12} {k} of {n} kept")
         elif c == "suggestions":
             for r in await svc.role_suggestions():
                 print(f"  {r['directory']}/{r['role']:<30} -> {', '.join(r['categories'])}")
@@ -158,6 +184,8 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("object", help="schema.object")
     s.add_argument("category")
     s.add_argument("--note")
+    a = sub.add_parser("accuracy")
+    a.add_argument("--why", action="store_true")
     sub.add_parser("suggestions")
     s = sub.add_parser("policy")
     s.add_argument("login")

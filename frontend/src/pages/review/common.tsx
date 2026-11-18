@@ -18,6 +18,7 @@ export function ReviewNav({ ds }: { ds: string }) {
       <NavLink to={`/review/${enc(ds)}`} end>{t("review.queue", { ds })}</NavLink>
       <NavLink to={`/review/${enc(ds)}/tables`} end>{t("review.tables")}</NavLink>
       <NavLink to={`/review/${enc(ds)}/glossary`}>{t("review.glossary")}</NavLink>
+      <NavLink to={`/review/${enc(ds)}/answers`}>{t("review.answers.nav")}</NavLink>
     </nav>
   );
 }
@@ -35,13 +36,21 @@ export function Reasons({ reasons }: { reasons: string[] }) {
   );
 }
 
-export function Band({ band, score }: { band: string | null; score: number | null }) {
+/** A band and its score. ``calibrated`` (6C): the score is P(right) from a fitted calibrator —
+ *  shown as a percentage with its lower bound; otherwise a ranking, marked "uncalibrated"
+ *  where asked (``mark``). */
+export function Band({ band, score, calibrated, lower, mark = false }: {
+  band: string | null; score: number | null; calibrated?: boolean; lower?: number | null; mark?: boolean;
+}) {
   const { t } = useTranslation();
   if (!band) return <span className="muted">—</span>;
   return (
     <span className={`status band-${band}`}>
       {t(`review.bands.${band}`, { defaultValue: band })}
-      {score !== null && ` · ${score.toFixed(2)}`}
+      {score !== null && (calibrated
+        ? ` · ${t("review.probability", { p: Math.round(score * 100) })}${lower !== undefined && lower !== null ? ` ${t("review.atLeast", { lo: Math.round(lower * 100) })}` : ""}`
+        : ` · ${score.toFixed(2)}`)}
+      {score !== null && !calibrated && mark && <span className="muted" title={t("review.uncalibratedHelp")}> {t("review.uncalibrated")}</span>}
     </span>
   );
 }

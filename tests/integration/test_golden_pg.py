@@ -128,6 +128,16 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
     for qid in ("o01", "o02", "o04", "o05", "o07", "c01", "c03"):
         assert by[qid].best_guess == "correct" and by[qid].correct is True, by[qid]
     assert by["c02"].best_guess == "not scored" and by["c02"].correct is None
+    # D84: what each final answer was made of
+    d = by["o06"].detail
+    assert set(d["objects"]) >= {"sales.order_lines", "product.products"}
+    assert d["missing"] == [o for o in ("sales.order_lines", "sales.orders",
+                                        "product.products") if o not in d["objects"]]
+    assert d["clarification"][1].startswith("profit realised on sales")
+    assert d["confidence"]["level"] in ("high", "medium", "low") and "probability" not in \
+        d["confidence"]
+    assert by["g04"].detail["clarification"][1].startswith("Exactly as the question says")
+    assert "clarification" not in by["g02"].detail and by["g02"].detail["interpretation"]
 
     summary = summarise(outcomes)
     assert summary["with_reference"] == 30  # 21 answers + 9 clarified with a reference

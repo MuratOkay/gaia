@@ -24,7 +24,9 @@ export function QueryStatus({ q }: { q: QueryView }) {
 
 /** The SQL behind the answers (P5-7): SMEs for their data sources, administrators and
  *  auditors for all — never the "user" role (P4-2). */
-export function Queries() {
+/** ``base``: where the list lives — ``/queries``, or ``/audit/queries`` inside the Audit menu,
+ *  so an answer's page keeps the menu it was opened from. */
+export function Queries({ base = "/queries" }: { base?: string }) {
   const { t, i18n } = useTranslation();
   const [params, setParams] = useSearchParams();
   const status = params.get("status") ?? "";
@@ -76,7 +78,7 @@ export function Queries() {
                 <tr key={q.id}>
                   <td>{when(q.created_at, i18n.language)}<div className="muted small">{q.data_source}</div></td>
                   <td>{q.asked_by ?? q.origin}</td>
-                  <td><Link to={`/queries/${q.id}`}>{q.question ?? "—"}</Link>{q.attempt > 1 && <span className="muted small"> · {t("queries.attempt", { n: q.attempt })}</span>}</td>
+                  <td><Link to={`${base}/${q.id}`}>{q.question ?? "—"}</Link>{q.attempt > 1 && <span className="muted small"> · {t("queries.attempt", { n: q.attempt })}</span>}</td>
                   <td><QueryStatus q={q} /></td>
                   <td>{q.row_count ?? "—"}</td>
                 </tr>
@@ -107,13 +109,13 @@ function Sql({ sql }: { sql: string }) {
   );
 }
 
-export function QueryPage() {
+export function QueryPage({ base = "/queries" }: { base?: string }) {
   const { t, i18n } = useTranslation();
   const { id = "" } = useParams();
   const { data: q, error, loading } = useLoad(() => api<QueryView>(`/api/queries/${id}`), [id]);
   return (
     <section>
-      <p><Link to="/queries">{t("queries.back")}</Link></p>
+      <p><Link to={base}>{t("queries.back")}</Link></p>
       <Busy loading={loading} />
       <ErrorNote error={error} />
       {q && (

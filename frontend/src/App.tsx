@@ -9,12 +9,13 @@ import { Categories } from "./pages/admin/Categories";
 import { DataSources } from "./pages/admin/DataSources";
 import { Directories } from "./pages/admin/Directories";
 import { Grants } from "./pages/admin/Grants";
-import { AuditAccess, AuditCategories, AuditEvents, AuditGrants, AuditPii, AuditRefusals, AuditSummaryPage } from "./pages/audit/Audit";
+import { AuditAccess, AuditCategories, AuditEvents, AuditFrame, AuditGrants, AuditPii, AuditRefusals, AuditSummaryPage } from "./pages/audit/Audit";
 import { ChatPage } from "./pages/chat/Chat";
 import { Evaluation } from "./pages/evaluation/Evaluation";
 import { Home } from "./pages/Home";
 import { Login } from "./pages/Login";
 import { Queries, QueryPage, Runs } from "./pages/queries/Queries";
+import { ReviewAnswers } from "./pages/review/Answers";
 import { ColumnPage } from "./pages/review/Column";
 import { ReviewGlossary } from "./pages/review/Glossary";
 import { ReviewQueue } from "./pages/review/Queue";
@@ -113,11 +114,16 @@ export function Shell({ me, onSignedOut }: { me: Me; onSignedOut: () => void }) 
           <Route path="/review/:ds/tables" element={<Only when={has("sme")}><ReviewTables /></Only>} />
           <Route path="/review/:ds/tables/:id" element={<Only when={has("sme")}><TablePage /></Only>} />
           <Route path="/review/:ds/glossary" element={<Only when={has("sme")}><ReviewGlossary /></Only>} />
+          <Route path="/review/:ds/answers" element={<Only when={has("sme")}><ReviewAnswers /></Only>} />
           <Route path="/audit" element={<Only when={has("auditor")}><AuditSummaryPage /></Only>} />
           <Route path="/audit/access" element={<Only when={has("auditor")}><AuditAccess /></Only>} />
           <Route path="/audit/pii" element={<Only when={has("auditor")}><AuditPii /></Only>} />
           <Route path="/audit/grants" element={<Only when={has("auditor")}><AuditGrants /></Only>} />
           <Route path="/audit/events" element={<Only when={has("auditor")}><AuditEvents /></Only>} />
+          <Route path="/audit/queries" element={<Only when={has("auditor")}><AuditFrame><Queries base="/audit/queries" /></AuditFrame></Only>} />
+          <Route path="/audit/queries/:id" element={<Only when={has("auditor")}><AuditFrame><QueryPage base="/audit/queries" /></AuditFrame></Only>} />
+          <Route path="/audit/runs" element={<Only when={has("auditor")}><AuditFrame><Runs /></AuditFrame></Only>} />
+          <Route path="/audit/evaluation" element={<Only when={has("auditor")}><AuditFrame><Evaluation /></AuditFrame></Only>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
         </ErrorBoundary>

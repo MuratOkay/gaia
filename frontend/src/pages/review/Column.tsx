@@ -331,7 +331,9 @@ export function ColumnPage() {
                     {Object.keys(item.meaning.value_meanings).length > 0 && (
                       <tr><th>{t("review.meaningsTitle")}</th><td>{Object.entries(item.meaning.value_meanings).map(([k, v]) => `${k} = ${v}`).join("; ")}</td></tr>
                     )}
-                    <tr><th>{t("review.status")}</th><td><MeaningStatus status={item.meaning.status} /> <Band band={item.meaning.band} score={item.meaning.score} /></td></tr>
+                    <tr><th>{t("review.status")}</th><td><MeaningStatus status={item.meaning.status} /> <Band band={item.meaning.band} score={item.meaning.score}
+                      calibrated={!!item.meaning.calibrator && item.meaning.calibrator !== "identity" && !item.meaning.reviewed_by}
+                      lower={item.meaning.calibrated_lower} mark={!item.meaning.reviewed_by} /></td></tr>
                     {item.meaning.reviewed_by && (
                       <tr><th>{t("review.decided")}</th><td>{t("review.by", { who: item.meaning.reviewed_by, when: when(item.meaning.reviewed_at, i18n.language) })}{item.meaning.review_note && ` — ${item.meaning.review_note}`}</td></tr>
                     )}

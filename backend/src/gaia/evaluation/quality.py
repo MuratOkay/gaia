@@ -22,8 +22,8 @@ from datetime import datetime
 from statistics import median
 from typing import Any
 
-__all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "quality_report",
-           "select_runs", "wilson"]
+__all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
+           "quality_report", "select_runs", "wilson", "wrong_causes"]
 
 THRESHOLD = -0.03  # P6-2: a change may not cost more than 3 points (lower bound)
 Z = 1.959964
@@ -45,6 +45,8 @@ class ItemView:
     seconds: float = 0.0
     reason: str | None = None
     sql: str | None = None
+    detail: dict[str, Any] | None = None  # D84: what the final answer was made of
+    repairs: int = 0
 
 
 @dataclass
@@ -173,8 +175,13 @@ def meanings_note(baseline: Sequence[RunView], candidate: Sequence[RunView]) -> 
     b = {r.meanings_key for r in baseline}
     c = {r.meanings_key for r in candidate}
     if None in b or None in c:
-        return ("the meanings some of these runs answered with are unknown (imported runs): "
-                "SME decisions or re-reasoning between them would count as the build's")
+        unknown = [r for r in [*baseline, *candidate] if r.meanings_key is None]
+        why = ("imported runs" if all(r.mode == "imported" for r in unknown) else
+               "recorded before build D81 kept them" if not any(r.mode == "imported"
+                                                                for r in unknown)
+               else "imported runs, and runs recorded before build D81 kept them")
+        return (f"the meanings some of these runs answered with are unknown ({why}): SME "
+                "decisions or re-reasoning between them would count as the build's")
     if b != c:
         def decided(runs: Sequence[RunView]) -> str:
             counts = sorted({r.meanings.get("sme_decisions") for r in runs} - {None})
@@ -184,6 +191,60 @@ def meanings_note(baseline: Sequence[RunView], candidate: Sequence[RunView]) -> 
                 f"decisions {decided(baseline)} → {decided(candidate)}, or re-reasoning): the "
                 "difference is not the build's alone")
     return None
+
+
+def _explain(detail: dict[str, Any]) -> list[str]:
+    """An item's detail in words: whether retrieval or the model missed (D84)."""
+    out = []
+    missing = detail.get("missing") or []
+    if missing:
+        out.append(f"the context lacked {', '.join(missing)} (retrieval)")
+    elif detail.get("objects"):
+        out.append("the context held every object the reference needs (the model's reading)")
+    clarified = detail.get("clarification")
+    if clarified and len(clarified) > 1 and clarified[1]:
+        out.append(f"answered after: “{str(clarified[1])[:200]}”")
+    if detail.get("interpretation"):
+        out.append(f"Gaia understood: {str(detail['interpretation'])[:240]}")
+    for a in (detail.get("assumptions") or [])[:4]:
+        out.append(f"assumed: {str(a)[:200]}")
+    return [f"* {x}" for x in out]
+
+
+def wrong_causes(items: Sequence[ItemView]) -> dict[str, Any]:
+    """The wrong final answers by cause: an expected object missing from the context
+    (retrieval) or all there (the reading)."""
+    wrong = [i for i in items if i.correct is False]
+    known = [i for i in wrong if i.detail is not None]
+    retrieval = [i for i in known if i.detail.get("missing")]
+    reading = [i for i in known if not i.detail.get("missing")]
+    return {"wrong": len(wrong), "unknown": len(wrong) - len(known),
+            "retrieval": len(retrieval), "reading": len(reading),
+            "retrieval_questions": sorted({i.key for i in retrieval}),
+            "reading_questions": sorted({i.key for i in reading})}
+
+
+LEVELS = ("high", "medium", "low")
+
+
+def confidence_levels(items: Sequence[ItemView]) -> dict[str, tuple[int, int]]:
+    """Per confidence level shown with a final answer: (right, answered) — answers scored
+    against a reference only."""
+    out: dict[str, tuple[int, int]] = {}
+    for level in LEVELS:
+        xs = [i for i in items if i.correct is not None and i.final_status == "answered"
+              and ((i.detail or {}).get("confidence") or {}).get("level") == level]
+        if xs:
+            out[level] = (sum(1 for i in xs if i.correct), len(xs))
+    return out
+
+
+def _per_run(runs: Sequence[RunView]) -> dict[str, float]:
+    """Repairs, model calls and tokens per run (a worse prompt may cost before it errs)."""
+    n = max(1, len(runs))
+    return {"repairs": sum(i.repairs for r in runs for i in r.items.values()) / n,
+            "calls": sum(i.calls for r in runs for i in r.items.values()) / n,
+            "tokens": sum(i.tokens for r in runs for i in r.items.values()) / n}
 
 
 def _pct(x: float) -> str:
@@ -258,16 +319,47 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
               "* right in some runs (flaky): " + (", ".join(f"{k} {a}/{n}" for k, a, n in flaky)
                                                   or "none"),
               "* wrong in every run: " + (", ".join(k for k, _w, _s in never) or "none")]
+    details: dict[str, dict[str, Any]] = {}
     for k, why, sql in never:
         if why:
             lines.append(f"  * {k}: {why[:160]}")
+        last = next(r.items[k] for r in reversed(runs) if k in r.items)
+        if last.detail:  # what the latest answer was made of (D84)
+            details[k] = last.detail
+            lines += [f"    {x}" for x in _explain(last.detail)]
         if sql:  # the latest answer, to read why (D81)
             lines += ["", "    ```sql", *("    " + x for x in sql.strip().splitlines()),
                       "    ```", ""]
     doc["questions"] = {"always": always, "flaky": [list(x) for x in flaky],
                         "never": [k for k, _w, _s in never],
                         "never_reasons": {k: why for k, why, _s in never if why},
-                        "never_sql": {k: sql for k, _w, sql in never if sql}}
+                        "never_sql": {k: sql for k, _w, sql in never if sql},
+                        "never_detail": details}
+
+    causes = wrong_causes(all_items)
+    if causes["wrong"]:
+        lines += ["", "## Why answers were wrong", "",
+                  f"* wrong final answers: {causes['wrong']}",
+                  f"* the context lacked an object the reference needs (retrieval): "
+                  f"{causes['retrieval']}"
+                  + (f" — {', '.join(causes['retrieval_questions'])}"
+                     if causes["retrieval_questions"] else ""),
+                  f"* the context held them all (the model's reading, or the question's): "
+                  f"{causes['reading']}"
+                  + (f" — {', '.join(causes['reading_questions'])}"
+                     if causes["reading_questions"] else "")]
+        if causes["unknown"]:
+            lines.append(f"* not known (runs recorded before build D84): {causes['unknown']}")
+    doc["wrong_causes"] = causes
+
+    levels = confidence_levels(all_items)
+    if levels:
+        lines += ["", "## The confidence Gaia showed, against the reference (6D)", ""]
+        for level, (k, n) in levels.items():
+            lines.append(f"* shown as {level}: right {_share(k, n)}")
+        lines.append("* \"high\" should be right at least 95% of the time — the interval's lower "
+                     "bound says whether it is (P6-2)")
+        doc["confidence_levels"] = {lv: list(kn) for lv, kn in levels.items()}
 
     clarify = [i for i in all_items if i.expect == "clarify"]
     asked = sum(1 for i in clarify if i.first_status in ("clarify", "cannot_answer"))
@@ -314,7 +406,15 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
         for k, b, cand in c.moved:
             lines.append(f"  * {k}: right in {b:.0%} of the baseline's runs, {cand:.0%} of the "
                          "candidate's")
+        cost = {side: _per_run(runs_) for side, runs_ in (("baseline", baseline),
+                                                           ("candidate", candidate))}
+        lines.append(f"* per run: repairs {cost['baseline']['repairs']:.1f} → "
+                     f"{cost['candidate']['repairs']:.1f}, model calls "
+                     f"{cost['baseline']['calls']:.0f} → {cost['candidate']['calls']:.0f}, "
+                     f"tokens {cost['baseline']['tokens']:,.0f} → "
+                     f"{cost['candidate']['tokens']:,.0f}")
         doc["comparison"] = {"difference": c.difference, "low": c.low, "high": c.high,
                              "questions": c.questions, "verdict": c.verdict,
-                             "moved": [list(m) for m in c.moved], "meanings": doc_note}
+                             "moved": [list(m) for m in c.moved], "meanings": doc_note,
+                             "per_run": cost}
     return "\n".join(lines) + "\n", doc

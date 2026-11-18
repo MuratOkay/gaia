@@ -131,6 +131,27 @@ def test_confidence_is_explained():
     assert sme.score == 1.0
 
 
+def test_an_answer_calibrator_turns_the_score_into_a_probability():
+    """6D (D87): with a calibrator in use the level follows P(right) — "high" from 0.95
+    (P6-2) — and the heuristic score stays what calibrators are fitted on."""
+    from gaia.evaluation.calibration import Fit
+    from gaia.query.ask import AskSettings
+
+    plan = SqlPlan(decision="answer", interpretation="x", sql="SELECT 1")
+    relied = [("s.t.a", _col("certain", 0.9)), ("s.t.b", _col("certain", 0.85))]
+    plain = confidence(relied, _attempts(1), plan, False)
+    assert plain.level == "high" and plain.probability is None and plain.calibrator == "identity"
+    # on the golden runs, answers scored ~0.88 were right 80 % of the time
+    fit = Fit("isotonic", {"blocks": [[0.0, 0.5, 0.4, 60], [0.6, 1.0, 0.8, 200]]}, "iso-x")
+    settings = AskSettings(model="m", answer_calibrator=fit)
+    got = confidence(relied, _attempts(1), plan, False, settings)
+    assert got.score == plain.score and got.probability == 0.8 and got.level == "medium"
+    assert got.calibrator == "iso-x" and 0.7 < got.lower < 0.8
+    sure = Fit("isotonic", {"blocks": [[0.0, 1.0, 0.97, 500]]}, "iso-y")
+    assert confidence(relied, _attempts(1), plan, False,
+                      AskSettings(model="m", answer_calibrator=sure)).level == "high"
+
+
 def test_golden_file():
     golden = load_golden(GOLDEN)
     assert golden.data_source == "demo_pg" and golden.as_of == date(2026, 1, 15)

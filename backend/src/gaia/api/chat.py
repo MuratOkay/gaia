@@ -6,6 +6,8 @@
     GET  /api/conversations/{id}                   with its messages
     POST /api/conversations/{id}/messages          {"content", "as_of"?, "reply_to_clarification"?}
                                                    → server-sent events (``?stream=false``: JSON)
+    PUT  /api/messages/{id}/feedback               {"verdict": right|partly|wrong, "note"?}
+                                                   "Was this right?" (6D, D87)
 
 A message is a question, or — when Gaia's last turn was a clarification that is
 still open — the answer to it (an option's number, or the user's own words; D61).
@@ -95,6 +97,11 @@ class NewMessage(BaseModel):
     reply_to_clarification: bool | None = None  # None: yes when a clarification is open
 
 
+class FeedbackBody(BaseModel):
+    verdict: str  # right | partly | wrong
+    note: str | None = Field(default=None, max_length=2000)
+
+
 def sse(event: str, data: dict[str, Any]) -> str:
     return f"event: {event}\ndata: {json.dumps(data, ensure_ascii=False, default=str)}\n\n"
 
@@ -107,10 +114,11 @@ def _conversation_dict(c: Conversation, data_source: str) -> dict[str, Any]:
             "created_at": c.created_at, "updated_at": c.updated_at}
 
 
-def _message_dict(m: Message) -> dict[str, Any]:
+def _message_dict(m: Message, feedback: dict[str, Any] | None = None) -> dict[str, Any]:
     return {"id": str(m.id), "seq": m.seq, "role": m.role, "kind": m.kind,
             "content": m.content, "payload": m.payload, "created_at": m.created_at,
-            "clarification_id": str(m.clarification_id) if m.clarification_id else None}
+            "clarification_id": str(m.clarification_id) if m.clarification_id else None,
+            "feedback": feedback}
 
 
 class ChatService:
@@ -291,12 +299,42 @@ class ChatService:
             Message.conversation_id == c.id).order_by(Message.seq)))
         return c, ds, messages
 
-    async def conversation(self, conversation_id: uuid.UUID, owner: str | None = None
-                           ) -> dict[str, Any]:
+    async def conversation(self, conversation_id: uuid.UUID, owner: str | None = None,
+                           login: str | None = None) -> dict[str, Any]:
         async with self.factory() as session:
             c, ds, messages = await self._load(session, conversation_id, owner)
+            given: dict[uuid.UUID, Any] = {}
+            if login:  # the person's own "Was this right?" on each answer (6D)
+                from gaia.db.models.chat import Feedback
+                from gaia.evaluation.feedback import feedback_dict
+
+                rows = await session.scalars(select(Feedback).where(
+                    Feedback.message_id.in_([m.id for m in messages] or [uuid.UUID(int=0)]),
+                    Feedback.given_by == login))
+                given = {f.message_id: feedback_dict(f) for f in rows.all()}
             return _conversation_dict(c, ds.name) | {
-                "messages": [_message_dict(m) for m in messages]}
+                "messages": [_message_dict(m, given.get(m.id)) for m in messages]}
+
+    async def feedback(self, message_id: uuid.UUID, body: FeedbackBody, *, owner: str,
+                       login: str) -> dict[str, Any]:
+        """The person's "Was this right?" on an answer of their own (6D, P6-4)."""
+        from gaia.evaluation.feedback import (
+            FeedbackError,
+            FeedbackNotFound,
+            feedback_dict,
+            give,
+        )
+
+        async with self.factory() as session:
+            try:
+                f = await give(session, message_id, owner=owner, login=login,
+                               verdict=body.verdict, note=body.note)
+            except FeedbackNotFound as exc:
+                raise HTTPException(404, str(exc)) from None
+            except FeedbackError as exc:
+                raise HTTPException(400, str(exc)) from None
+            await session.commit()
+            return feedback_dict(f) or {}
 
     # a turn
     def _history(self, messages: list[Message]) -> list[tuple[str, str]]:
@@ -355,7 +393,9 @@ class ChatService:
             notes: list[str] = []
             hits = await self._vectors(session, index, question, notes)
 
-            from gaia.tools.ask import ask_settings
+            from gaia.tools.ask import answer_calibrator_for, ask_settings
+
+            calibrator = await answer_calibrator_for(session, self.settings)  # 6D
 
             label = ds.name
             today = body.as_of or self.settings.query.as_of or date.today()
@@ -377,7 +417,7 @@ class ChatService:
             work = asyncio.ensure_future(asyncio.to_thread(
                 ask, question, index=index, guard=guard,
                 target=self.settings.target(label), llm=self.llm,
-                settings=ask_settings(self.settings, label), today=today,
+                settings=ask_settings(self.settings, label, calibrator), today=today,
                 clarifications=clarifications, vector_hits=hits,
                 retrieval=self.settings.retrieval.to_settings(), notes=notes, preset=preset,
                 history=history, progress=progress))
@@ -524,7 +564,17 @@ async def list_conversations(data_source: str, limit: int = 50,
 async def get_conversation(conversation_id: uuid.UUID,
                            chat: ChatService = Depends(get_chat),  # noqa: B008
                            who: Principal = Depends(require_chat)) -> dict[str, Any]:  # noqa: B008
-    return await chat.conversation(conversation_id, owner=str(who.account_id))
+    return await chat.conversation(conversation_id, owner=str(who.account_id),
+                                   login=who.login)
+
+
+@router.put("/messages/{message_id}/feedback")
+async def give_feedback(message_id: uuid.UUID, body: FeedbackBody,
+                        chat: ChatService = Depends(get_chat),  # noqa: B008
+                        who: Principal = Depends(require_chat)) -> dict[str, Any]:  # noqa: B008
+    """Was this right? — right, partly or wrong, with a note (6D). Partly and wrong go to the
+    data source's SMEs."""
+    return await chat.feedback(message_id, body, owner=str(who.account_id), login=who.login)
 
 
 @router.post("/conversations/{conversation_id}/messages")

@@ -308,7 +308,8 @@
       "access_refused": "question refused (need-to-know)",
       "identity_changed": "another directory object carries the login",
       "account_relinked": "account re-linked to its directory object",
-      "account_renewed": "account started anew"
+      "account_renewed": "account started anew",
+      "feedback_decided": "an SME decided on a doubted answer"
     },
     "categories": "Data categories",
     "categoriesTitle": "Data categories: what is in them, who may read them",
@@ -579,7 +580,46 @@
     "categoryConfirmed": "{{name}} — confirmed by {{who}}, {{when}}.",
     "categoryProposed": "{{name}} — proposed by Gaia ({{why}}). Confirm it, or choose another.",
     "categoryNone": "No category: nobody can read this object in the chat.",
-    "categoryConfirm": "Confirm"
+    "categoryConfirm": "Confirm",
+    "probability": "right {{p}}% of the time",
+    "atLeast": "(at least {{lo}}%)",
+    "uncalibrated": "(uncalibrated)",
+    "uncalibratedHelp": "A score that ranks what Gaia is more or less sure of — not yet a probability. Once enough decisions like yours are collected, Gaia fits it to how often it was right (Phase 6C).",
+    "answers": {
+      "nav": "Answers people doubted",
+      "count": "{{count}} answer(s) people doubted, waiting for you",
+      "title": "Answers people doubted — {{ds}}",
+      "intro": "Someone said an answer on this data source was partly right or wrong. Decide what it really was — and, if it was not right, why. Only your decision counts as a verdict on the answer; a meaning read wrongly is fixed in the queue, a missing business term in the glossary.",
+      "tabs": {
+        "open": "To decide",
+        "decided": "Decided"
+      },
+      "empty": {
+        "open": "No doubted answer is waiting.",
+        "decided": "Nothing decided yet."
+      },
+      "said": "{{who}} said: {{verdict}} · {{when}}",
+      "decide": "Your decision",
+      "question": "The answer was",
+      "verdicts": {
+        "right": "right after all",
+        "partly": "partly right",
+        "wrong": "wrong"
+      },
+      "why": "Why",
+      "causes": {
+        "meaning": "a column's meaning was read wrongly (fix it in the queue)",
+        "definition": "a business term was missing (add it to the glossary)",
+        "join": "the tables were joined wrongly",
+        "model": "Gaia misread the question",
+        "data": "the data itself is wrong or incomplete",
+        "question": "the question was unclear or outside the data",
+        "other": "another reason (say which in the note)"
+      },
+      "note": "Note (optional; the person sees it)",
+      "submit": "Decide",
+      "decidedBy": "Decided by {{who}}, {{when}}:"
+    }
   },
   "glossary": {
     "title": "Glossary — {{ds}}",
@@ -689,7 +729,43 @@
     },
     "localAccount": "The local administrator account cannot chat: it is for setup and emergencies and holds no data category, by design. To ask questions, sign in with your directory account — once an administrator has granted its role a data category.",
     "nothingToReadAdmin": "No data category is granted to you yet, so there is nothing to ask about. As an administrator you may grant categories to your directory role or to yourself — every grant is audited and shown to the auditor.",
-    "toGrants": "Roles & grants"
+    "toGrants": "Roles & grants",
+    "probability": "· right {{p}}% of the time (at least {{lo}}%)",
+    "uncalibrated": "· uncalibrated",
+    "uncalibratedHelp": "A level from a rule, not yet a measured probability: once enough answers are checked against known results and by experts, Gaia will say how often answers like this are right.",
+    "feedback": {
+      "title": "Was this right?",
+      "verdicts": {
+        "right": "Yes",
+        "partly": "Partly",
+        "wrong": "No"
+      },
+      "given": {
+        "right": "You said this was right.",
+        "partly": "You said this was partly right.",
+        "wrong": "You said this was wrong."
+      },
+      "notePrompt": "What was not right? (optional, but it helps the expert)",
+      "send": "Send",
+      "toSme": "It goes to the data source's expert, who decides.",
+      "waiting": "waiting for the data source's expert",
+      "decided": "the expert decided: {{decision}}",
+      "change": "change",
+      "causes": {
+        "meaning": "a column was read wrongly",
+        "definition": "a business term was missing",
+        "join": "the tables were joined wrongly",
+        "model": "the question was misread",
+        "data": "the data itself",
+        "question": "the question was unclear or outside the data",
+        "other": "another reason"
+      },
+      "decisions": {
+        "right": "it was right",
+        "partly": "it was partly right",
+        "wrong": "it was wrong"
+      }
+    }
   },
   "queries": {
     "title": "Queries",
@@ -775,6 +851,52 @@
     "meanings": "Meanings",
     "sme": "{{n}} SME decision(s)",
     "unknown": "unknown",
-    "as": "as {{who}}"
+    "as": "as {{who}}",
+    "lacked": "the context lacked {{objects}} (retrieval)",
+    "heldAll": "the context held every object the reference needs (the model's reading)",
+    "answeredAfter": "answered after: “{{text}}”",
+    "understood": "Gaia understood: {{text}}",
+    "causes": {
+      "title": "Why answers were wrong",
+      "retrieval": "{{n}} of {{of}}: the context lacked an object the reference needs (retrieval)",
+      "reading": "{{n}} of {{of}}: the context held them all (the model's reading, or the question's)",
+      "unknown": "{{n}} not known (runs recorded before build D84)"
+    },
+    "levels": {
+      "title": "The confidence Gaia showed, against the reference",
+      "help": "“High” should be right at least 95% of the time: the interval's lower bound says whether it is (P6-2)."
+    },
+    "labels": {
+      "title": "Gaia's meanings, against people",
+      "counts": "{{n}} label(s): {{right}} right, {{partly}} partly, {{wrong}} wrong",
+      "tooFew": "(too few right or not-right labels to be a measurement yet)",
+      "judge": "The LLM judge gave the same verdict as people on {{agree}} of {{n}} (Cohen's κ {{kappa}}) — reported only, never used"
+    },
+    "calibration": {
+      "title": "Calibration",
+      "help": "Pooled over every data source of a model. Grey: the score as it is; blue: a fitted calibrator on labels it did not see; the diagonal is a score that means what it says. make calibrate fits, judges and puts one in use.",
+      "kinds": {
+        "meaning": "Meanings",
+        "answer": "Answers"
+      },
+      "metrics": "as it is: calibration error {{ece}}, Brier {{brier}}",
+      "heldOut": "{{method}}, held out: calibration error {{ece}}, Brier {{brier}} —",
+      "improves": "better than the identity",
+      "doesNot": "not better: not to be used",
+      "inUse": "In use",
+      "identity": "the identity (uncalibrated)",
+      "diagram": "reliability of {{model}}",
+      "point": "predicted {{p}}, observed {{o}}, {{n}} label(s)"
+    },
+    "feedback": {
+      "title": "People's feedback on answers",
+      "counts": "“Was this right?”: {{right}} yes, {{partly}} partly, {{wrong}} no — {{open}} waiting for an SME, {{decided}} decided"
+    },
+    "categories": {
+      "title": "Category proposals, against people",
+      "rule": "{{n}} object(s) confirmed by people. Today's rule, each confirmation hidden in turn, proposes {{proposed}} of them — {{agree}} as people confirmed.",
+      "miss": "wrong: {{object}} — proposed {{proposed}}, people said {{confirmed}}",
+      "seen": "The proposals people saw: {{kept}} of {{n}} kept. They saw them while deciding, so this leans towards agreement."
+    }
   }
 }

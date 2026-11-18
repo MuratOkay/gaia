@@ -3,6 +3,7 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";
 
+import { FEEDBACK_CAUSES } from "../api/client";
 import en from "../i18n/locales/en.json";
 import { STAGES } from "../components/chat";
 import { BANDS, MEANING_STATUSES, REASONS } from "../pages/review/common";
@@ -34,7 +35,7 @@ const DYNAMIC: Record<string, string[]> = {
                      "review_decision", "glossary_term_added", "glossary_term_changed", "glossary_term_removed",
                      "category_added", "category_changed", "category_retired", "object_category_set",
                      "categories_proposed", "access_refused", "identity_changed", "account_relinked",
-                     "account_renewed"],
+                     "account_renewed", "feedback_decided"],
   "review.reasons.": [...REASONS],
   "review.reasonHelp.": [...REASONS],
   "review.bands.": [...BANDS],
@@ -60,6 +61,15 @@ const DYNAMIC: Record<string, string[]> = {
   "evaluation.verdicts.": ["passes", "fails", "cannot_tell"],
   "evaluation.modes.": ["fresh", "replay", "mixed", "imported"],
   "categories.basisHelp.": ["direct", "view", "related", "weak"],
+  "chat.feedback.given.": ["right", "partly", "wrong"],
+  "chat.feedback.verdicts.": ["right", "partly", "wrong"],
+  "chat.feedback.decisions.": ["right", "partly", "wrong"],
+  "chat.feedback.causes.": [...FEEDBACK_CAUSES],
+  "review.answers.tabs.": ["open", "decided"],
+  "review.answers.empty.": ["open", "decided"],
+  "review.answers.verdicts.": ["right", "partly", "wrong"],
+  "review.answers.causes.": [...FEEDBACK_CAUSES],
+  "evaluation.calibration.kinds.": ["meaning", "answer"],
 };
 
 describe("locale keys", () => {

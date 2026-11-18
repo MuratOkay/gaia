@@ -450,6 +450,27 @@ class AuthConfig(BaseModel):
     chat_roles: list[str] = Field(default_factory=lambda: ["user", "sme", "admin"])
 
 
+class CalibrationConfig(BaseModel):
+    """Phase 6C/6D: when a fitted calibrator may replace the identity, and what its
+    probabilities mean on the screens. A section of its own: the scorer's settings
+    (``scoring``) are part of every stored score's inputs, these are not."""
+
+    # P6-1: isotonic from 150 labels with at least 30 not right; Platt from 75 (15)
+    isotonic_min_labels: int = 150
+    isotonic_min_wrong: int = 30
+    platt_min_labels: int = 75
+    platt_min_wrong: int = 15
+    folds: int = 5  # held-out labels: the calibrator is judged on labels it was not fitted on
+    bins: int = 10  # the reliability diagram and the calibration error
+    # P6-3: a meaning is "accepted" when P(right) >= accept_p and its lower bound >= accept_lower
+    accept_p: float = 0.90
+    accept_lower: float = 0.80
+    # 6D: an answer's level from its P(right) once an answer calibrator is in use (P6-2:
+    # "high" is right at least 95 % of the time)
+    answer_high: float = 0.95
+    answer_medium: float = 0.75
+
+
 class Settings(BaseModel):
     app: AppSection
     targets: dict[str, TargetConfig]
@@ -464,6 +485,7 @@ class Settings(BaseModel):
     chat: ChatConfig = Field(default_factory=ChatConfig)
     datasources: DataSourcesConfig = Field(default_factory=DataSourcesConfig)
     auth: AuthConfig = Field(default_factory=AuthConfig)
+    calibration: CalibrationConfig = Field(default_factory=CalibrationConfig)
     unresolved_env: list[str] = Field(default_factory=list)
     # Unresolved placeholders per config section: "targets.<name>" for a
     # target, otherwise the top-level key ("llm", "embeddings", ...).

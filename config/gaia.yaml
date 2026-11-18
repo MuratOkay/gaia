@@ -232,6 +232,23 @@ semantics:
   # sure"), so 6B can measure whether people follow it. 0 turns it off.
   review_blind_share: 0.10
 
+calibration:
+  # Phase 6C (P6-1): a fitted calibrator may replace the identity only with enough labels
+  # from people — isotonic from 150 with at least 30 not right, Platt scaling from 75 (15).
+  # `make calibrate` fits and judges on held-out labels; `--apply` puts one in use.
+  isotonic_min_labels: 150
+  isotonic_min_wrong: 30
+  platt_min_labels: 75
+  platt_min_wrong: 15
+  folds: 5
+  bins: 10
+  # P6-3: a meaning is accepted when P(right) >= 0.90 and the lower bound >= 0.80
+  accept_p: 0.90
+  accept_lower: 0.80
+  # 6D (P6-2): an answer is "high" when P(right) >= 0.95, "medium" from 0.75
+  answer_high: 0.95
+  answer_medium: 0.75
+
 retrieval:
   # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).
   max_objects: 6              # objects found by relevance; bridges on join paths come on top

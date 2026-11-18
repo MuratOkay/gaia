@@ -9,18 +9,20 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status (2026-11-17): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
+> Status (2026-11-18): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
 > built and verified on the owner's host**: sign-in with a real **Active Directory** (Samba AD) and a
 > real **Microsoft Entra ID** tenant, four Gaia roles and the PII-processor permission, the SME
 > review — g07 answered right by an SME's decision alone — need-to-know by data category, the chat
 > screen, the runs view (`make dev-web`); the owner's gate closes it. **Phase 6 (evaluation and
-> calibration) is under way** — build **D83**: every golden run recorded with its meanings,
-> `make quality` and the *Evaluation* page (6A), the replayed golden net in `make test` (6E), and
-> SME decisions as labels on Gaia's meanings, with one review item in ten shown without Gaia's
-> certainty (6B). Send verification outputs only through `make share`.
+> calibration) is under way** — build **D88**: every golden run recorded with its meanings and
+> what each answer was made of, `make quality` and the *Evaluation* page (6A), the replayed golden
+> net in `make test` and a deliberate regression for the fresh one (6E), labels from SME decisions
+> and the owner's 3C audit with the judge's κ (6B), calibrators judged on held-out labels —
+> `make calibrate`, "uncalibrated" until there are enough (6C) — and "Was this right?" under every
+> answer, decided by the data source's SME (6D). Send verification outputs only through `make share`.
 > PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§28: the D80 run triaged,
-> and §28d, the next run on build D83). See [PHASES.md](PHASES.md).
+> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§29: the D83 run triaged,
+> and §29d, the next run on build D88). See [PHASES.md](PHASES.md).
 ---
 
 ## Layout
@@ -310,11 +312,12 @@ Key decisions already fixed:
 | `make measure` | Phase 3.0 profiling-cost measurements: timings, pages, footprint (`TARGET=...`, `ARGS=...`) |
 | `make test-db` | create the disposable `gaia_test` database for the integration tests |
 | `make review` | the SME review queue, highest priority first (`TARGET=...`); decisions are taken in the web UI, **Review** (5B) |
-| `make access` | 5C: data categories — `from-schemas`, `propose`, `objects [--why]` (each proposal's basis and reasons, D77), `place OBJ CAT`, `suggestions`, `policy LOGIN` (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
+| `make access` | 5C: data categories — `from-schemas`, `propose`, `objects [--why]` (each proposal's basis and reasons, D77), `place OBJ CAT`, `suggestions`, `policy LOGIN`, `accuracy` (6G: proposals against what people confirmed) (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
 | `make quality` | 6A: the quality report over golden runs — pooled, with intervals, flaky questions, a comparison question by question (`--last N`, `--compare-builds`, `--baseline … --candidate …`, `--list`, `--import 'evaluations/golden_*'`) |
-| `make labels` | 6B: SME decisions as labels on Gaia's meanings — right, partly, wrong — with the score each meaning had (`TARGET=...`, `--csv F`) |
+| `make labels` | 6B: people's labels on Gaia's meanings — right, partly, wrong — with the score each meaning had: SME decisions, and the owner's 3C audit with the judge's verdict (`TARGET=...`, `--csv F`, `--import-3c DIR`) |
+| `make calibrate` | 6C/6D: fit calibrators per model on people's labels and judge them on held-out ones against the identity (`--kind meaning\|answer --model M --apply \| --reset`, `--list`); after applying a meaning calibrator, `make rescore` |
 | `make golden-net-accept` | 6E: accept the replayed golden net after an intended change (the net runs in `make test`) |
 | `make share` | verification outputs safe to send: accounts, tenants, user names, ids and codes replaced consistently; send `verification/share/` only |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |

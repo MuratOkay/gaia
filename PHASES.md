@@ -41,7 +41,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **VERIFIED ON THE HOST — awaiting the owner's gate**: 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 |
-| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **IN PROGRESS** — 6.0 (D78), 6A (the store, `make quality`, the page; D80, D81), 6E's replayed net (D82), 6B (labels, the blind share; D83) built; 6A verified on the host; next 6C (calibration), 6D, 6E's fresh net, 6F, 6G | ✅ approved 2026-11-17 |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **IN PROGRESS** — 6.0 (D78), 6A (the store, `make quality`, the page; D80, D81), 6E's replayed net (D82), 6B (labels, the blind share; D83; the 3C audit and the judge's κ, D85), 6C (calibrators, `make calibrate`; D86), 6D part 1 ("Was this right?", the SME's doubted answers, answer calibration; D87), 6E part 2's tooling (a deliberate regression), 6G's measurement (D88) built; 6A and 6B verified on the host (§28, §29); next the host run §29d, then 6F | ✅ approved 2026-11-17 |
 | 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence | **backlog** | ⬜ |
 
 ### Environment as it stands
@@ -2820,7 +2820,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0 and 6A built (D78–D80)**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D88); 6F to come**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -2921,12 +2921,12 @@ overnight refresh stay in Phase 7 (P5-12); 6A makes a model switch *measurable*,
 |---|---|---|---|
 | 6.0 ✅ | §26e triaged (§27); 3C gate (P6-0 ✅); D78 built; §27d triaged (§28); the Phase 5 gate is the owner's | D78 with the LDAPS directory | ✅ §27d |
 | 6A ✅ | `evaluation` schema; golden runs write to it; fresh vs replay; `make quality`; older runs imported; the meanings of a run and an item's SQL (D81); the *Evaluation* page | fully, with the scripted model | ✅ a real report (§28a); the page, §28d |
-| 6B ✅ (part 1) | labels from SME decisions (`make labels`, in `make quality`); the blind share of review items (P6-5) — *3C's labels and the judge's κ: part 2* | fully | the owner's decisions, some blind (§28d) |
-| 6C | calibrators per model; ECE/Brier/reliability; bands as probabilities | with synthetic labels | a fit on real labels (P6-1's count) |
-| 6D | answer confidence; the feedback control; feedback → review item → label | fully | people's feedback over weeks |
-| 6E ✅ (replayed net) | the replayed net in `make test` (D82), its deliberate regressions caught; the fresh net is 6A's comparison over three runs — *a deliberate prompt regression on the host: part 2* | fully (scripted model) | the net on the host's data (§28d step 0) |
+| 6B ✅ | labels from SME decisions (`make labels`, in `make quality`); the blind share of review items (P6-5); the owner's 3C audit as labels and the judge's κ (D85) | fully | ✅ the owner's decisions, some blind (§29a); the 3C import (§29d step 1) |
+| 6C ✅ (built) | calibrators per model and scoring version (P6-1); held-out ECE/Brier/reliability against the identity; `--apply` and `make rescore`; bands as probabilities (P6-3); "uncalibrated" on the screens (D86) | with synthetic labels (known distributions) | a fit on real labels — P6-1's count (13 + ~19 N-P audits today) |
+| 6D ✅ (part 1) | "Was this right?" → the SME's *Answers people doubted* → a decided label; answer calibration from golden items and decisions; P(right) for SMEs/admins/auditors once calibrated (D87) — *levels fitted on real data: part 2* | fully | people's feedback over weeks (§29d step 5 starts it) |
+| 6E ✅ (replayed net; the fresh net's tooling) | the replayed net in `make test` (D82; narration rows as a set, D84), its deliberate regressions caught; the fresh net is 6A's comparison over three runs; `make golden --regress joins-rule` and the cost per run in a comparison (D87) | fully (scripted model) | ✅ the net on the host's data (§29a, after D84a); the deliberate prompt regression (§29d step 4) |
 | 6F | `nge_small` golden set (drafted, corrected), T-SQL golden run, persona runs, D61 (b) | drafting only | the owner's corrections; SQL Server |
-| 6G | proposal accuracy per basis; weights fitted | with a synthetic record | the owner's confirmed placements |
+| 6G ✅ (measured; weights not fitted) | proposal accuracy per basis — today's rule with each confirmation hidden in turn, and the proposals people saw (`make access ARGS=accuracy`, in `make quality` and on the page; D88) — *fitting D77's weights waits for more confirmations* | with confirmations made in the test | the owner's ~50 confirmed placements (§29d step 6) |
 
 ### 6.0 and 6A results (2026-11-17, sandbox)
 
@@ -2994,8 +2994,89 @@ the scripted world: every mapping, the replacement, the blind views, the filter'
 the Python hash, and in the browser (11 of 166 items blind on `demo_pg`).
 
 Tests: **734 passed, 10 skipped** in the sandbox (+9 since D80), web **49** (+3); migration `0019` down and up.
-Not yet: 3C's owner labels and the judge's κ in the report (6B part 2), 6C, 6D, the fresh net's
-deliberate prompt regression on the host, 6F, 6G.
+
+### Owner runs on D83 (2026-11-18) — triage, and build D87
+
+OWNER_VERIFICATION §29. **743 passed, 1 failed**: the replayed net on the owner's server — `g08` and
+`g09` have no `ORDER BY`, the server returned their groups in another order than the sandbox, and
+the narration prompt carries the rows; the net was too strict (D84a). 6B works on real decisions:
+13 labels (12 right, 1 wrong), 5 of them blind; the AUROC of one wrong label is no measurement
+(D84c). Three fresh D83 runs: 28, 29, 29 of 30 — pooled 96 % (89–98 %); D83 against D80 **cannot
+tell** (−0.3 points, −3.3 to +2.5), with the meanings warning (the D80 runs' meanings were "unknown"
+because they predate D81, not because they were imported — D84d). **o06** wrong in all seven runs
+since D80, now with its SQL: the formula of the clarification followed, its "not cancelled"
+dropped (no join to `sales.orders`). Retrieval or reading? The runs did not keep their context —
+every item now does (D84b), and §29d step 3 answers it. The SQL link (D81) and the *Evaluation*
+page work in the owner's browser; GAIA-Finance exists in the tenant. Phase 5 is verified; the
+owner's "let's continue with the next stage" is read as its acceptance, the tick left to him.
+
+### 6B part 2, 6C, 6D part 1, 6E part 2 results (2026-11-18, sandbox; D84–D87)
+
+**D84** (triage): `gaia.evaluation.net.fingerprint` sorts a narration's result rows; the stored net
+re-accepted (15 narration fingerprints moved, no outcome). `evaluation.item.detail` (migration
+`0020`) keeps the context's objects, the expected objects missing from it, the interpretation,
+assumptions, clarification and confidence of the final answer; `make quality` adds *Why answers
+were wrong* (retrieval against reading) and *The confidence Gaia showed, against the reference*
+(right k of n per level, with Wilson intervals), and explains every question wrong in every run.
+
+**6B part 2 (D85).** `make labels ARGS="--import-3c DIR"` imports the owner's filled 3C audit into
+`evaluation.label` — verdict, the judged answer's score, model and condition, the judge's verdict —
+once per row; `PRODUCTION_CONDITIONS` (N-P, N-P-raw) mark the labels calibration may use. The judge's
+agreement with people (share, **Cohen's κ**, more lenient / stricter) is in `make labels`, `make
+quality` and the page, and read by nothing else. Verified on a 3C directory with two conditions, an
+unfilled row and a row whose answer is missing; a wrong `TARGET` refused.
+
+**6C (D86).** `gaia.evaluation.calibration`: pool-adjacent-violators isotonic regression, Platt
+scaling (Newton, a small ridge), the identity; P6-1's minimums choose (`calibration.*`, a section of
+its own so the stored scores' inputs do not move); five folds by subject (a column, a golden
+question — never on both sides); ECE (ten bands), Brier, the reliability rows, on held-out labels
+against the identity; a Wilson lower bound from the labels behind each probability (the isotonic
+step; Platt: the score's tenth). `gaia.evaluation.calibrators` keeps fitted calibrators
+(`evaluation.calibrator`; one in use per kind, model and scoring version — a partial unique index),
+never the identity. `make calibrate` fits and judges every model; `--apply` only below P6-1 or a
+calibrator that does not beat the identity on both measures is refused (`--force`, to be logged);
+`--reset`; `--list`. In use, `score_column_v2` writes P(right), its lower bound and the
+calibrator's version, and bands by P6-3 (accepted only with P ≥ 0.90 and bound ≥ 0.80); the
+calibrator's version is part of the stored inputs only while one is in use, so `make rescore`
+re-scores exactly then and a store without one keeps its hashes. Verified against known
+distributions (P(right) = score² → isotonic halves the ECE and beats Brier; an already calibrated
+score is not "improved"; 13 labels stay the identity; a probability from five labels cannot accept),
+and in the store: a calibrator put in use re-scales `demo_pg`'s meanings on rescore (accepted,
+queue shorter), and `--reset` restores them. Full pooling over data sources per model; partial
+(hierarchical) pooling waits for a second data source with labels.
+
+**6D part 1 (D87).** `chat.feedback` (migration `0020`): "Was this right?" — right, partly, wrong,
+with a note — on an answer of one's own conversation (`PUT /api/messages/{id}/feedback`); right is
+counted; partly and wrong open an item for the data source's SMEs (`GET /api/review/{ds}/feedback`,
+`POST …/{id}/decision` with the decision and, if not right, the cause; audited
+`feedback_decided`); withdrawn before a decision it closes, changed after one the decision stands.
+The chat shows the control and the decision under the answer; *Review → Answers people doubted*
+shows the item with its table, interpretation, assumptions, confidence and SQL. Decided items and
+golden items (with the score they showed, D84) are the answer labels; `ask` turns the heuristic
+score into P(right) and the level by `calibration.answer_high`/`answer_medium` once an answer
+calibrator is in use; SMEs, administrators and auditors see the percentage and its bound, others
+the level (P6-2); the heuristic says "uncalibrated". Verified over HTTP (owner only, answers only,
+CSRF, the SME's 403 elsewhere, the audit event, the label) and in the browser (finn → akaya →
+finn).
+
+**6G (D88), measured.** `CategoryService.accuracy`: for every object a person confirmed, the proposal
+today's rule makes with that one confirmation hidden (its neighbours' stay, as for a new object) —
+agreement per basis, the misses with their reasons, the objects left without a proposal — and the
+proposal people actually saw before their first decision on each object, and whether they kept it
+(a later change of mind is not about a proposal). `make access TARGET=… ARGS="accuracy [--why]"`,
+a section of `make quality` and of the page. Both lean towards agreement — people decided with the
+proposal on screen — and say so. Fitting D77's weights to this record waits until it holds more than
+the ~50 placements the owner confirmed: eight weights on fifty labels would fit noise.
+
+**6E part 2 (tooling).** `make golden --regress joins-rule` (`PromptRegression`: the SQL prompt
+without the line that starts "- Join only as listed under JOINS.", a run that fails loudly if the
+line is gone), recorded as `<build> + deliberate regression: joins-rule`; a comparison now also
+prints repairs, model calls and tokens per run. The acceptance test itself is the owner's three
+runs (§29d step 4).
+
+Tests: **755 passed, 10 skipped** in the sandbox (+21 since D83), web **61** (+12); migration `0020`
+down and up; DDL identical to `create_all`. Not yet: answer levels fitted on real data (6D part 2),
+6F, 6G; a calibrator in use needs P6-1's labels.
 
 ### Deliverables
 
@@ -3012,23 +3093,33 @@ deliberate prompt regression on the host, 6F, 6G.
   its items
 - Docs: OUTLINE (evaluation and calibration as built), USER_GUIDE (reading the report), a
   measurement note per host report in `docs/measurements/`
+- *As built (D80–D87):* `evaluation/store.py`, `quality.py` (comparisons live here, not in a
+  `compare.py`), `human_labels.py` (6B), `calibration.py` and `calibrators.py` (6C, and 6D's answer
+  calibration — no separate `answer_confidence.py`), `feedback.py` (6D), `net.py` (6E),
+  `sections.py` (the report's 6B–6D parts); `make labels`, `make calibrate`, `make golden
+  --regress`; the feedback endpoints in `api/chat.py` and `api/review.py`; OUTLINE §44
 
 ### Acceptance criteria
 
 - [ ] One command (`make quality`) produces the report for a data source and model: correct and
       executable answers with intervals, clarification metrics with intervals, retrieval recall,
       column-meaning accuracy against human labels, calibration error, latency, tokens, cost
+      *(D87: all but retrieval recall, which stays in `make retrieval-eval`; and why answers were
+      wrong, per question)*
 - [ ] Reproducible: two reports of the same runs are identical; a replayed run is marked as one
 - [ ] Calibration improves over the identity on held-out human labels — ECE and Brier, measured,
-      per model — or the report says there are too few labels (P6-1)
+      per model — or the report says there are too few labels (P6-1) *(D86: built and verified on
+      synthetic labels; on the host today "too few labels")*
 - [ ] A deliberate prompt regression (JOINS rule removed) and a deliberate code regression (a
       fan-out join allowed) are both caught — the first by the fresh net, the second by the
       replayed one, which runs in `make test`
 - [ ] The golden run is reported over three runs, and a change is compared question by question
       with its baseline (P6-2)
 - [ ] "High" confidence answers are right at least as often as their threshold says, with the
-      interval shown (6D; P6-2)
+      interval shown (6D; P6-2) *(D84/D87: the report shows it per level from the next host run;
+      the levels follow P(right) once an answer calibrator is in use)*
 - [ ] The judge's agreement with people is in every report and no calibrator or gate reads it
+      *(D85: built; the owner's 94 audits bring it, §29d step 1)*
 - [ ] The category proposals' accuracy per basis is reported (6G, if not cut)
 
 ### Decisions needed
@@ -3062,14 +3153,20 @@ today's speed) per prompt change; calibration and the replayed net make none.
 | Feedback is sparse or biased (people report what surprised them) | feedback opens review items but becomes a label only when an SME decides; the golden set stays the gate |
 | A provider changes the model behind a name (`deepseek-flash` "always the latest", §21f) | every run records the answering model's id (T3); a calibrator is per model id and flagged when the id changes |
 | Scope creep into operations | the cut line: scheduling and model switching stay in Phase 7 |
+| An answer calibrator fitted before a meaning calibrator is applied reads different inputs afterwards (the answer's score averages the meanings' scores) | after `--apply` of a meaning calibrator, refit the answer calibrator on golden runs made since (`make calibrate --kind answer`); the report's per-level check shows the drift |
 
 ### Gate
 
-- [ ] Phase 5 gate ticked (after §27d: the chat in the owner's browser, Entra's Finance role, g07)
+- [ ] Phase 5 gate ticked (after §27d: the chat in the owner's browser, Entra's Finance role, g07
+      — all three done by §29a; the owner's "let's continue with the next stage", 2026-11-18, read
+      as acceptance; the tick is his)
 - [x] P6-0 … P6-7 answered *(owner, 2026-11-17: as recommended)*
 - [x] **Approved to start Phase 6** *(owner, 2026-11-17, with the decisions; 6.0 and 6A built
       the same day, D78–D80)*
-- [ ] 6A → 6B (a real quality report on the host: §27d)
+- [x] 6A → 6B (a real quality report on the host: §28a — 86 of 90 over four D80 runs; §29a — the
+      D83 runs with their meanings, and 13 labels from the owner's decisions)
+- [ ] 6C, 6D part 1, 6E part 2 verified on the host (§29d: the 3C import with κ, o06's cause,
+      the deliberate regression, "Was this right?" end to end)
 
 ---
 
@@ -3210,6 +3307,11 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D81 | new (2026-11-17, triage of the D80 run; P5-7) | **What the D80 run taught.** (a) The SQL of answers is offered only where the person may see it — `/api/data-sources` says per data source; an SME sees their data sources' SQL, administrators and auditors all (the link had led SMEs elsewhere to "no such query"). (b) A golden run records a fingerprint of the **meanings** it answered with; a comparison of runs on different meanings says the difference is not the build's alone (the owner's SME decision had been credited to D80). (c) An evaluation item keeps its final SQL; the report shows it for questions wrong in every run. Migration `0019` |
 | D82 | new (2026-11-17, Phase 6E) | **The replayed golden net.** In `make test`: every golden question through the whole pipeline with a scripted model that errs on purpose; prompt fingerprints (approximate numbers left out) and outcomes against a stored net; a moved prompt or outcome fails and is named; `make golden-net-accept` accepts an intended change, which for a prompt needs fresh golden runs (P6-2); a server whose data profiles differently keeps its own net |
 | D83 | new (2026-11-17, Phase 6B; P6-3, P6-5) | **Labels from people, and the blind share.** An SME decision labels the machine meaning it judged — right, partly or wrong by the rule of `gaia.evaluation.human_labels` — with its model, prompt, scoring version and score; the LLM judge never labels (P6-0). 10 % of review items (`semantics.review_blind_share`) hide Gaia's certainty everywhere until decided, and the decision records it, so agreement with and without it can be compared |
+| D84 | new (2026-11-18, triage of the D83 run) | **What the D83 run taught.** (a) The replayed net fingerprints a narration's result rows as a set: a query without `ORDER BY` returns rows in the server's order (`g08`, `g09` on the owner's host); an order that matters is still watched by the scorer. (b) An evaluation item keeps what its final answer was made of — the context's objects, the expected objects it lacked, interpretation, assumptions, the clarification given, the confidence shown (`evaluation.item.detail`, migration `0020`) — and the report splits wrong answers into **retrieval** (an expected object missing) and **reading** (all there), so a question like o06 says why it is wrong. (c) An AUROC on fewer than 10 labels of either kind is printed as no measurement. (d) A run's meanings are "unknown" because it was imported or recorded before D81 — the report says which |
+| D85 | new (2026-11-18, Phase 6B part 2; P6-0) | **The owner's 3C audit as labels.** `make labels --import-3c DIR` keeps each audited answer once (`evaluation.label`): the owner's verdict, the answer's score, model and condition, and the judge's verdict beside it. The judge's agreement with people — share and Cohen's κ — is reported everywhere and read by nothing (no calibrator, no gate). Only production-mode conditions (N-P, N-P-raw) are calibrated on |
+| D86 | new (2026-11-18, Phase 6C; P6-1, P6-3) | **Calibrators.** Per kind (meanings, answers), model and scoring version, fitted on people's labels pooled over data sources: isotonic from 150 labels with 30 not right, Platt from 75 with 15, else the identity; judged on held-out labels (five folds by subject) against the identity by ECE and Brier, with a reliability diagram; `make calibrate --apply` puts one in use only if it beats the identity on both (`--force` otherwise, logged here); at most one in use per kind, model and scoring version. A meaning calibrator in use turns stored scores into P(right) with a Wilson lower bound on `make rescore` (P6-3: accepted only with P ≥ 0.90 and bound ≥ 0.80); while none is, the stored inputs do not change. Every uncalibrated score says so on the screens |
+| D87 | new (2026-11-18, Phase 6D part 1, 6E part 2; P6-2, P6-4) | **"Was this right?" and answer confidence.** Under every answer: right, partly, wrong, with a note; right is counted, partly and wrong go to the data source's SMEs (*Answers people doubted*), who decide what the answer was and why; only the decision is a label (with golden items, which keep the confidence shown). Once an answer calibrator is in use, the confidence is P(right) — high from 0.95, medium from 0.75 (`calibration.answer_*`) — shown as a percentage to SMEs, administrators and auditors and as a level to everyone else. `make golden --regress joins-rule` runs the SQL prompt without its JOINS rule, under its own build label, for the fresh net's acceptance test; a comparison prints repairs, calls and tokens per run |
+| D88 | new (2026-11-18, Phase 6G) | **Category proposals measured.** Against what people confirmed: today's rule with each confirmation hidden in turn (leave-one-out, per basis, with the misses), and the proposals people saw before their first decision (kept or not). Both lean towards agreement (people decided with the proposal on screen) and the report says so. D77's weights are not fitted yet — not on ~50 confirmations |
 
 ## Definition of done (per phase)
 

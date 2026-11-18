@@ -308,13 +308,15 @@ def build_rows(
     thinking: bool,
     context: EvidenceContext | None = None,
     extras: dict[str, ColumnExtras] | None = None,
+    calibrator: Any = None,
 ) -> tuple[dict[str, Any], list[dict[str, Any]], list[ColumnScore]]:
     """Score every column and map the outcome to ``table_semantic`` /
     ``column_semantic`` field dictionaries. Pure; no database access.
 
     With ``context`` (Phase 3B) columns are scored with heuristic-v2 from an
     evidence ledger; ``extras`` is filled with each column's ledger and review
-    decision for the caller to persist.
+    decision for the caller to persist. ``calibrator``: the fitted calibrator in use for
+    ``model`` (6C), else the identity.
     """
     assert outcome.reasoning is not None
     bundle: TableBundle = outcome.bundle
@@ -338,6 +340,8 @@ def build_rows(
                 col, facts, bundle, crit, settings.scoring, settings.profiling,
                 ledger=ledger, evidence_refs=context.rendered.refs.get(col.name, set()),
                 alias_names=[a.alias for a in ev_in.aliases.get(col.name, [])] if ev_in else None,
+                calibrator=calibrator,
+                accept=(settings.calibration.accept_p, settings.calibration.accept_lower),
             )
             summary = ev_in.columns.get(col.name) if ev_in is not None else None
             coverage = column_coverage(col.name, ev_in)
@@ -422,7 +426,8 @@ def build_rows(
 
     raw = [s.raw_score for s in scores]
     calibrated = [s.calibrated_score for s in scores]
-    summary = summarize_scores(calibrated, settings.profiling)
+    summary = summarize_scores(calibrated, settings.profiling, [s.band for s in scores]
+                               if any(s.lower is not None for s in scores) else None)
     all_approved = bool(scores) and all(s.status == "auto_approved" for s in scores)
     table = reasoning.table
     table_row = {
@@ -537,9 +542,12 @@ def score_inputs_hash(
     settings: Settings,
     context: EvidenceContext,
     inherit: dict[str, Inherited],
+    calibrator: str | None = None,
 ) -> str:
     """Everything a stored answer's scores, queue items and inherited columns
-    depend on besides the answer itself. A change re-scores (no LLM call)."""
+    depend on besides the answer itself. A change re-scores (no LLM call).
+    ``calibrator``: the version of the fitted calibrator in use for the answer's model
+    (6C) — absent while it is the identity, so a store without one keeps its hashes."""
     p = settings.profiling
     material = {
         "revision": SCORER_REVISION,
@@ -556,6 +564,9 @@ def score_inputs_hash(
             for name, i in inherit.items()
         ),
     }
+    if calibrator:
+        c = settings.calibration
+        material["calibrator"] = [calibrator, c.accept_p, c.accept_lower]
     text = json.dumps(material, sort_keys=True, default=str, ensure_ascii=False)
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -667,7 +678,9 @@ def _table_aggregate(table_row: dict[str, Any], column_rows: list[dict[str, Any]
         round(sum(calibrated) / len(calibrated), 6) if calibrated else None
     )
     breakdown = dict(table_row.get("score_breakdown") or {})
-    breakdown["columns"] = summarize_scores(calibrated, settings.profiling)
+    calibrated_bands = [r["band"] for r in column_rows] if any(
+        (r.get("calibrator") or "identity") != "identity" for r in column_rows) else None
+    breakdown["columns"] = summarize_scores(calibrated, settings.profiling, calibrated_bands)
     table_row["score_breakdown"] = breakdown
     approved = bool(column_rows) and all(r["status"] == "auto_approved" for r in column_rows)
     table_row["status"] = "auto_approved" if approved else "draft"
@@ -747,6 +760,25 @@ class _Run:
     model: str
     prompt_version: str
     critique_prompt_version: str
+    # the fitted calibrators in use (6C), by (model, scoring version)
+    calibrators: dict[tuple[str, str], Any] = field(default_factory=dict)
+
+    def calibrator(self, model: str) -> Any:
+        return self.calibrators.get((model, V2_SCORING))
+
+    def calibrator_version(self, model: str) -> str | None:
+        fit = self.calibrator(model)
+        return fit.version if fit is not None else None
+
+
+V2_SCORING = "heuristic-v2"  # the weights version score_column_v2 writes
+
+
+async def _calibrators(session: AsyncSession) -> dict[tuple[str, str], Any]:
+    """The meaning calibrators in use (6C); none before migration 0020 or when none is."""
+    from gaia.evaluation.calibrators import in_use
+
+    return await in_use(session, "meaning")
 
 
 class ReasoningBusy(DataSourceBusy):
@@ -915,6 +947,7 @@ async def _run_reasoning(
         model=model,
         prompt_version=prompt_version,
         critique_prompt_version=critique_prompt_version,
+        calibrators=await _calibrators(session),
     )
 
     # -- decide: tables first; views after the tables they read from -------------
@@ -1153,7 +1186,8 @@ async def _plan(
             items.append(PlanItem(table, bundle, context, "skip",
                                   "unchanged since v" + str(cur.version), cur))
             continue
-        inputs = score_inputs_hash(ctx.settings, context, inherit)
+        inputs = score_inputs_hash(ctx.settings, context, inherit, ctx.calibrator_version(
+            cur.model if cur is not None else ctx.model))
         stored = ((cur.score_breakdown or {}).get("score_inputs") if cur is not None else None)
         if cur is not None and stored == inputs and not why and not (
             options.rescore_only and options.force
@@ -1252,6 +1286,7 @@ async def _execute(
                 thinking=common["thinking"],
                 context=item.context,
                 extras=extras,
+                calibrator=ctx.calibrator(common["model"]),
             )
             if stored:
                 # The model saw what it saw: keep the answer's evidence hash, so a
@@ -1298,7 +1333,8 @@ async def _execute(
                 ))
             _table_aggregate(table_row, column_rows, settings)
         if item.context is not None and ctx.major >= 2:
-            inputs = score_inputs_hash(settings, item.context, item.inherit)
+            inputs = score_inputs_hash(settings, item.context, item.inherit,
+                                       ctx.calibrator_version(common["model"]))
             table_row["score_breakdown"] = {
                 **(table_row.get("score_breakdown") or {}), "score_inputs": inputs
             }
@@ -1416,7 +1452,8 @@ async def _execute(
     # -- finish ------------------------------------------------------------------------------
     scored = await store.current_column_scores(scope_ids)
     values = [s for s, _ in scored]
-    report.distribution = summarize_scores(values, settings.profiling)
+    report.distribution = summarize_scores(values, settings.profiling, [b for _s, b in scored]
+                                           if ctx.calibrators else None)
     report.histogram = _histogram(values)
     report.wall_ms = int((time.perf_counter() - started) * 1000)
 

@@ -26,10 +26,9 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from gaia.auth.service import cli_actor
 from gaia.core.config import ROOT, get_settings
 from gaia.db.engine import dispose_engine, get_engine
-from gaia.evaluation.human_labels import decision_labels, label_summary
 from gaia.evaluation.quality import quality_report, select_runs
+from gaia.evaluation.sections import extra_sections
 from gaia.evaluation.store import import_golden_dir, load_runs
-from gaia.tools.labels import summary_lines
 
 
 def _ids(text: str | None) -> list[str]:
@@ -56,7 +55,8 @@ async def _run(args: argparse.Namespace) -> int:
                 return 0
             label = args.target or settings.app.default_target
             runs = await load_runs(s, label)
-            people = await decision_labels(s, label)  # 6B: the meanings, against people
+            # 6B–6D: the meanings against people, the calibrators, feedback on answers
+            extra, _extra_doc = await extra_sections(s, label, settings, factory)
             if not runs:
                 print(f"no golden run of {label} recorded yet: `make golden` (or --import)")
                 return 1
@@ -76,9 +76,7 @@ async def _run(args: argparse.Namespace) -> int:
         text, _doc = quality_report(sel.shown, data_source=label, question_set_key=sel.set_key,
                                     excluded=sel.excluded, baseline=sel.baseline,
                                     candidate=sel.candidate)
-        if people:
-            text += "\n## Gaia's meanings, against people (6B)\n\n" + "\n".join(
-                f"* {line.strip()}" for line in summary_lines(label_summary(people))) + "\n"
+        text += extra
         print(text)
         out = ROOT / "evaluations" / f"quality_{label}_{datetime.now(UTC):%Y%m%d_%H%M}.md"
         out.parent.mkdir(parents=True, exist_ok=True)

@@ -48,7 +48,8 @@ ROOT = Path(__file__).resolve().parents[4]
 EXIT = {"answered": 0, "clarify": 4, "cannot_answer": 5, "failed": 3, "refused": 6}
 
 
-def ask_settings(settings: Settings, target: str) -> AskSettings:
+def ask_settings(settings: Settings, target: str, answer_calibrator=None) -> AskSettings:
+    """``answer_calibrator``: the one in use for the model (6D, ``answer_calibrator_for``)."""
     cfg = settings.llm
     return AskSettings(
         model=cfg.model, row_limit=row_limit(settings, target),
@@ -58,7 +59,16 @@ def ask_settings(settings: Settings, target: str) -> AskSettings:
         thinking_answer=cfg.thinking.answer, max_tokens=cfg.max_output_tokens,
         temperature=cfg.temperature,
         raw_values_to_model=cfg.locality == "local" or settings.profiling.allow_raw_to_remote,
-        statement_timeout_s=settings.target(target).limits.statement_timeout_s)
+        statement_timeout_s=settings.target(target).limits.statement_timeout_s,
+        answer_calibrator=answer_calibrator, answer_high=settings.calibration.answer_high,
+        answer_medium=settings.calibration.answer_medium)
+
+
+async def answer_calibrator_for(session, settings: Settings):
+    """The answer calibrator in use for the configured model (6D), or None."""
+    from gaia.evaluation.calibrators import ANSWER_SCORING, in_use
+
+    return (await in_use(session, "answer")).get((settings.llm.model, ANSWER_SCORING))
 
 
 def llm_client(settings: Settings, replay: str | None):
@@ -137,9 +147,10 @@ async def _run(args: argparse.Namespace) -> int:
                                      interpretation=stored.best_guess_interpretation or "",
                                      assumptions=list(stored.best_guess_assumptions or []),
                                      sql=stored.best_guess_sql)
+            calibrator = await answer_calibrator_for(session, settings)
             answer = await asyncio.to_thread(
                 ask, args.question, index=index, guard=guard, target=settings.target(label),
-                llm=llm, settings=ask_settings(settings, label), today=today,
+                llm=llm, settings=ask_settings(settings, label, calibrator), today=today,
                 clarifications=clarifications, vector_hits=hits,
                 retrieval=settings.retrieval.to_settings(), notes=notes, preset=preset)
             if not args.no_record:

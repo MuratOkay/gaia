@@ -43,7 +43,8 @@ from gaia.query.golden import GoldenQuestion, GoldenSet
 from gaia.query.retrieval import RetrievalIndex, RetrievalSettings, VectorHit
 from gaia.query.validator import SqlGuardBase
 
-__all__ = ["AS_STATED", "GoldenOutcome", "reference_table", "run_golden", "summarise"]
+__all__ = ["AS_STATED", "GoldenOutcome", "answer_detail", "reference_table", "run_golden",
+           "summarise"]
 
 AS_STATED = "Exactly as the question says; it states what it means."
 _EXTEND = 50  # rows fetched beyond a top-N reference's limit, to see its ties
@@ -73,6 +74,9 @@ class GoldenOutcome:
     default: int | None = None
     ambiguity: str | None = None
     sql: str | None = None
+    # what the final answer was made of (D84): the context's objects, the expected objects it
+    # lacked, the interpretation, assumptions, the clarification given, the confidence shown
+    detail: dict[str, Any] = field(default_factory=dict)
     answers: list[Answer] = field(default_factory=list, repr=False)
 
 
@@ -117,6 +121,28 @@ def _score(q: GoldenQuestion, answer: Answer, ref: tuple[Table, list[tuple] | No
     return c.match, "" if c.match else c.reason
 
 
+def answer_detail(q: GoldenQuestion, answer: Answer, *, clarified: list[str] | None = None
+                  ) -> dict[str, Any]:
+    """What an answer was made of, to read why it was wrong (D84): whether the context held
+    every object the reference needs (``missing``: a retrieval miss) or the model misread a
+    context that held them all."""
+    objects = answer.context.tables if answer.context is not None else []
+    out: dict[str, Any] = {
+        "objects": objects,
+        "missing": [o for o in q.objects if o not in objects] if objects else list(q.objects),
+        "interpretation": answer.interpretation,
+        "assumptions": answer.assumptions,
+    }
+    if clarified:
+        out["clarification"] = clarified
+    if answer.confidence is not None:
+        c = answer.confidence
+        out["confidence"] = {"level": c.level, "score": c.score}
+        if c.probability is not None:
+            out["confidence"] |= {"probability": c.probability, "calibrator": c.calibrator}
+    return out
+
+
 def _one(q: GoldenQuestion, *, golden: GoldenSet, ref, run: Callable[..., Answer],
          guard: SqlGuardBase, target: TargetConfig, row_limit: int) -> GoldenOutcome:
     started = time.perf_counter()
@@ -126,6 +152,7 @@ def _one(q: GoldenQuestion, *, golden: GoldenSet, ref, run: Callable[..., Answer
     out.first_status = first.status
     out.interpretation = first.interpretation
     final = first
+    given: list[str] | None = None  # the clarification the final answer was given
     if first.status == "clarify" and first.clarification is not None:
         c = first.clarification
         out.clarification, out.options = c.question, list(c.options)
@@ -138,7 +165,8 @@ def _one(q: GoldenQuestion, *, golden: GoldenSet, ref, run: Callable[..., Answer
             out.correct_first = False
             if first.status == "clarify":
                 out.over_clarified = True
-                final = run(q.question, [(out.clarification or "", AS_STATED)])
+                given = [out.clarification or "", AS_STATED]
+                final = run(q.question, [(given[0], given[1])])
                 out.answers.append(final)
     else:
         out.best_guess = "not scored"  # until there is a reference to score it against
@@ -157,7 +185,8 @@ def _one(q: GoldenQuestion, *, golden: GoldenSet, ref, run: Callable[..., Answer
                                columns=result.columns, rows=result.rows, reason=result.error)
                 ok, _why = _score(q, guess, ref)
                 out.best_guess = "correct" if ok else "wrong"
-            final = run(q.question, [(out.clarification or "", q.clarified or "")])
+            given = [out.clarification or "", q.clarified or ""]
+            final = run(q.question, [(given[0], given[1])])
             out.answers.append(final)
 
     out.final_status = final.status
@@ -170,6 +199,7 @@ def _one(q: GoldenQuestion, *, golden: GoldenSet, ref, run: Callable[..., Answer
             out.correct, reason = _score(q, final, ref)
             out.reason = "" if out.correct else reason
         out.sql = final.sql
+    out.detail = answer_detail(q, final, clarified=given if final is not first else None)
     for a in out.answers:
         out.repairs += max(0, len(a.attempts) - 1)
         out.calls += len(a.calls)

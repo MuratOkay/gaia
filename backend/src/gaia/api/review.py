@@ -17,6 +17,9 @@ D68); an administrator never is one. Decisions are signed with the SME's login.
     POST /api/review/{ds}/glossary                     {"term", "definition", "synonyms"?}
     PATCH /api/review/{ds}/glossary/{term_id}          {"definition"?, "synonyms"?}
     DELETE /api/review/{ds}/glossary/{term_id}         withdrawn (kept, audited)
+    GET  /api/review/{ds}/feedback?status=open|decided answers people doubted (6D, D87)
+    POST /api/review/{ds}/feedback/{id}/decision       {"decision": right|partly|wrong,
+                                                        "cause"?, "note"?}
 """
 
 from __future__ import annotations
@@ -60,6 +63,12 @@ class CategoryDecision(BaseModel):
 class HintDecision(BaseModel):
     action: str
     note: str | None = None
+
+
+class FeedbackDecision(BaseModel):
+    decision: str
+    cause: str | None = None
+    note: str | None = Field(default=None, max_length=2000)
 
 
 class TermChange(BaseModel):
@@ -125,7 +134,52 @@ async def _run(work):
 @router.get("")
 async def sources(who: Principal = Depends(_sme),  # noqa: B008
                   review: ReviewService = Depends(get_review)) -> list[dict[str, Any]]:  # noqa: B008
-    return await review.sources(who.effective.sme_sources)
+    found = await review.sources(who.effective.sme_sources)
+    from gaia.evaluation.feedback import open_counts
+
+    async with review.factory() as s:  # answers people doubted, waiting (6D)
+        counts = await open_counts(s, [uuid.UUID(d["id"]) for d in found])
+    return [d | {"feedback_open": counts.get(d["id"], 0)} for d in found]
+
+
+@router.get("/{data_source}/feedback")
+async def feedback(data_source: str, status: str = "open", limit: int = 50, offset: int = 0,
+                   _r: Reviewer = Depends(reviewer_of),  # noqa: B008
+                   review: ReviewService = Depends(get_review)) -> dict[str, Any]:  # noqa: B008
+    """The answers people said were partly or wrong, for the SME to decide (6D)."""
+    from gaia.evaluation.feedback import FeedbackError, FeedbackNotFound, review_items
+
+    async with review.factory() as s:
+        try:
+            return await review_items(s, data_source, status=status,
+                                      limit=max(1, min(limit, 200)), offset=max(0, offset))
+        except FeedbackNotFound as exc:
+            raise HTTPException(404, str(exc)) from None
+        except FeedbackError as exc:
+            raise HTTPException(400, str(exc)) from None
+
+
+@router.post("/{data_source}/feedback/{feedback_id}/decision")
+async def decide_feedback(data_source: str, feedback_id: uuid.UUID, body: FeedbackDecision,
+                          request: Request, r: Reviewer = Depends(reviewer_of),  # noqa: B008
+                          review: ReviewService = Depends(get_review)) -> dict[str, Any]:  # noqa: B008
+    """What the doubted answer really was — the label — and why, if it was not right."""
+    from gaia.evaluation.feedback import FeedbackError, FeedbackNotFound, decide
+
+    async with review.factory() as s:
+        try:
+            item = await decide(s, data_source, feedback_id, reviewer=r.login,
+                                decision=body.decision, cause=body.cause, note=body.note)
+        except FeedbackNotFound as exc:
+            raise HTTPException(404, str(exc)) from None
+        except FeedbackError as exc:
+            raise HTTPException(400, str(exc)) from None
+        await audit.record(s, "feedback_decided", actor=r.login,
+                           subject=f"{data_source}: {str(item.get('question') or '')[:200]}",
+                           detail={"feedback": str(feedback_id), "decision": body.decision,
+                                   "cause": item.get("cause")}, ip=client_ip(request))
+        await s.commit()
+        return item
 
 
 @router.get("/{data_source}/queue")

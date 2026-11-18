@@ -1976,3 +1976,37 @@ through the rest of Phase 6:
   varies by several points; a replayed net costs nothing, never varies, and turns "the guard let a
   fan-out join through" or "the context lost a line" into a named failing question in every test
   run — leaving the expensive, noisy runs for what only they can measure: the model.
+
+## 44. Scores that promise, and answers people can doubt (D84–D88, build D88, 2026-11-18)
+
+A score of 0.62 used to mean "more certain than 0.52": a ranking, good for ordering the review
+queue, silent about how often Gaia is right. Phase 6C makes it a promise — *right 62 % of the
+time* — but only where the promise has been measured:
+
+* **Measured, or marked.** A calibrator maps the raw score to P(right) for one model and one
+  scoring version, fitted on people's labels (SME decisions; the owner's 3C audit of
+  production-mode answers). It is judged on labels it did not see, against simply believing the
+  raw score, and is used only if it is better on both the calibration error and the Brier score.
+  Below P6-1's minimum of labels there is nothing to fit, and the screens say **uncalibrated**
+  instead of pretending. The LLM judge, which agreed with the owner on 86 % and erred lenient, is
+  measured against people (κ) and never fitted on.
+* **A probability carries its evidence.** Every calibrated score has a lower bound from the labels
+  behind it; a meaning is accepted without review only if both the probability and the bound are
+  high (P6-3). Five right labels at a score do not make 100 %.
+* **Answers too** (6D). The confidence shown under an answer is a rule of thumb until golden runs
+  and people's verdicts calibrate it; then "high" means right at least 95 % of the time, and the
+  report checks it with an interval. Those who can act on a number — SMEs, administrators,
+  auditors — see it; everyone else sees the level.
+* **A doubt is not a verdict.** "Was this right? — no" is how people reach the expert, and it is
+  precious, but it is biased (people report surprises) and sometimes wrong. So it opens an item
+  for the data source's SME, who decides what the answer was and why — a meaning, a missing
+  definition, a join, the model's reading, the data, the question — and only that decision
+  becomes a label. The person sees the decision where they asked.
+* **A wrong answer says why** (D84). "o06 is wrong in every run" was a fact without a cause: the
+  SQL showed the clarification's condition dropped, but not whether retrieval had withheld the
+  table or the model had ignored it — two failures with opposite fixes. Each evaluated answer now
+  keeps what it was made of, and the report sorts wrong answers into *retrieval* and *reading*.
+* **A net must know what may vary** (D84). The replayed net failed on the owner's server because a
+  query without `ORDER BY` returned its groups in another order — a difference of the server, not
+  of Gaia. A check that fails for reasons outside the code teaches people to ignore it; the net now
+  treats such rows as a set, as the scorer always did.

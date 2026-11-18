@@ -20,17 +20,19 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-17 · D83 (6A, 6B, 6E net; D81)` — the D80 run triaged (§28): "Show
-  the SQL" only where the person may see it, the meanings a golden run answered with, an item's
-  SQL (D81); Phase 6: the replayed golden net in `make test` (6E, D82), labels from SME decisions
-  and 10 % of review items without Gaia's certainty (6B, D83), the *Evaluation* page.
-  **The next run: §28d.***
+  there. *Latest build: `2026-11-18 · D88 (6B–6D, 6G; D84 triage; audit menu)` — the D83 run triaged (§29): the
+  net's narration rows as a set, what each golden answer was made of, AUROC on few labels (D84);
+  Phase 6: the owner's 3C audit as labels and the judge's κ (6B, D85), calibrators judged on
+  held-out labels and `make calibrate` (6C, D86), "Was this right?" under answers and the SME's
+  *Answers people doubted*, answer confidence as a probability once calibrated (6D, D87), a
+  deliberate prompt regression for the fresh net (6E), category proposals against people's
+  confirmations (6G, D88). **The next run: §29d.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
-  D77 — triaged in §27; §27d was run on D80 — **triaged in §28**, and **§28d is the next run**
-  (build D83). **Send outputs only through `make share`.**
+  D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — **triaged
+  in §29**, and **§29d is the next run** (build D88). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -2734,6 +2736,9 @@ The Phase 5 gate (steps 1, 2 and 4 decide it); 6A part 2 (the *Evaluation* page)
 
 ## 28 · Triage of the D80 run, and build D83 — the next run (2026-11-17)
 
+*Run on D83 (the `28_*` outputs, sent through `make share`); triaged in §29, whose §29d is the
+next run.*
+
 I read the eleven files of `share/` (build D80, git `dbdff35`) — sent through `make share`,
 exactly as intended: your account, tenant, ids and paths arrive as `<email-…>`, `<id-…>`,
 `/home/<user>/`, and stay readable. And your two notes.
@@ -2870,6 +2875,238 @@ done
 
 **Step 6 — send.** `make share` → send `verification/share/` (and nothing from `verification/`
 itself).
+
+---
+
+## 29 · Triage of the D83 run, and build D88 — the next run (2026-11-18)
+
+I read the ten `28_*` files of `share/` (build D83, git `d78557a`) and your notes: the Entra group
+was misspelt (`GAIAI-…`) and is now `GAIA-Finance` with its member; the SQL link works on
+`demo_pg` as expected (step 1); the *Evaluation* page is fine (step 5); "let's continue with the
+next stage".
+
+### 29a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `28_migrate.out` | no `Running upgrade` line: the store was at `0019` already (the *Evaluation* page and `/health` need it, and both worked) — an earlier `make migrate` had applied it | ✅ — step 0 now also prints `alembic current` |
+| `28_tests.out` | **743 passed, 1 failed**: the replayed net, `g08` and `g09` — "the prompt changed — narration" | a real finding of the net, not of the code: 29b-1 |
+| `28_web.out` | 49 passed, `✓ built` | ✅ |
+| `28_entra.out` | roles **GAIA-Admins, GAIA-Finance (1 member), GAIA-HR**; `grant user --role corp/GAIA-Finance` done | ✅ the tenant side. The Finance user's sign-in is not in the files: 29d step 2 |
+| `28_labels.out` | **13 labels**: 12 right, 1 wrong (`rpt.v_customer_overview.age_years`, purpose corrected, blind); 5 blind (4 accepted), 8 shown (8 accepted); AUROC 0.17 | ✅ 6B works on your decisions. The AUROC is one wrong label's rank — not a measurement: 29b-4 |
+| `28_golden_a/b/c.out` | three fresh runs: **28/30, 29/30, 29/30**; executable 30/30 each | ✅ |
+| `28_quality.out` | the **Meanings** column (`770ed5`, 13 SME); D83 pooled **86 of 90 = 96 % (89–98 %)**; o06 wrong in every run, **with its SQL**; D83 against D80: **−0.3 points (−3.3 to +2.5): cannot tell**, with the meanings warning | ✅ — two wordings to fix: 29b-3, 29b-4; o06: 29b-2 |
+
+**Phase 5.** Everything of it is verified on your host (§28a), and GAIA-Finance now exists in your
+tenant. I read your "let's continue with the next stage" as *Phase 5 accepted* — but the tick is
+yours: PHASES, Phase 5, *Gate*, last box. Tell me if anything is still open.
+
+### 29b · Findings
+
+1. **The net moved on your host: `g08`, `g09`, narration.** Both answers have no `ORDER BY`
+   (employees per department, products below their reorder level per store): PostgreSQL returns
+   the groups in whatever order its plan gives, and your server's plan differs from the sandbox's.
+   The narration prompt carries the result rows, so its fingerprint moved. Nothing in Gaia changed
+   — the net was too strict. **Fixed (D84a):** a narration's rows count as a set in its
+   fingerprint (an order that matters is still watched: the scorer compares it, and the outcome
+   moves). The stored net is re-accepted; your `make test` should now pass without a net of its
+   own.
+2. **o06, wrong in all seven runs since D80 — now with its SQL.** Gaia computed
+   `SUM(ol.line_subtotal - ol.quantity * p.unit_cost)` over **all** order lines: no join to
+   `sales.orders`, so cancelled orders count. The clarification it was given said *"line subtotal
+   minus quantity times unit cost, over all orders that were not cancelled"* — the formula was
+   followed, the condition dropped, seven times out of seven. Two causes fit, and they need
+   different fixes: **retrieval** gave the model no `sales.orders` (the context is ranked partly
+   from the *question's* embedding — "Top 5 most profitable products" — and only the word search
+   sees the clarification), or the model had `sales.orders` and **dropped the condition**. The
+   runs did not keep their context, so I cannot tell which; I will not change retrieval on a
+   guess. **Now every evaluation item keeps what its final answer was made of (D84b)**: the
+   context's objects, the expected objects it lacked, the interpretation and assumptions, the
+   clarification it was given, the confidence shown. The report says for each question wrong in
+   every run *"the context lacked sales.orders (retrieval)"* or *"the context held every object
+   the reference needs (the model's reading)"*, and sums up all wrong answers the same way.
+   Step 3 brings the answer.
+3. **"unknown (imported runs)" for your D80 runs** — wrong: they were fresh runs, recorded
+   before D81 began to keep the meanings. The note now says which (D84d).
+4. **AUROC 0.17 on 13 labels.** With one wrong label the AUROC is where that one label's score
+   falls — noise. It is still printed, but with *"on so few right or not-right labels this is not
+   yet a measurement (10 of each are needed)"* (D84c).
+
+### 29c · Built (D84–D88; migration `0020`)
+
+* **D84 — the triage above**: the net's narration rows as a set; `evaluation.item.detail` and
+  the report's *Why answers were wrong* (retrieval against reading) and *The confidence Gaia
+  showed, against the reference* (per level: right k of n with its interval — P6-2's "high is
+  right 95 % of the time" becomes checkable); the two wordings.
+* **6B part 2 (D85) — your 3C audit as labels.** `make labels ARGS="--import-3c
+  evaluations/nge_small"` reads the 94 columns you audited (`audit.csv`, *owner_meaning*) with the
+  score the run gave each answer, its model and condition, and keeps them once
+  (`evaluation.label`), **the judge's verdict beside each**. The report prints the judge against
+  people — the same verdict on k of n, **Cohen's κ**, more lenient or stricter — and nothing reads
+  it for a calibrator or a gate (P6-0). Only audits of **N-P** (names visible, full Phase 3 — how
+  production scores) count for calibration; the name-blind conditions' scores come from other
+  evidence.
+* **6C (D86) — calibrators.** `make calibrate` fits, per model and scoring version, on people's
+  labels — SME decisions and your N-P audits, pooled over data sources — **isotonic** from 150
+  labels with 30 not right, **Platt** from 75 with 15, the **identity** below (P6-1); judges each
+  on labels it did not see (five folds by column, so no column sits on both sides) against the
+  identity: calibration error, Brier score, a reliability diagram. `--apply` puts one in use only
+  if it beats the identity on both; the stored scores then follow with `make rescore` (no model
+  call): the score becomes **P(right)**, a meaning is *accepted* only with P ≥ 0.90 **and its
+  lower bound** ≥ 0.80 (P6-3), the review queue re-ranks. Until then every score says
+  **uncalibrated** on the column page, and the report says how many labels are missing. With 13
+  labels (and 94 audits, about 19 of them N-P) nothing is applied yet — that is the expected
+  outcome of step 5.
+* **6D part 1 (D87) — "Was this right?"** Under every answer in the chat: *Yes*, *Partly*, *No*,
+  with a note (P6-4). A *yes* is counted; *partly* and *no* go to the data source's SMEs —
+  *Review → Answers people doubted*: the question, the result, what Gaia understood and assumed,
+  the SQL, the confidence, the person's note. The SME decides what the answer really was and, if
+  not right, why (a column read wrongly, a missing business term, a join, the model's reading,
+  the data, the question); the person sees the decision under the answer. **Only the SME's
+  decision is a label** for answer calibration, together with the golden runs (each item now
+  keeps the confidence it showed). Once an answer calibrator is in use the confidence becomes
+  P(right): **high from 0.95**, medium from 0.75; SMEs, administrators and auditors see the
+  percentage and its lower bound, people who only chat the level (P6-2). Until then it says
+  *uncalibrated* to those who would see the number.
+* **6G (D88) — category proposals against your confirmations.** `make access TARGET=… ARGS=
+  "accuracy"`: for every object you confirmed, what today's rule proposes with that one
+  confirmation hidden (as for a new object), per basis — direct, view, related, weak — with the
+  ones it gets wrong; and how often you kept the proposal you saw. Both lean towards agreement
+  (you decided with the proposal on screen), and say so. In `make quality` and on the page too.
+  The weights of D77 are **not** fitted to it yet: eight numbers on about fifty confirmations
+  would fit noise.
+* **6E part 2 — the fresh net's acceptance test.** `make golden … --regress joins-rule` sends the
+  SQL prompt **without its JOINS rule** (that one line, nothing else) and records the run under
+  its own build label (`… + deliberate regression: joins-rule`); `make quality ARGS=
+  "--compare-builds"` then compares three such runs with three of D88, question by question —
+  and now also says what a change costs per run (repairs, model calls, tokens).
+
+Sandbox: **755 passed, 10 skipped**; web **61** (+12); migration `0020` down and up; DDL as
+`create_all`.
+
+### 29d · The run (build D88) — the next run
+
+Outputs `verification/29_*.out`, each starting with `make stamp`; a new `--out` for every golden
+run; at the end `make share` and send `verification/share/`. **Do steps 3 and 4 before any new SME
+decision**: the golden runs compare only on the same meanings.
+
+**Step 0 — setup and tests.**
+
+```bash
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head && ../gaia-env/bin/alembic current) \
+  > verification/29_migrate.out 2>&1
+(make stamp; make test) > verification/29_tests.out 2>&1
+(make stamp; make web-test; make web-build) > verification/29_web.out 2>&1
+```
+
+- [ ] `29_migrate.out`: `0019 -> 0020`, then `0020 (head)`
+- [ ] `29_tests.out`: `gaia build 2026-11-18 · D88 (6B–6D, 6G; D84 triage; audit menu)` and **765 passed, 0 skipped**
+      (sandbox: 755 passed, 10 skipped) — the net included
+- [ ] `29_web.out`: **61 passed**, then `✓ built`
+
+**Step 1 — your 3C audit as labels.**
+
+```bash
+(make stamp; make labels ARGS="--import-3c evaluations/nge_small"; make labels TARGET=nge_small
+ make labels ARGS="--import-3c evaluations/nge_small") > verification/29_labels3c.out 2>&1
+```
+
+- [ ] `nge_small: 94 audit verdict(s) imported, 0 known already` (if your audit file is not
+      `evaluations/nge_small/audit.csv`, add `--audit PATH`); the second import: `0 … imported, 94
+      known already`
+- [ ] the summary: 94 labels from the owner's 3C audit, *"N of them on answers scored as in
+      production"* (the N-P ones), and **the LLM judge against people: the same verdict on about 81
+      of 94 (86 %), Cohen's κ …, more lenient on …** — the 86.2 % of §26, now with κ
+
+**Step 2 — the Finance user in Entra** (skip if you signed in already after the group was
+fixed): sign in with Microsoft as the Finance test user — the home page names the role `user`
+and the Finance category.
+
+**Step 3 — three golden runs of D88, with what each answer was made of.**
+
+```bash
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d88$run") \
+    > verification/29_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make quality TARGET=demo_pg ARGS="--compare-builds") \
+  > verification/29_quality.out 2>&1
+```
+
+- [ ] o06 (if still wrong in every run) shows **either** *"the context lacked sales.orders
+      (retrieval)"* **or** *"the context held every object the reference needs (the model's
+      reading)"*, with *"answered after: …"* and *"Gaia understood: …"* — the answer to 29b-2
+- [ ] *Why answers were wrong*: every wrong answer counted as retrieval or reading
+- [ ] *The confidence Gaia showed, against the reference*: right k of n per level, with intervals
+- [ ] D88 against D83: the same meanings (`770ed5`, if you decided nothing since), so no
+      meanings warning — the difference is the build's (I expect *cannot tell*: nothing in D88
+      changes a prompt)
+
+**Step 4 — the deliberate regression (the fresh net's acceptance test).** Three runs without the
+JOINS rule, then the comparison with step 3's:
+
+```bash
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d88r$run --regress joins-rule") \
+    > verification/29_regress_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/29_regress_quality.out 2>&1
+```
+
+- [ ] each run starts with `DELIBERATE REGRESSION (joins-rule)`; its build is `… + deliberate
+      regression: joins-rule`
+- [ ] the comparison: baseline the three D88 runs, candidate the three regression runs, and a
+      verdict. My expectation is honest uncertainty: the guard refuses a fan-out join whatever the
+      prompt says, so the rule may cost **repairs and calls** (now on the *per run* line) rather than
+      correct answers. *fails* means the net catches it; *passes* with more repairs means the rule
+      saves cost, not correctness — both are findings, and decide what the acceptance criterion
+      should say
+
+**Step 5 — "Was this right?" in the browser, then the SME.**
+
+1. As **finn** (Chat, `demo_pg`): ask three questions. Under the first answer click **Yes**; under
+   the second **Partly**, with a note; under the third **No**, with a note. Each says what it
+   did (*waiting for the data source's expert* for the last two).
+2. As **akaya**: *Review* — `demo_pg` says *2 answer(s) people doubted*; open them (*Answers
+   people doubted*): the question, the table, the SQL, finn's note. Decide one *wrong* with a
+   reason, the other *right after all*.
+3. As **finn**: reopen the conversations — the decisions are under the answers.
+4. As **akaya**, open any column of the queue: its score says *(uncalibrated)*.
+
+```bash
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make calibrate; make calibrate ARGS="--list") \
+  > verification/29_feedback.out 2>&1
+```
+
+- [ ] the report ends with *People's feedback on answers*: 1 yes, 1 partly, 1 no; 2 decided
+- [ ] *Calibration*: meanings of your model — *too few to calibrate* with the counts (13 SME +
+      the N-P audits); answers — the golden items plus the two decisions, also too few; *in use:
+      the identity (uncalibrated)*; `make calibrate ARGS="--list"`: nothing fitted (below P6-1
+      nothing is stored)
+
+**Step 6 — category proposals against your confirmations (6G).**
+
+```bash
+(make stamp; make access TARGET=demo_pg ARGS="accuracy --why"; make access TARGET=nge_small ARGS="accuracy --why") \
+  > verification/29_categories.out 2>&1
+```
+
+- [ ] `demo_pg`: 28 objects confirmed by people (you confirmed all of them, §27a); *today's rule
+      … proposes N of them — K as people confirmed*, per basis, and each miss with the rule's
+      reason; *the proposals people saw: … kept*
+- [ ] `nge_small`: the same for your 24 confirmations. The misses tell me where D77's rule is
+      wrong — send them as they are
+
+*Also fixed in this build (your note): the Audit menu now stays open on Queries, Runs and
+Evaluation — inside it they live under `/audit/queries`, `/audit/runs`, `/audit/evaluation`, and an
+answer opened from Queries keeps the menu too.*
+
+**Step 7 — the Evaluation page.** As dyilmaz: *Evaluation* — the new sections (why answers were
+wrong, the levels against the reference, the labels with the judge's κ, a calibration card per
+model with its reliability diagram, category proposals against people, the feedback). As bdemir:
+*Audit → Evaluation*, the same.
+
+**Step 8 — send.** `make share` → send `verification/share/`.
 
 ---
 

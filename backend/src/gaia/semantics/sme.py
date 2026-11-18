@@ -239,7 +239,7 @@ class ReviewService:
             blind = _blind(col, sem, self.blind_share)
             if blind and meaning is not None:  # P6-5: Gaia's certainty is not shown
                 meaning.update(score=None, raw_score=None, band=None, self_confidence=None,
-                               critique=None)
+                               critique=None, calibrated_lower=None)
                 versions = [{**v, "score": None, "band": None} if not v["reviewed_by"] else v
                             for v in versions]
             return {
@@ -792,6 +792,8 @@ def _item(item: ReviewItem | None, t: TableRecord, c: ColumnRecord | None,
         "business_name": sem.business_name if sem else None,
         "role": sem.role if sem else None,
         "score": round(sem.calibrated_score, 3) if sem else (item.score if item else None),
+        # 6C: P(right), not a rank — a person's decision is neither
+        "calibrated": bool(sem and sem.calibrator != "identity" and not sem.reviewed_by),
         "band": sem.band if sem else None, "status": sem.status if sem else None,
         "reasons": list(item.reasons) if item else ["stale_decision"],
         "priority": round(item.priority, 4) if item else None,
@@ -819,6 +821,9 @@ def _meaning(sem: ColumnSemantic) -> dict[str, Any]:
         "created_at": sem.created_at, "reviewed_by": sem.reviewed_by,
         "reviewed_at": sem.reviewed_at, "review_note": sem.review_note,
         "inherited_from": (sem.score_breakdown or {}).get("inherited_from"),
+        # 6C: "identity" — a ranking, uncalibrated; else the score is P(right), with its bound
+        "calibrator": sem.calibrator,
+        "calibrated_lower": (sem.score_breakdown or {}).get("calibrated_lower"),
     }
 
 

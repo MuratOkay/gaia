@@ -107,6 +107,8 @@ def test_a_comparison_says_when_the_meanings_differ():
     text, doc = quality_report([*base, *cand], data_source="d", question_set_key="S",
                                baseline=base, candidate=cand)
     assert "not the build's alone" in text and doc["comparison"]["meanings"] == note
+    assert doc["comparison"]["per_run"]["baseline"]["calls"] == 60  # 30 questions × 2 calls
+    assert "* per run: repairs 0.0 → 0.0, model calls 60 → 60" in text
     assert "`aaa111` (0 SME)" in text
     same = [with_meanings(run(f"s{i}", thirty(set()), n=9 + i), "aaa111", 0) for i in range(2)]
     assert meanings_note(base, same) is None
@@ -120,3 +122,46 @@ def test_a_question_wrong_in_every_run_shows_its_latest_sql():
     text, doc = quality_report(runs, data_source="d", question_set_key="S")
     assert doc["questions"]["never_sql"] == {"q07": "SELECT sum(x) AS profit\nFROM t"}
     assert "    ```sql\n    SELECT sum(x) AS profit\n    FROM t\n    ```" in text
+
+
+def test_why_answers_were_wrong_and_the_confidence_shown():
+    """D84: each item keeps what its final answer was made of. o06 on the owner's host was
+    wrong in all seven runs — the report now says whether the context lacked an object the
+    reference needs (retrieval) or held them all (the model's reading)."""
+    runs = [run(f"r{i}", thirty({"q06", "q07"}), n=i) for i in range(2)]
+    for r in runs:
+        r.items["q06"].detail = {"objects": ["sales.order_lines", "product.products"],
+                                 "missing": ["sales.orders"],
+                                 "interpretation": "Profit per product over all orders",
+                                 "assumptions": ["all statuses"],
+                                 "clarification": ["How is profit measured?",
+                                                   "line subtotal minus cost, not cancelled"]}
+        r.items["q07"].detail = {"objects": ["finance.invoices"], "missing": [],
+                                 "confidence": {"level": "high", "score": 0.86}}
+        for k in ("q00", "q01", "q02"):
+            r.items[k].detail = {"objects": ["x"], "missing": [],
+                                 "confidence": {"level": "high", "score": 0.9}}
+        r.items["q03"].detail = {"objects": ["x"], "missing": [],
+                                 "confidence": {"level": "low", "score": 0.4}}
+    text, doc = quality_report(runs, data_source="d", question_set_key="S")
+    assert "the context lacked sales.orders (retrieval)" in text
+    assert "answered after: “line subtotal minus cost, not cancelled”" in text
+    assert "Gaia understood: Profit per product over all orders" in text
+    assert "held every object the reference needs (the model's reading)" in text
+    causes = doc["wrong_causes"]
+    assert (causes["wrong"], causes["retrieval"], causes["reading"], causes["unknown"]) == (
+        4, 2, 2, 0)
+    assert causes["retrieval_questions"] == ["q06"] and causes["reading_questions"] == ["q07"]
+    assert doc["confidence_levels"] == {"high": [6, 8], "low": [2, 2]}
+    assert "shown as high: right 6 of 8 = 75%" in text
+
+
+def test_unknown_meanings_say_why():
+    from gaia.evaluation.quality import meanings_note
+
+    known = [run("k1", thirty(set()))]
+    known[0].meanings_key = "aaa"
+    old = [run("o1", thirty(set()))]  # a fresh run recorded before D81 kept the meanings
+    assert "recorded before build D81" in meanings_note(old, known)
+    imp = [run("i1", thirty(set()), mode="imported")]
+    assert "(imported runs)" in meanings_note(imp, known)

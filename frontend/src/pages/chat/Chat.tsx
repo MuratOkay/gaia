@@ -69,6 +69,8 @@ export function ChatPage({ me }: { me: Me }) {
   // review — the server says which (D81: offering it everywhere led SMEs to "no such query")
   const current = sources.data?.find((s) => s.name === ds);
   const canSeeSql = current?.sql ?? (me.roles.includes("admin") || me.roles.includes("auditor"));
+  // P6-2: SMEs, administrators and auditors see P(right); people who only chat, the level
+  const showProbability = me.roles.some((r) => r === "sme" || r === "admin" || r === "auditor");
 
   useEffect(() => {
     if (!ds && sources.data?.length) setDs((sources.data.find((s) => s.default) ?? sources.data[0]).name);
@@ -186,7 +188,8 @@ export function ChatPage({ me }: { me: Me }) {
             ? <div key={m.id} className="turn user"><p>{m.content}</p></div>
             : <AssistantTurn key={m.id} kind={m.kind} doc={m.payload} canSeeSql={canSeeSql}
                              open={m === last && clarifying && !pending}
-                             onOption={(n) => void send(String(n))} />)}
+                             onOption={(n) => void send(String(n))}
+                             messageId={m.id} feedback={m.feedback} showProbability={showProbability} />)}
           {pending && (
             <div className="turn assistant pending">
               {pending.result && <ResultTable columns={pending.result.columns} rows={pending.result.rows}

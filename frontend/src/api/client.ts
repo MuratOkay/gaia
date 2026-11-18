@@ -250,6 +250,8 @@ export interface ReviewSource {
   open: number;
   reviewed: number;
   stale: number;
+  /** answers people said were partly or wrong, waiting (6D) */
+  feedback_open?: number;
 }
 
 export interface QueueItem {
@@ -262,6 +264,8 @@ export interface QueueItem {
   business_name: string | null;
   role: string | null;
   score: number | null;
+  /** 6C: the score is P(right) from a fitted calibrator; false: a ranking, uncalibrated */
+  calibrated?: boolean;
   band: string | null;
   status: string | null;
   reasons: string[];
@@ -309,6 +313,9 @@ export interface Meaning {
   reviewed_at: string | null;
   review_note: string | null;
   inherited_from: string | null;
+  /** 6C: "identity" (uncalibrated) or the calibrator's version; then the bound of P(right) */
+  calibrator?: string;
+  calibrated_lower?: number | null;
 }
 
 export interface SummaryLine {
@@ -561,7 +568,11 @@ export interface AnswerDoc {
   interpretation: string | null;
   assumptions: string[];
   uncertain: string[];
-  confidence: { level: "high" | "medium" | "low"; score?: number; reasons: string[] } | null;
+  /** the heuristic level and reasons; with an answer calibrator in use (6D) also P(right) */
+  confidence: {
+    level: "high" | "medium" | "low"; score?: number; reasons: string[];
+    probability?: number | null; lower?: number | null; calibrator?: string;
+  } | null;
   clarification: ClarificationView | null;
   reason: string | null;
   notes: string[];
@@ -583,6 +594,52 @@ export interface ChatMessage {
   payload: Partial<AnswerDoc>;
   created_at: string;
   clarification_id: string | null;
+  /** this person's "Was this right?" on the answer (6D) */
+  feedback?: FeedbackView | null;
+}
+
+export type Verdict = "right" | "partly" | "wrong";
+export const FEEDBACK_CAUSES = ["meaning", "definition", "join", "model", "data", "question", "other"] as const;
+
+export interface FeedbackView {
+  verdict: Verdict;
+  note: string | null;
+  /** none: counted; open: waiting for an SME; decided */
+  status: "none" | "open" | "decided";
+  decision: Verdict | null;
+  cause: string | null;
+  decision_note: string | null;
+  decided_at: string | null;
+  updated_at: string;
+}
+
+/** An answer someone doubted, as the SME of the data source sees it (6D). */
+export interface FeedbackItem {
+  id: string;
+  message_id: string;
+  status: "open" | "decided";
+  verdict: Verdict;
+  note: string | null;
+  given_by: string;
+  created_at: string;
+  question: string | null;
+  narrative: string;
+  interpretation: string | null;
+  assumptions: string[];
+  uncertain: string[];
+  confidence: AnswerDoc["confidence"];
+  columns: string[];
+  rows: unknown[][];
+  row_count: number | null;
+  masked_columns: number[];
+  sql: string | null;
+  model: string | null;
+  answered_at: string;
+  decision: Verdict | null;
+  cause: string | null;
+  decision_note: string | null;
+  decided_by: string | null;
+  decided_at: string | null;
 }
 
 export interface QueryView {
@@ -650,9 +707,59 @@ export interface EvaluationReport {
   executable?: EvaluationShare;
   per_run?: number[];
   questions?: { always: string[]; flaky: [string, number, number][]; never: string[]; never_reasons?: Record<string, string>;
-                never_sql?: Record<string, string> };
+                never_sql?: Record<string, string>;
+                /** D84: what the latest wrong answer was made of */
+                never_detail?: Record<string, { objects?: string[]; missing?: string[]; interpretation?: string;
+                                                assumptions?: string[]; clarification?: string[] }> };
   clarification?: { asked: [number, number]; over: [number, number]; agree: [number, number] };
   comparison?: { difference: number; low: number; high: number; questions: number; verdict: "passes" | "fails" | "cannot tell";
                  moved: [string, number, number][]; meanings: string | null };
+  /** D84: wrong final answers by cause */
+  wrong_causes?: { wrong: number; retrieval: number; reading: number; unknown: number;
+                   retrieval_questions: string[]; reading_questions: string[] };
+  /** 6D: per level shown, [right, answered] */
+  confidence_levels?: Record<string, [number, number]>;
+  /** 6C/6D: every calibration trial, pooled over data sources */
+  calibration?: CalibrationTrial[];
+  feedback?: { given: Record<string, number>; open: number; decided: number };
+  /** 6G: category proposals against what people confirmed */
+  categories?: {
+    rule: { n: number; agree: number; none: number; by_basis: Record<string, [number, number]>;
+            misses: { object: string; proposed: string; confirmed: string; basis: string; why: string }[] };
+    seen: { n: number; kept: number; no_proposal: number };
+  };
+  /** 6B: people's labels on Gaia's meanings */
+  labels?: { n: number; counts: Record<string, number>; sources?: Record<string, number>; auroc: number | null;
+             ranking_ready?: boolean; judge?: { n: number; agree: number; kappa: number | null } | null };
   markdown: string;
+}
+
+export interface ReliabilityRow {
+  from: number;
+  to: number;
+  n: number;
+  predicted: number;
+  observed: number;
+}
+
+export interface CalibrationMetrics {
+  n: number;
+  ece: number | null;
+  brier: number | null;
+  reliability: ReliabilityRow[];
+}
+
+export interface CalibrationTrial {
+  kind: "meaning" | "answer";
+  model: string;
+  scoring: string;
+  in_use: string | null;
+  method: "identity" | "platt" | "isotonic";
+  why: string;
+  labels: number;
+  wrong: number;
+  version: string;
+  improves: boolean;
+  identity: CalibrationMetrics;
+  held_out: CalibrationMetrics | null;
 }

@@ -48,6 +48,7 @@ These stages exist and work:
 | **Data sources** (Phase 4F) | `make datasource` | Databases added at runtime, password encrypted, usable only once proven read-only; then `TARGET=<name>` everywhere |
 | **Ask** (Phase 4C) | `make ask` | A business question answered: a table and a narrative, or a clarifying question — with what was computed, the assumptions, the unconfirmed meanings relied on, and a confidence |
 | **Sign-in and access** (Phase 5A) | `make admin-user`, `make auth`, `make dev-web` | People sign in with their company directory account; an administrator grants Gaia roles (user, SME, administrator, auditor) and the PII-processor permission; every decision audited; the first web UI (administration, audit) |
+| **Quality** (Phase 6A–6E) | `make quality`, `make labels`, `make calibrate`; the web UI, **Evaluation** | Golden runs pooled with intervals, why answers were wrong, comparisons of builds question by question; people's labels and the judge's agreement with them; calibrators judged on held-out labels; "Was this right?" under answers, decided by the SME |
 
 Targets: SQL Server (`demo_mssql`, still the config default) and PostgreSQL
 (`demo_pg`, a synthetic development target). Every stage works on both; choose
@@ -62,12 +63,14 @@ answering (4C), golden runs (4D), the chat API (4E), data sources added at runti
 (4F) — Phase 4 is complete (golden run on `demo_pg`: 100 % executable, 97 % correct). Phase 5
 so far: sign-in through the company directory (AD/LDAP, Entra ID), roles, administration and
 audit, the web UI's first screens (5A, 5A.2), the SME review (5B), need-to-know (5C), the chat
-screen (5D) and a read-only runs view (5E) — Phase 5 is built; its host verification is
-OWNER_VERIFICATION §25.
+screen (5D) and a read-only runs view (5E) — Phase 5 is built and verified on the owner's host.
+Phase 6 so far: the evaluation store and report (6A), labels from people (6B), calibration (6C),
+feedback on answers (6D part 1), the regression nets (6E).
 
 Since Phase 4C **Gaia answers questions** from the command line (`make ask`). Read the
-confidence and the "unconfirmed" lines of every answer: the confidence is a heuristic until
-Phase 6 calibrates it.
+confidence and the "unconfirmed" lines of every answer: the confidence is a heuristic — it says
+*uncalibrated* to those who would see a percentage — until enough answers are checked to
+calibrate it (Phase 6D).
 
 ---
 
@@ -533,6 +536,7 @@ make access TARGET=sales_pg ARGS="place hr.payroll HR --note 'payroll is HR'"
 make access ARGS="suggestions"                     # directory roles -> categories (grants nothing)
 make auth ARGS="grant category --role acme/GAIA-Finance --category Finance"
 make access TARGET=sales_pg ARGS="policy akaya"    # what akaya may read there
+make access TARGET=sales_pg ARGS="accuracy --why"  # 6G: Gaia's proposals against what people confirmed
 ```
 
 The same in the web UI: *Data categories* (the categories, each object's category, "Let Gaia
@@ -550,6 +554,13 @@ confirms** what an object's data is on the review screen's table page (an admini
 on *Data categories*); a proposal never replaces a confirmation, and a confirmed table steers its
 related tables at the next proposal.
 
+**How good are the proposals?** (Phase 6G) `accuracy` hides each confirmed object's confirmation
+in turn and asks today's rule what it would propose — as it would for a new object — then counts
+how often that is what people confirmed, per basis, and lists the misses with the rule's reasons;
+it also counts how often people kept the proposal they saw. People decided with the proposal on
+screen, so both numbers lean towards agreement. The same is in `make quality` and on the
+*Evaluation* page.
+
 * **A view** is readable only with its own category *and* what its columns come from — a view
   is no way around a category.
 * **Personal data** (detected, or stated by an SME: *Personal data: yes / no* when correcting a
@@ -565,9 +576,16 @@ related tables at the next proposal.
 
 *Chat* → a data source (only those the person may read something in) → a question in their own
 words. The answer streams in: what Gaia is doing, **the table as soon as it exists**, then the
-explanation. Under it: the **confidence** as *high / medium / low* — click it for the reasons
-(a percentage comes only after Phase 6 calibrates it) — and *How I read the question* (the
-interpretation, the assumptions, the meanings not yet confirmed by an expert). A question Gaia
+explanation. Under it: the **confidence** as *high / medium / low* — click it for the reasons — and
+*How I read the question* (the interpretation, the assumptions, the meanings not yet confirmed by
+an expert). The level is a rule of thumb until enough answers are checked (Phase 6D): then it
+follows how often answers like this one were right — *high* from 95 % — and SMEs, administrators
+and auditors see the percentage and its lower bound; until then they see *uncalibrated*.
+
+**Was this right?** Under every answer: *Yes*, *Partly* or *No*, with a note for the last two.
+*Yes* is counted. *Partly* and *No* go to the data source's expert (SME), who decides what the
+answer really was and why; the decision then appears under the answer. Your verdict can be
+changed; after the expert has decided, their decision stands. A question Gaia
 cannot settle comes back as a choice: click an option, or answer in your own words, or tick
 "ask something new instead". A follow-up ("and in November?") is read with the conversation.
 A conversation reopened later shows each table as kept (at most `chat.keep_rows` rows,
@@ -620,6 +638,19 @@ accepts them — or rejected (with a note); Gaia never overwrites either. A decl
 a fact of the database and is not reviewed. A table's own purpose and grain ("one row per
 invoice") are reviewed on the table's page.
 
+**Answers people doubted** (Phase 6D) — when someone says an answer on your data source was
+partly right or wrong, it waits here: their question and note, the table, what Gaia understood and
+assumed, the SQL and the confidence it showed. Decide what the answer was — *right after all*,
+*partly right*, *wrong* — and, when it was not right, why: a column read wrongly (then correct it
+in the queue), a missing business term (add it to the glossary), a wrong join, Gaia misreading the
+question, the data itself, or a question that was unclear or outside the data. Only your decision
+counts as a verdict on the answer; the person sees it under the answer.
+
+**Scores.** Until Gaia has enough of your decisions to fit them (Phase 6C), a meaning's score is a
+ranking — shown with *(uncalibrated)* on the column's page. Once a calibrator is in use, the score
+is a probability — *right 87 % of the time (at least 80 %)* — and a meaning is accepted without
+you only when both numbers are high.
+
 Every decision and glossary change is in the audit; the auditor sees them under *Events*. From a
 script, the same through `/api/review/…` (PHASES, 5B results).
 
@@ -649,6 +680,11 @@ D80): a directory that holds recorded answers is refused, because a run into it 
 them — it would reproduce that run, not measure anything new; `--resume` continues an
 interrupted run there. The report says at its top how many answers were asked now.
 
+`--regress joins-rule` (Phase 6E) runs the set with the SQL prompt **without its JOINS rule** —
+a deliberately worse prompt, recorded under its own build label (`… + deliberate regression:
+joins-rule`). Three such runs against three of the build itself (`make quality ARGS=
+"--compare-builds"`) test whether the comparison catches a worse prompt. Never for anything else.
+
 ### The quality report (`make quality`, Phase 6A)
 
 ```bash
@@ -674,7 +710,16 @@ The *Evaluation* page (administrators; auditors under *Audit*) shows the same: t
 their answers came about and the **meanings** they answered with, and the report. When a
 comparison's runs answered with different meanings — SME decisions or re-reasoning between them
 — it says so: the difference is then not the build's alone. A question wrong in every run shows
-the SQL of its latest answer.
+the SQL of its latest answer and **why** (since D84 each answer keeps what it was made of): *the
+context lacked sales.orders (retrieval)* — Gaia never saw a table the answer needs — or *the
+context held every object the reference needs (the model's reading)*, with the clarification it
+was given and how it understood the question. *Why answers were wrong* counts every wrong answer
+the same way; *The confidence Gaia showed, against the reference* says per level how often the
+answers were right, with an interval — "high" should be right at least 95 % of the time. A
+comparison also says what the change costs per run: repairs, model calls, tokens.
+
+The report ends with what is not a golden run: people's labels on Gaia's meanings (6B), the
+**calibration** of every model (6C, 6D; below), and people's feedback on answers (6D).
 
 ### Labels from people (`make labels`, Phase 6B)
 
@@ -693,6 +738,43 @@ people's verdicts (AUROC) and how often a meaning was right in each band of the 
 **One review item in ten is a check without Gaia's certainty** (`semantics.review_blind_share`,
 0.10): it shows no score, band or "Gaia is not sure", so that decisions made with and without it
 can be compared — people may follow Gaia's certainty too readily, and this measures it.
+
+```bash
+make labels ARGS="--import-3c evaluations/nge_small"   # the owner's filled 3C audit, once
+```
+
+The **3C audit** — the columns the owner judged himself during Phase 3C (`audit.csv`,
+*owner_meaning* yes / partial / no) — is a second source: each audited answer is kept once as a
+label with its score, model and condition, and with the **LLM judge's verdict** beside it. The
+summary then says how often the judge agreed with people and Cohen's κ (agreement beyond chance);
+the judge is only measured, never used to calibrate or to pass anything. Only audits of a
+production-mode condition (N-P: names visible, full evidence) count for calibration. With fewer
+than 10 right or 10 not-right labels the AUROC is printed as *not yet a measurement*.
+
+### Calibration (`make calibrate`, Phase 6C and 6D)
+
+```bash
+make calibrate                                                  # fit and judge; changes nothing
+make calibrate ARGS="--kind meaning --model deepseek-flash --apply"
+make rescore TARGET=demo_pg                                     # the stored scores follow
+make calibrate ARGS="--kind answer --model deepseek-flash --apply"   # answers: from the next question
+make calibrate ARGS="--kind meaning --model deepseek-flash --reset"  # back to the identity
+make calibrate ARGS="--list"
+```
+
+A calibrator turns a raw score into **P(right)** for one model and scoring version. *Meanings* are
+fitted on people's labels (above); *answers* on golden runs (each answer's confidence against the
+reference) and SMEs' decisions on doubted answers. How, depends on how many labels there are
+(P6-1): isotonic regression from 150 with at least 30 not right, Platt scaling from 75 with 15,
+otherwise nothing — the scores stay **uncalibrated** and say so. Each calibrator is judged on
+labels it was not fitted on, against simply believing the raw score: the **calibration error**
+(how far "predicted" is from "observed", per band), the **Brier score** (lower is better), and a
+**reliability diagram** (on the *Evaluation* page: dots on the diagonal mean the score says what it
+means). `--apply` refuses one that is not better on both, or is below the minimum (`--force`
+overrides — then note why in the decisions log). With a meaning calibrator in use, `make rescore`
+(no model call) rewrites the scores as probabilities, each with a lower bound; a meaning is
+accepted without review only when P(right) ≥ 0.90 **and** its bound ≥ 0.80; the review queue
+re-ranks. The thresholds live in `calibration:` (`config/gaia.yaml`).
 
 ### The replayed golden net (`make test`, Phase 6E)
 
@@ -844,6 +926,12 @@ This is the Phase 2 scoring (`heuristic-v1`). Phase 3B replaces it with
 score, evidence that *contradicts* it lowers it, and names alone can never reach
 `accepted`. Phase 4 retrieval will use every non-abstain meaning, ranked by score
 (roadmap R2), so `accepted` is not a precondition for being used.
+
+**Calibrated or not (Phase 6C).** While `calibrator` is `identity`, the score is the raw score
+above: a ranking, shown as *uncalibrated*. Once a calibrator is in use for the model (`make
+calibrate --apply`, then `make rescore`), `calibrated_score` is P(right) and
+`score_breakdown.calibrated_lower` its 95 % lower bound; *accepted* then needs P ≥ 0.90 and the
+bound ≥ 0.80 (`calibration.accept_p`, `accept_lower`), the other bands keep the thresholds above.
 
 
 ---

@@ -5,6 +5,7 @@
     make golden TARGET=demo_pg ARGS="… --only g01,o03"        # some questions
     make golden TARGET=demo_pg ARGS="… --replay DIR"          # answers from files (tests)
     make golden TARGET=demo_pg ARGS="… --resume"              # continue an interrupted run
+    make golden TARGET=demo_pg ARGS="… --regress joins-rule"  # 6E: a deliberately worse prompt
 
 Every question goes through the whole pipeline (``gaia.query.golden_run``); the
 references run through the same guard and executor. Writes ``<out>/results.json``
@@ -16,6 +17,11 @@ is recorded in the evaluation store (fresh, replayed or mixed) for ``make qualit
 report says at its top how many answers were asked now. Runs and clarifications are also
 recorded with ``origin = golden`` (kept out of the clarification agreement users produce,
 D61); ``--no-record`` skips all recording.
+
+``--regress NAME`` (6E part 2, D87) sends the SQL prompt without one rule and records the run
+under the build label ``<build> + deliberate regression: NAME`` — three such runs against three
+of the build itself (``make quality ARGS="--compare-builds"``) are the fresh net's acceptance
+test: does it catch a worse prompt?
 """
 
 from __future__ import annotations
@@ -46,7 +52,7 @@ from gaia.evaluation.store import (
 from gaia.query.golden import load_golden
 from gaia.query.golden_run import report_markdown, run_golden, summarise
 from gaia.query.retrieval_store import load_retrieval_index
-from gaia.tools.ask import ask_settings, llm_client
+from gaia.tools.ask import answer_calibrator_for, ask_settings, llm_client
 
 ROOT = Path(__file__).resolve().parents[4]
 
@@ -75,6 +81,16 @@ async def _run(args: argparse.Namespace) -> int:
     started = datetime.now(UTC)
     only = [x.strip() for x in args.only.split(",")] if args.only else None
     llm = RecordingLLMClient(llm_client(settings, args.replay), out / "llm")
+    build = gaia.BUILD
+    model_client = llm
+    if args.regress:  # 6E part 2: a deliberately worse prompt, for the fresh net's test
+        from gaia.evaluation.net import PromptRegression
+
+        model_client = PromptRegression(llm, args.regress)
+        build = f"{gaia.BUILD} + deliberate regression: {args.regress}"
+        print(f"DELIBERATE REGRESSION ({args.regress}): the SQL prompt goes without that rule. "
+              "This run measures whether three fresh runs catch a worse prompt (6E); it is "
+              "recorded under its own build label and says nothing about the build itself.")
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:
         async with factory() as session:
@@ -103,6 +119,7 @@ async def _run(args: argparse.Namespace) -> int:
                 for n in sorted(set(notes)):
                     print(f"note: {n}")
             guard = build_access_guard(settings, label, index, full_index.catalog, policy)
+            calibrator = await answer_calibrator_for(session, settings)  # 6D: as the chat
 
             def progress(o) -> None:
                 mark = {True: "ok  ", False: "NO  ", None: "--  "}[o.correct]
@@ -111,7 +128,7 @@ async def _run(args: argparse.Namespace) -> int:
 
             outcomes = await asyncio.to_thread(
                 run_golden, golden, index=index, guard=guard, target=settings.target(label),
-                llm=llm, settings=ask_settings(settings, label),
+                llm=model_client, settings=ask_settings(settings, label, calibrator),
                 retrieval=settings.retrieval.to_settings(),
                 vectors=(lambda q: hits.get(q)) if hits else None, only=only,
                 workers=args.workers or settings.llm.concurrency, progress=progress)
@@ -136,7 +153,7 @@ async def _run(args: argparse.Namespace) -> int:
             if not args.no_record:  # the evaluation store (6A, D80)
                 run = await record_golden(
                     session, data_source=label, outcomes=outcomes, summary=summary,
-                    question_set=args.file, out_dir=str(out), model=model, build=gaia.BUILD,
+                    question_set=args.file, out_dir=str(out), model=model, build=build,
                     set_key=question_set_key((o.id, o.question, o.expect) for o in outcomes),
                     live_calls=llm.live_calls, replayed_calls=llm.replayed, started_at=started,
                     as_login=policy.label if args.as_login else None,
@@ -152,9 +169,9 @@ async def _run(args: argparse.Namespace) -> int:
         "replay": f"REPLAYED: all {llm.replayed} model answers come from earlier recordings — "
                   "this reproduces a run, it is not a new measurement",
     }[mode]
-    text = report_markdown(golden, outcomes, summary, model, gaia.BUILD, provenance=provenance)
+    text = report_markdown(golden, outcomes, summary, model, build, provenance=provenance)
     (out / "report.md").write_text(text, encoding="utf-8")
-    doc = {"summary": summary, "model": model, "build": gaia.BUILD,
+    doc = {"summary": summary, "model": model, "build": build,
            "as_of": golden.as_of.isoformat(), "data_source": golden.data_source,
            "outcomes": [{k: v for k, v in o.__dict__.items() if k != "answers"}
                         for o in outcomes]}
@@ -185,6 +202,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--as", dest="as_login", metavar="LOGIN",
                    help="answer as this person would be answered in the chat (need-to-know)")
     p.add_argument("--directory", help="with --as: the person's directory")
+    p.add_argument("--regress", choices=["joins-rule"],
+                   help="6E: send the SQL prompt without this rule (a deliberate regression, "
+                        "recorded under its own build label)")
     return asyncio.run(_run(p.parse_args(argv)))
 
 

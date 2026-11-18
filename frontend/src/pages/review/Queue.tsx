@@ -85,7 +85,7 @@ export function ReviewQueue() {
                     <div className="muted small">{i.data_type}</div>
                   </td>
                   <td>{i.business_name ?? "—"}{i.role && <span className="muted"> · {i.role}</span>}</td>
-                  <td><Band band={i.band} score={i.score} /></td>
+                  <td><Band band={i.band} score={i.score} calibrated={i.calibrated} /></td>
                   <td>
                     {status === "open"
                       ? <Reasons reasons={i.reasons} />

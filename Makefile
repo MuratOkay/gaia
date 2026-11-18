@@ -27,9 +27,7 @@ cleanup:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	@$(PY) $(ROOT)/scripts/pii_scan.py
-	@echo "Cleaned up pycache and pytest cache files."
-	@echo "The files listed above hold personal data or a credential; 'scripts/pii_scan.py -v' says where."
+	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
 
 .PHONY: share
 share: ## Verification outputs safe to send: personal data replaced consistently (ARGS="[--check] [--also NAME] files")
@@ -278,8 +276,12 @@ golden-net-accept: ## 6E: accept the replayed golden net after an intended chang
 	cd $(ROOT) && GAIA_ACCEPT_NET=1 $(VENV)/bin/pytest -q -c backend/pyproject.toml tests/integration/test_golden_net_pg.py -rs
 
 .PHONY: labels
-labels: ## 6B: SME decisions as labels on Gaia's meanings — right, partly, wrong (TARGET=...; ARGS="--csv F")
+labels: ## 6B: people's labels on Gaia's meanings — right, partly, wrong (TARGET=...; ARGS="--csv F | --import-3c DIR")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.labels $(TARGET_ARG) $(ARGS)
+
+.PHONY: calibrate
+calibrate: ## 6C/6D: fit and judge calibrators on held-out labels (ARGS="[--kind meaning|answer --model M] [--apply | --reset | --list]")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.calibrate $(ARGS)
 
 .PHONY: quality
 quality: ## 6A: the quality report over golden runs (TARGET=...; ARGS="--last 5 | --compare-builds | --import 'evaluations/golden_*'")

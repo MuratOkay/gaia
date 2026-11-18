@@ -21,8 +21,11 @@ went wrong — the guard's findings, or the database's error, or the timeout.
 **Confidence** is explained, not only a number: the mean certainty of the meanings
 the answer relies on (what the model listed in ``uses`` and the columns it shows),
 less a little for every repair, a join that rests on a model hint, a result cut at
-the row cap, and each assumption. ``high`` ≥ 0.8, ``medium`` ≥ 0.6, else ``low``.
-A heuristic until Phase 6 calibrates it from the golden set and SME decisions.
+the row cap, and each assumption. ``high`` ≥ 0.8, ``medium`` ≥ 0.6, else ``low`` — a
+heuristic, "uncalibrated". Once an answer calibrator is in use for the model (6D, D87: fitted
+on golden runs and on SMEs' decisions about people's "Was this right?"), the score also becomes
+a **probability** of being right, and the level follows it: ``high`` from
+``calibration.answer_high`` (P6-2: 0.95), ``medium`` from ``answer_medium``.
 
 **Best guess (D61).** A clarification carries the option the model would have
 chosen and its SQL; the SQL is checked by the guard but **not run** — the user sees
@@ -84,6 +87,11 @@ class AskSettings:
     temperature: float | None = 0.1
     raw_values_to_model: bool = False  # llm.locality local, or the dev override
     statement_timeout_s: int | None = None
+    # 6D: the answer calibrator in use for the model (gaia.evaluation.calibration.Fit), and
+    # the probabilities of "high" and "medium"; None: the heuristic levels
+    answer_calibrator: Any = None
+    answer_high: float = 0.95
+    answer_medium: float = 0.75
 
 
 @dataclass
@@ -103,8 +111,11 @@ class Attempt:
 @dataclass
 class Confidence:
     level: str  # high | medium | low
-    score: float
+    score: float  # the heuristic (confidence-v1), what a calibrator is fitted on
     reasons: list[str]
+    probability: float | None = None  # P(right), once an answer calibrator is in use (6D)
+    lower: float | None = None  # its 95 % lower bound
+    calibrator: str = "identity"
 
 
 @dataclass
@@ -173,7 +184,8 @@ def _describe(key: str, c: IndexedColumn) -> str:
 
 
 def confidence(relied: list[tuple[str, IndexedColumn]], attempts: list[Attempt],
-               plan: SqlPlan, capped: bool) -> Confidence:
+               plan: SqlPlan, capped: bool, settings: AskSettings | None = None
+               ) -> Confidence:
     scores, reasons = [], []
     for key, c in relied:
         if c.status == "sme_reviewed":
@@ -205,6 +217,14 @@ def confidence(relied: list[tuple[str, IndexedColumn]], attempts: list[Attempt],
         score -= min(0.15, 0.05 * len(plan.assumptions))
         reasons.append(f"{len(plan.assumptions)} assumption(s) made")
     score = max(0.0, min(1.0, score))
+    fit = settings.answer_calibrator if settings is not None else None
+    if fit is not None and getattr(fit, "calibrated", False):
+        shown = round(score, 2)  # the score as stored: what the calibrator was fitted on
+        p = fit.p(shown)
+        level = ("high" if p >= settings.answer_high else
+                 "medium" if p >= settings.answer_medium else "low")
+        return Confidence(level, shown, reasons, round(p, 3), round(fit.lower(shown), 3),
+                          fit.version)
     level = "high" if score >= 0.8 else "medium" if score >= 0.6 else "low"
     return Confidence(level, round(score, 2), reasons)
 
@@ -361,7 +381,8 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
     answer.calls += narr_calls
     if error:
         answer.notes.append(f"narrative written without the model: {error}")
-    answer.confidence = confidence(relied, answer.attempts, plan, answer.row_cap_reached)
+    answer.confidence = confidence(relied, answer.attempts, plan, answer.row_cap_reached,
+                                   settings)
     return _done(answer, started)
 
 

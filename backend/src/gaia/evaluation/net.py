@@ -26,8 +26,8 @@ import threading
 from collections import defaultdict
 from typing import Any
 
-__all__ = ["OUTCOME_FIELDS", "FingerprintingLLM", "differences", "fingerprint", "question_of",
-           "snapshot"]
+__all__ = ["OUTCOME_FIELDS", "REGRESSIONS", "FingerprintingLLM", "PromptRegression",
+           "differences", "fingerprint", "question_of", "snapshot"]
 
 OUTCOME_FIELDS = ("first_status", "final_status", "correct", "correct_first", "executable",
                   "best_guess", "repairs", "calls", "reason")
@@ -36,12 +36,34 @@ OUTCOME_FIELDS = ("first_status", "final_status", "correct", "correct_first", "e
 _ESTIMATE = re.compile(r"~[0-9][0-9,.]*")
 
 
+def _rows_unordered(content: str) -> str:
+    """A narration prompt with its result rows sorted. A query without ``ORDER BY`` returns
+    its rows in whatever order the server's plan gives — the D83 run on the owner's host gave
+    g08's and g09's groups in another order than the sandbox — so the rows count as a set. An
+    order that matters is still watched: the scorer compares it, and the outcome moves."""
+    head, sep, body = content.partition("\n")
+    try:
+        doc = json.loads(body) if sep else None
+    except ValueError:
+        return content
+    result = doc.get("result") if isinstance(doc, dict) else None
+    if not isinstance(result, dict) or not isinstance(result.get("rows"), list):
+        return content
+    result["rows"] = sorted(result["rows"], key=lambda r: json.dumps(r, ensure_ascii=False,
+                                                                     default=str))
+    return head + sep + json.dumps(doc, ensure_ascii=False, indent=1)
+
+
 def fingerprint(messages) -> str:
     """The prompt's fingerprint. Approximate numbers (``~560,896 rows``, ``~2,974 distinct
     values``) come partly from the database's sampled statistics, which differ between servers
-    for no reason of Gaia's: they are left out."""
-    text = json.dumps([[m.role, _ESTIMATE.sub("~N", m.content)] for m in messages],
-                      ensure_ascii=False)
+    for no reason of Gaia's: they are left out. A narration's result rows count as a set
+    (``_rows_unordered``)."""
+    narration = bool(messages) and messages[0].content.startswith("You explain")
+    text = json.dumps([[m.role, _ESTIMATE.sub("~N", _rows_unordered(m.content)
+                                              if narration and m.role == "user"
+                                              else m.content)]
+                       for m in messages], ensure_ascii=False)
     return hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
@@ -54,6 +76,40 @@ def question_of(messages) -> tuple[str, str]:
     found = re.findall(r"^Question: (.*)$", user, re.M)
     return (found[-1].strip() if found else ""), ("repair" if len(messages) > 2 else
                                                   "generation")
+
+
+# Deliberate regressions for the fresh net's acceptance test (6E part 2; PHASES, Phase 6
+# acceptance): a golden run with ``--regress NAME`` sends the SQL prompt without this line.
+REGRESSIONS = {
+    "joins-rule": "- Join only as listed under JOINS.",
+}
+
+
+class PromptRegression:
+    """Wraps a model; removes one rule — the whole line that starts with it — from the SQL
+    generation prompt before each call. Everything else is untouched. Only for measuring
+    whether three fresh runs catch a worse prompt (6E); never used to answer anyone."""
+
+    def __init__(self, inner, name: str) -> None:
+        if name not in REGRESSIONS:
+            raise ValueError(f"unknown regression {name!r}: {', '.join(REGRESSIONS)}")
+        self.inner, self.name, self.start = inner, name, REGRESSIONS[name]
+        self.applied = 0
+
+    def __getattr__(self, item):  # live_calls, replayed, model … of the inner client
+        return getattr(self.inner, item)
+
+    def complete(self, messages, **kw):
+        system = messages[0].content if messages else ""
+        if system.startswith("You write one read-only SQL query"):
+            lines = system.split("\n")
+            kept = [x for x in lines if not x.startswith(self.start)]
+            if len(kept) == len(lines):
+                raise ValueError(f"the SQL prompt has no line starting {self.start!r}: the "
+                                 f"regression {self.name!r} no longer applies")
+            messages = [type(messages[0])(messages[0].role, "\n".join(kept)), *messages[1:]]
+            self.applied += 1
+        return self.inner.complete(messages, **kw)
 
 
 class FingerprintingLLM:

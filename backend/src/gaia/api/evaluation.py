@@ -21,6 +21,7 @@ from gaia.auth.deps import _refuse, get_auth, principal
 from gaia.auth.service import AuthService, Principal
 from gaia.db.models.evaluation import EvaluationRun
 from gaia.evaluation.quality import quality_report, select_runs
+from gaia.evaluation.sections import extra_sections
 from gaia.evaluation.store import load_runs
 
 __all__ = ["router"]
@@ -62,8 +63,9 @@ async def report(data_source: str, last: int = 3, compare_builds: bool = False,
                  auth: AuthService = Depends(_reader)) -> dict[str, Any]:  # noqa: B008
     async with auth.factory() as s:
         found = await load_runs(s, data_source)
+        extra, extra_doc = await extra_sections(s, data_source, auth.settings, auth.factory)
     sel = select_runs(found, last=max(1, min(last, 50)), compare_builds=compare_builds)
     text, doc = quality_report(sel.shown, data_source=data_source, question_set_key=sel.set_key,
                                excluded=sel.excluded, baseline=sel.baseline,
                                candidate=sel.candidate)
-    return {**doc, "markdown": text}
+    return {**doc, **extra_doc, "markdown": text + extra}

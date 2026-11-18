@@ -1,7 +1,8 @@
 """Evidence-grounded column scoring (OUTLINE §12, PHASES "Scoring").
 
     raw_score = sum(weight_i * component_i)       weights from config, sum = 1.0
-    calibrated_score = calibrator(raw_score)      identity in Phase 2
+    calibrated_score = calibrator(raw_score)      the identity until a fitted one is in use
+                                                  (Phase 6C, D86: P(right) per model)
 
 Every component is a number in [0, 1], stored with the signals that produced
 it, so any score can be traced back to its evidence ("a score nobody can
@@ -57,6 +58,7 @@ __all__ = [
     "ColumnScore",
     "Component",
     "band_for",
+    "band_for_probability",
     "score_column",
     "score_column_v2",
     "summarize_scores",
@@ -105,6 +107,7 @@ class ColumnScore:
     weights_version: str
     calibrator: str
     critique_assessed: bool
+    lower: float | None = None  # P(right)'s lower bound, with a fitted calibrator (6C)
 
     @property
     def needs_review(self) -> bool:
@@ -116,6 +119,7 @@ class ColumnScore:
             "calibrator": self.calibrator,
             "raw_score": self.raw_score,
             "calibrated_score": self.calibrated_score,
+            **({"calibrated_lower": self.lower} if self.lower is not None else {}),
             "band": self.band,
             "critique_assessed": self.critique_assessed,
             "components": {c.name: c.as_dict() for c in self.components},
@@ -137,6 +141,19 @@ def _check_weights(values: dict[str, float], label: str) -> None:
     total = sum(values.values())
     if abs(total - 1.0) > 1e-6:
         raise ValueError(f"{label} must sum to 1.0, got {total:.6f}")
+
+
+def band_for_probability(p: float, lower: float, bands: ProfilingConfig,
+                         accept_p: float = 0.90, accept_lower: float = 0.80) -> str:
+    """P6-3: with a fitted calibrator the score is P(right) — accepted only when it is at least
+    ``accept_p`` and its lower bound at least ``accept_lower``; the other bands as before."""
+    if p >= accept_p and lower >= accept_lower:
+        return BAND_ACCEPTED
+    if p >= bands.deep_profile_below:
+        return BAND_DEEP_PROFILE
+    if p >= bands.review_required_below:
+        return BAND_DEEP_PROFILE_FLAGGED
+    return BAND_ABSTAIN
 
 
 def band_for(score: float, bands: ProfilingConfig) -> str:
@@ -357,8 +374,11 @@ def score_column(
     )
 
 
-def summarize_scores(scores: list[float], bands: ProfilingConfig) -> dict[str, Any]:
-    """Aggregate for table-level rows and run reports."""
+def summarize_scores(scores: list[float], bands: ProfilingConfig,
+                     bands_of: list[str] | None = None) -> dict[str, Any]:
+    """Aggregate for table-level rows and run reports. ``bands_of``: the bands the scores
+    were given (with a fitted calibrator, P6-3's — not the raw thresholds), in ``scores``'
+    order; None: from the thresholds."""
     if not scores:
         return {"count": 0}
     ordered = sorted(scores)
@@ -371,8 +391,12 @@ def summarize_scores(scores: list[float], bands: ProfilingConfig) -> dict[str, A
         BAND_DEEP_PROFILE_FLAGGED: 0,
         BAND_ABSTAIN: 0,
     }
-    for s in ordered:
-        counts[band_for(s, bands)] += 1
+    if bands_of is not None and len(bands_of) == n:
+        for b in bands_of:
+            counts[b] = counts.get(b, 0) + 1
+    else:
+        for s in ordered:
+            counts[band_for(s, bands)] += 1
     return {
         "count": n,
         "mean": _round(sum(ordered) / n),
@@ -513,7 +537,11 @@ def score_column_v2(
     ledger,
     evidence_refs: set[str] | None = None,
     alias_names: list[str] | None = None,
+    calibrator=None,
+    accept: tuple[float, float] = (0.90, 0.80),
 ) -> ColumnScore:
+    """``calibrator``: a fitted ``gaia.evaluation.calibration.Fit`` for the model that wrote the
+    meaning (6C) — the score becomes P(right) and the band P6-3's; None: the identity."""
     weights = scoring.v2.weights.model_dump()
     _check_weights(weights, "scoring.v2.weights")
     parts = {
@@ -537,15 +565,21 @@ def score_column_v2(
         for name, (value, signals) in parts.items()
     ]
     raw = _round(sum(c.contribution for c in components))
-    band = band_for(raw, bands)
+    calibrated, name, lower = raw, scoring.calibrator, None
+    if calibrator is not None and calibrator.calibrated:
+        calibrated, lower, name = calibrator.p(raw), calibrator.lower(raw), calibrator.version
+        band = band_for_probability(calibrated, lower, bands, *accept)
+    else:
+        band = band_for(raw, bands)
     assessed = critique is not None
     return ColumnScore(
         raw_score=raw,
-        calibrated_score=raw,  # identity calibrator until Phase 6
+        calibrated_score=calibrated,
         band=band,
         status="auto_approved" if band == BAND_ACCEPTED and assessed else "draft",
         components=components,
         weights_version="heuristic-v2",
-        calibrator=scoring.calibrator,
+        calibrator=name,
         critique_assessed=assessed,
+        lower=lower,
     )

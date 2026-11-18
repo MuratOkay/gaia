@@ -13,6 +13,16 @@ Since D81 a run also keeps a fingerprint of the **meanings** it answered with (m
 An **item** is one question of a run: what was expected, what Gaia did first and last, whether
 the final answer was right, the best guess, repairs, calls, tokens and time. ``make quality``
 reads these: intervals, questions that flip between runs, and comparisons question by question.
+Since D84 an item also keeps what its final answer was made of (``detail``, migration ``0020``):
+the context's objects and the expected objects it lacked, the interpretation and assumptions,
+the clarification it was given, the confidence it showed.
+
+A **label** (6B part 2, D85) is a person's verdict that does not live elsewhere: the owner's 3C
+audit of Gaia's column meanings, imported from its files, with the judge's verdict beside it
+(the judge's agreement with people, κ). SME decisions are labels too, read where they are
+(``gaia.evaluation.human_labels``). A **calibrator** (6C, D86) is a fitted map from a raw score
+to P(right) for one model and one scoring version, with the labels it was fitted on, how it did
+on held-out labels against the identity, and whether it is the one in use.
 """
 
 from __future__ import annotations
@@ -31,6 +41,13 @@ from gaia.db.models.catalog import new_uuid
 S = "evaluation"
 RUN_KINDS = ("golden",)
 RUN_MODES = ("fresh", "replay", "mixed", "imported")
+VERDICTS = ("right", "partly", "wrong")
+CALIBRATION_KINDS = ("meaning", "answer")
+CALIBRATION_METHODS = ("identity", "platt", "isotonic")
+
+
+def _in(column: str, values: tuple[str, ...]) -> str:
+    return f"{column} IN ({', '.join(repr(v) for v in values)})"
 
 
 class EvaluationRun(Base):
@@ -94,3 +111,71 @@ class EvaluationItem(Base):
     seconds: Mapped[float] = mapped_column(sa.Float, nullable=False, default=0.0)
     reason: Mapped[str | None] = mapped_column(sa.Text)
     sql: Mapped[str | None] = mapped_column(sa.Text)  # the final answer's (D81, 0019)
+    # what the final answer was made of (D84, 0020): objects, missing, interpretation,
+    # assumptions, clarification, confidence
+    detail: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+
+
+class Label(Base):
+    """A person's verdict on one of Gaia's column meanings, kept here because it does not live
+    elsewhere (6B part 2): today the owner's 3C audit. ``origin`` names where it came from, so
+    an import is idempotent."""
+
+    __tablename__ = "label"
+    __table_args__ = (
+        sa.UniqueConstraint("source", "origin"),
+        sa.CheckConstraint(_in("verdict", VERDICTS), name="verdict"),
+        sa.CheckConstraint(f"judge_verdict IS NULL OR {_in('judge_verdict', VERDICTS)}",
+                           name="judge_verdict"),
+        sa.Index("ix_label_source_ds", "data_source", "source"),
+        {"schema": S},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    source: Mapped[str] = mapped_column(sa.Text, nullable=False)  # 3c-audit
+    origin: Mapped[str] = mapped_column(sa.Text, nullable=False)  # run dir | condition | column
+    data_source: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    subject: Mapped[str] = mapped_column(sa.Text, nullable=False)  # schema.table.column
+    verdict: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    judge_verdict: Mapped[str | None] = mapped_column(sa.Text)
+    condition: Mapped[str | None] = mapped_column(sa.Text)  # 3C: N-P, B-P …
+    production: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
+    model: Mapped[str | None] = mapped_column(sa.Text)
+    scoring: Mapped[str | None] = mapped_column(sa.Text)  # the score's weights version
+    raw_score: Mapped[float | None] = mapped_column(sa.Float)
+    reviewer: Mapped[str | None] = mapped_column(sa.Text)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    created_by: Mapped[str | None] = mapped_column(sa.Text)
+    created_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
+                                                 server_default=sa.func.now())
+
+
+class Calibrator(Base):
+    """A map from a raw score to P(right), fitted on labels (6C). One is in use per kind, model
+    and scoring version at most; the identity is what is used when none is."""
+
+    __tablename__ = "calibrator"
+    __table_args__ = (
+        sa.CheckConstraint(_in("kind", CALIBRATION_KINDS), name="kind"),
+        sa.CheckConstraint(_in("method", CALIBRATION_METHODS), name="method"),
+        sa.Index("uq_calibrator_in_use", "kind", "model", "scoring", unique=True,
+                 postgresql_where=sa.text("in_use")),
+        {"schema": S},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    version: Mapped[str] = mapped_column(sa.Text, nullable=False, unique=True)
+    kind: Mapped[str] = mapped_column(sa.Text, nullable=False)  # meaning | answer
+    model: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    scoring: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    method: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    params: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    metrics: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+    labels: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    labels_wrong: Mapped[int] = mapped_column(sa.Integer, nullable=False)
+    labels_key: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    in_use: Mapped[bool] = mapped_column(sa.Boolean, nullable=False, default=False)
+    fitted_by: Mapped[str | None] = mapped_column(sa.Text)
+    fitted_at: Mapped[datetime] = mapped_column(sa.DateTime(timezone=True), nullable=False,
+                                                server_default=sa.func.now())
+    applied_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))

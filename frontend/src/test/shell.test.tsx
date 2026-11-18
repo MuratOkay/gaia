@@ -36,6 +36,34 @@ describe("navigation follows the roles", () => {
   });
 });
 
+describe("the Audit menu stays open on its shared pages", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  for (const path of ["/audit/queries", "/audit/runs", "/audit/evaluation"]) {
+    it(`on ${path}`, async () => {
+      vi.spyOn(globalThis, "fetch").mockImplementation(async (input) => {
+        const u = String(input);
+        if (u.includes("/api/queries")) {
+          return new Response(JSON.stringify({ total: 1, items: [{ id: "q-1", question: "How many?", attempt: 1,
+            status: "ok", created_at: "2026-11-18T09:00:00Z", data_source: "demo_pg", asked_by: "finn", tables: [],
+            row_count: 1, elapsed_ms: 5, origin: "api", errors: [], warnings: [], forbidden: [], parent_id: null,
+            dialect: "postgres", submitted_sql: "SELECT 1", executed_sql: "SELECT 1", row_cap_reached: false, error: null, model: "m" }] }));
+        }
+        if (u.includes("/api/runs")) return new Response(JSON.stringify({ totals: [], reasoning: [], profiling: [] }));
+        return new Response("[]");
+      });
+      render(<MemoryRouter initialEntries={[path]}><Shell me={me(["auditor"])} onSignedOut={vi.fn()} /></MemoryRouter>);
+      const menu = await screen.findByRole("navigation", { name: "Audit" });
+      const current = within(menu).getAllByRole("link").find((a) => a.getAttribute("href") === path);
+      expect(current).toHaveClass("active");
+      expect(within(menu).getByRole("link", { name: "Who may do what" })).toBeInTheDocument();
+      if (path === "/audit/queries") {
+        expect(await screen.findByRole("link", { name: "How many?" })).toHaveAttribute("href", "/audit/queries/q-1");
+      }
+    });
+  }
+});
+
 describe("the directory form", () => {
   it("maps onto the settings the API validates", () => {
     const settings = toSettings({

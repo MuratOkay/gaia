@@ -29,7 +29,7 @@ __all__ = ["git_commit", "import_golden_dir", "load_runs", "meanings_state",
 ITEM_FIELDS = ("question", "expect", "first_status", "final_status", "correct",
                "correct_first", "executable", "over_clarified", "answered_directly",
                "best_guess", "ambiguity", "repairs", "calls", "tokens", "seconds", "reason",
-               "sql")
+               "sql", "detail")
 
 
 def question_set_key(questions: Iterable[tuple[str, str, str]]) -> str:
@@ -94,6 +94,7 @@ def _item(run_id: uuid.UUID, key: str, values: dict[str, Any]) -> EvaluationItem
         row[f] = int(row[f] or 0)
     row["seconds"] = float(row["seconds"] or 0.0)
     row["reason"] = (row["reason"] or None) and str(row["reason"])[:2000]
+    row["detail"] = json.loads(json.dumps(row["detail"], default=str)) if row["detail"] else None
     return EvaluationItem(run_id=run_id, item_key=key, **row)
 
 
@@ -169,7 +170,8 @@ async def load_runs(session: AsyncSession, data_source: str, *, set_key: str | N
             i.item_key: ItemView(i.item_key, i.expect, i.correct, i.executable, i.first_status,
                                  i.final_status, i.best_guess, i.over_clarified,
                                  i.answered_directly, i.calls, i.tokens, i.seconds, i.reason,
-                                 i.sql)
+                                 i.sql, dict(i.detail) if i.detail else None,
+                                 repairs=i.repairs or 0)
             for i in items}, set_key=r.question_set_key, meanings_key=r.meanings_key,
             meanings=dict(r.meanings or {})))
     return out

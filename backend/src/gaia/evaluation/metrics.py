@@ -7,14 +7,17 @@
   correct meaning scores above an incorrect one (ties count ½). 0.5 is a coin,
   1.0 a perfect ranking. Undefined when every column is correct or none is;
 * **precision at accept_at**: of the meanings the machine would accept, how many
-  are right — the number an SME most needs to trust the automation.
+  are right — the number an SME most needs to trust the automation;
+* **Cohen's κ** of two raters over the same items (6B: the judge against people): their
+  agreement beyond what their own verdict frequencies would give by chance. 1 is full
+  agreement, 0 chance; undefined when both always say the same one thing.
 """
 
 from __future__ import annotations
 
 from collections.abc import Sequence
 
-__all__ = ["CREDIT", "auroc", "meaning_accuracy", "precision_at"]
+__all__ = ["CREDIT", "auroc", "cohen_kappa", "meaning_accuracy", "precision_at"]
 
 CREDIT = {"yes": 1.0, "partial": 0.5, "no": 0.0}
 
@@ -44,3 +47,17 @@ def precision_at(
     if not picked:
         return None, 0
     return sum(picked) / len(picked), len(picked)
+
+
+def cohen_kappa(a: Sequence[str], b: Sequence[str]) -> float | None:
+    """Cohen's κ of two raters' verdicts on the same items, in the same order."""
+    n = len(a)
+    if n == 0 or n != len(b):
+        return None
+    observed = sum(1 for x, y in zip(a, b, strict=True) if x == y) / n
+    cats = set(a) | set(b)
+    expected = sum((sum(1 for x in a if x == c) / n) * (sum(1 for y in b if y == c) / n)
+                   for c in cats)
+    if expected >= 1.0:
+        return None
+    return (observed - expected) / (1 - expected)

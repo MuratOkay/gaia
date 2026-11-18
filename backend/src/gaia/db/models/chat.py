@@ -26,6 +26,12 @@ confidence), a clarification, "cannot answer", or a failure — in order. An ans
 keeps at most ``chat.keep_rows`` rows, with personal-data columns masked in the
 stored copy: the table is shown again later without keeping a full copy of the
 customer's data, nor any personal data, at rest.
+
+``feedback`` (Phase 6D, D87, migration 0020) is a person's "Was this right?" on one of Gaia's
+answers: right, partly or wrong, with a note (P6-4). Partly and wrong open an item for the data
+source's SMEs, who decide what the answer really was and why — a meaning, a missing definition,
+a join, the model's reading, the data, the question itself — and only a decided item is a label
+for answer confidence. A person's "right" is counted, not reviewed.
 """
 
 from __future__ import annotations
@@ -41,8 +47,9 @@ from sqlalchemy.orm import Mapped, mapped_column
 from gaia.db.models.base import Base
 from gaia.db.models.catalog import new_uuid
 
-__all__ = ["CLARIFICATION_STATUSES", "MESSAGE_KINDS", "QUERY_RUN_ORIGINS", "QUERY_RUN_STATUSES",
-           "Clarification", "Conversation", "Message", "QueryRun"]
+__all__ = ["CLARIFICATION_STATUSES", "FEEDBACK_CAUSES", "FEEDBACK_VERDICTS", "MESSAGE_KINDS",
+           "QUERY_RUN_ORIGINS", "QUERY_RUN_STATUSES", "Clarification", "Conversation",
+           "Feedback", "Message", "QueryRun"]
 
 MESSAGE_KINDS = ("question", "clarification_answer", "answer", "clarification",
                  "cannot_answer", "failed", "refused")
@@ -50,6 +57,9 @@ MESSAGE_KINDS = ("question", "clarification_answer", "answer", "clarification",
 CLARIFICATION_STATUSES = ("open", "answered", "abandoned")
 
 QUERY_RUN_STATUSES = ("rejected", "ok", "timeout", "lock_timeout", "error")
+FEEDBACK_VERDICTS = ("right", "partly", "wrong")
+# why an answer was not right, as the SME decides it
+FEEDBACK_CAUSES = ("meaning", "definition", "join", "model", "data", "question", "other")
 QUERY_RUN_ORIGINS = ("cli", "api", "golden", "test")
 
 
@@ -199,3 +209,39 @@ class Message(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
 
+
+
+class Feedback(Base):
+    __tablename__ = "feedback"
+    __table_args__ = (
+        sa.UniqueConstraint("message_id", "given_by", name="uq_feedback_message_person"),
+        sa.CheckConstraint("verdict IN ('right', 'partly', 'wrong')", name="verdict"),
+        sa.CheckConstraint("status IN ('none', 'open', 'decided')", name="status"),
+        sa.CheckConstraint("decision IS NULL OR decision IN ('right', 'partly', 'wrong')",
+                           name="decision"),
+        sa.CheckConstraint(
+            "cause IS NULL OR cause IN ('meaning', 'definition', 'join', 'model', 'data', "
+            "'question', 'other')", name="cause"),
+        sa.Index("ix_feedback_source_status", "data_source_id", "status", "created_at"),
+        {"schema": "chat"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    message_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("chat.message.id", ondelete="CASCADE"), nullable=False)
+    data_source_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.data_sources.id", ondelete="CASCADE"), nullable=False)
+    given_by: Mapped[str] = mapped_column(sa.Text, nullable=False)  # the login
+    verdict: Mapped[str] = mapped_column(sa.Text, nullable=False)
+    note: Mapped[str | None] = mapped_column(sa.Text)
+    # none: a "right" (counted, not reviewed); open: waiting for an SME; decided
+    status: Mapped[str] = mapped_column(sa.Text, nullable=False, default="none")
+    decision: Mapped[str | None] = mapped_column(sa.Text)  # the SME's verdict on the answer
+    cause: Mapped[str | None] = mapped_column(sa.Text)
+    decision_note: Mapped[str | None] = mapped_column(sa.Text)
+    decided_by: Mapped[str | None] = mapped_column(sa.Text)
+    decided_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())

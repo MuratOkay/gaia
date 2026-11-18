@@ -1,11 +1,13 @@
 // The pieces of an answer (Phase 5D): the table first, then the narrative; the confidence as a
-// level with its reasons (never a percentage before Phase 6 calibrates it, T7); clarifications
-// as choices; refusals worded without naming what was refused (5C).
+// level with its reasons — and, once an answer calibrator is in use (6D), P(right) for SMEs,
+// administrators and auditors (P6-2); never a percentage from the heuristic alone (T7);
+// clarifications as choices; refusals worded without naming what was refused (5C); under an
+// answer, "Was this right?" (6D, P6-4).
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
 
-import type { AnswerDoc, ChatMessage } from "../api/client";
+import { api, type AnswerDoc, type ChatMessage, type FeedbackView, type Verdict } from "../api/client";
 
 export const HIDDEN = "[hidden]";
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -54,20 +56,94 @@ export function ResultTable({ columns, rows, masked = [] }: { columns: string[];
   );
 }
 
-export function ConfidenceBadge({ confidence }: { confidence: AnswerDoc["confidence"] }) {
+export function ConfidenceBadge({ confidence, showProbability = false }: {
+  confidence: AnswerDoc["confidence"];
+  /** SMEs, administrators and auditors see P(right) (P6-2); people who only chat, the level */
+  showProbability?: boolean;
+}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   if (!confidence) return null;
+  const p = confidence.probability;
   return (
     <div className={`confidence confidence-${confidence.level}`}>
       <button type="button" className="link" aria-expanded={open} onClick={() => setOpen(!open)}>
         {t(`chat.confidence.${confidence.level}`)}
       </button>
+      {showProbability && (p !== undefined && p !== null
+        ? <span className="small"> {t("chat.probability", { p: Math.round(p * 100), lo: Math.round((confidence.lower ?? 0) * 100) })}</span>
+        : <span className="muted small" title={t("chat.uncalibratedHelp")}> {t("chat.uncalibrated")}</span>)}
       {open && (
         confidence.reasons.length
           ? <ul>{confidence.reasons.map((r) => <li key={r}>{r}</li>)}</ul>
           : <p className="muted small">{t("chat.confidenceNoReasons")}</p>
       )}
+    </div>
+  );
+}
+
+/** "Was this right?" under an answer (6D, P6-4): right is counted; partly and wrong, with a
+ *  note, go to the data source's SMEs, whose decision then shows here. */
+export function WasThisRight({ messageId, initial }: { messageId: string; initial?: FeedbackView | null }) {
+  const { t } = useTranslation();
+  const [given, setGiven] = useState<FeedbackView | null>(initial ?? null);
+  const [choice, setChoice] = useState<Verdict | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function send(verdict: Verdict, text?: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const f = await api<FeedbackView>(`/api/messages/${messageId}/feedback`, {
+        method: "PUT", body: { verdict, note: text?.trim() || null },
+      });
+      setGiven(f);
+      setChoice(null);
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (given && !choice) {
+    return (
+      <div className="feedback small" aria-label={t("chat.feedback.title")}>
+        <span className="muted">{t(`chat.feedback.given.${given.verdict}`)}</span>
+        {given.status === "open" && <span className="muted"> · {t("chat.feedback.waiting")}</span>}
+        {given.status === "decided" && given.decision && (
+          <span> · {t("chat.feedback.decided", { decision: t(`chat.feedback.decisions.${given.decision}`) })}
+            {given.cause && <> — {t(`chat.feedback.causes.${given.cause}`, { defaultValue: given.cause })}</>}
+            {given.decision_note && <span className="muted"> ({given.decision_note})</span>}
+          </span>
+        )}
+        {" "}<button type="button" className="link" onClick={() => { setChoice(given.verdict); setNote(given.note ?? ""); }}>{t("chat.feedback.change")}</button>
+      </div>
+    );
+  }
+  return (
+    <div className="feedback small" role="group" aria-label={t("chat.feedback.title")}>
+      <span>{t("chat.feedback.title")}</span>{" "}
+      {(["right", "partly", "wrong"] as Verdict[]).map((v) => (
+        <button key={v} type="button" className={choice === v ? "chosen" : undefined} disabled={busy}
+                aria-pressed={choice === v}
+                onClick={() => (v === "right" ? void send(v) : setChoice(v))}>
+          {t(`chat.feedback.verdicts.${v}`)}
+        </button>
+      ))}
+      {choice && choice !== "right" && (
+        <form className="feedback-note" onSubmit={(e) => { e.preventDefault(); void send(choice, note); }}>
+          <label>
+            {t("chat.feedback.notePrompt")}
+            <textarea rows={2} value={note} maxLength={2000} onChange={(e) => setNote(e.target.value)} />
+          </label>
+          <button type="submit" disabled={busy}>{t("chat.feedback.send")}</button>
+          <span className="muted"> {t("chat.feedback.toSme")}</span>
+        </form>
+      )}
+      {error && <span className="error"> {error}</span>}
     </div>
   );
 }
@@ -80,12 +156,16 @@ export function Stage({ stage }: { stage: string }) {
 }
 
 /** Gaia's turn: an answer, a question back, "cannot answer", a refusal or a failure. */
-export function AssistantTurn({ kind, doc, canSeeSql, onOption, open }: {
+export function AssistantTurn({ kind, doc, canSeeSql, onOption, open, messageId, feedback, showProbability = false }: {
   kind: ChatMessage["kind"];
   doc: Partial<AnswerDoc>;
   canSeeSql: boolean;
   onOption?: (n: number) => void;
   open?: boolean;
+  /** the stored message: "Was this right?" needs it (6D) */
+  messageId?: string;
+  feedback?: FeedbackView | null;
+  showProbability?: boolean;
 }) {
   const { t } = useTranslation();
   const masked = doc.masked ? doc.personal_columns ?? [] : doc.masked_columns ?? [];
@@ -117,7 +197,7 @@ export function AssistantTurn({ kind, doc, canSeeSql, onOption, open }: {
         {masked.length > 0 && <p className="muted small">{t(doc.masked ? "chat.maskedLive" : "chat.maskedStored")}</p>}
         {doc.narrative && <p className="narrative">{doc.narrative}</p>}
         <div className="answer-foot">
-          <ConfidenceBadge confidence={doc.confidence ?? null} />
+          <ConfidenceBadge confidence={doc.confidence ?? null} showProbability={showProbability} />
           {(doc.interpretation || (doc.assumptions?.length ?? 0) > 0 || (doc.uncertain?.length ?? 0) > 0) && (
             <details>
               <summary>{t("chat.howRead")}</summary>
@@ -138,6 +218,7 @@ export function AssistantTurn({ kind, doc, canSeeSql, onOption, open }: {
           )}
           {canSeeSql && doc.query_run_id && <Link className="small" to={`/queries/${doc.query_run_id}`}>{t("chat.showSql")}</Link>}
         </div>
+        {messageId && !messageId.startsWith("live-") && <WasThisRight messageId={messageId} initial={feedback} />}
       </div>
     );
   }

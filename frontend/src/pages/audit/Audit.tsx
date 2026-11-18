@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { NavLink } from "react-router-dom";
 
@@ -6,7 +6,9 @@ import { api, type AccountView, type AuditEvent, type AuditSummary, type GrantVi
 import { Busy, ErrorNote, useLoad, when } from "../../components/util";
 import { AccountTable } from "../admin/Accounts";
 
-function AuditNav() {
+/** The Audit menu. Queries, Runs and Evaluation are shared pages; inside the menu they live
+ *  under /audit, so the menu stays open on them (``AuditFrame``). */
+export function AuditNav() {
   const { t } = useTranslation();
   return (
     <nav className="subnav" aria-label={t("audit.nav")}>
@@ -17,10 +19,20 @@ function AuditNav() {
       <NavLink to="/audit/events">{t("audit.events")}</NavLink>
       <NavLink to="/audit/categories">{t("audit.categories")}</NavLink>
       <NavLink to="/audit/refusals">{t("audit.refusalsNav")}</NavLink>
-      <NavLink to="/queries">{t("nav.queries")}</NavLink>
-      <NavLink to="/runs">{t("nav.runs")}</NavLink>
-      <NavLink to="/evaluation">{t("nav.evaluation")}</NavLink>
+      <NavLink to="/audit/queries">{t("nav.queries")}</NavLink>
+      <NavLink to="/audit/runs">{t("nav.runs")}</NavLink>
+      <NavLink to="/audit/evaluation">{t("nav.evaluation")}</NavLink>
     </nav>
+  );
+}
+
+/** A shared page shown inside the Audit menu. */
+export function AuditFrame({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <AuditNav />
+      {children}
+    </>
   );
 }
 
