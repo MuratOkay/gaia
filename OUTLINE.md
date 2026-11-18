@@ -10,6 +10,7 @@
 > chat (§38–§41); **Phase 6 complete** (P6-10, 2026-11-18) — the evaluation store and quality report, labels
 > from people, calibrators judged on held-out labels, "Was this right?", two regression nets and
 > category proposals measured (§42–§45); what waits for labels from real use goes to Phase 7.
+> **Phase 7 planned** (2026-11-18, awaiting the owner's decisions): ready to be run by others (§46).
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -846,7 +847,8 @@ environment and is excluded from version control.
 | **4** | Retrieval (all non-abstain meanings, ranked), planner, SQL generation per dialect, `sqlglot` guards, read-only execution, repair loop, streaming API, data-source management | golden business questions return correct SQL and results |
 | **5** | *Re-planned 2026-11-17:* sign-in through the company directory (LDAP/AD), three roles (user, SME, admin), need-to-know enforced in retrieval and the SQL guard; web UI: **SME review first**, then chat; administration (§38) | an SME works through a database's queue; a question is answered in the browser, only from data the user's role may see |
 | **6** | Evaluation harness, calibration from SME labels per model, cost/latency tracking | repeatable regression report |
-| **7** | Masking/FPE, scheduled refresh, further dialects, workload evidence | later |
+| **7** | *Planned 2026-11-18 (§46):* labels sought by a weekly blind sample; more and harder questions in both dialects; a worker with scheduled refresh and a drift watch; a change of model as a managed event; personal data at rest as shapes or encrypted, retention, TLS | someone other than its builder runs Gaia for weeks: it refreshes itself, a model change is trialled and reversible, no personal value rests in clear |
+| *Later* | Further dialects, multi-tenant, row-level need-to-know, workload evidence, known products | backlog |
 
 Phase 1 is gated on the owner restoring the target database.
 
@@ -932,7 +934,7 @@ top-up.
 
 | Property | Value |
 |---|---|
-| Base URL | `https://evren-llmapi.ssyz.org.tr/v1` (OpenAI-compatible gateway) |
+| Base URL | `https://<name-1>/v1` (OpenAI-compatible gateway) |
 | Model id | `deepseek-v4.1-flash` (routed to `deepseek/deepseek-v4.1-flash`) |
 | Context | 1,048,576 tokens; 65,536 default max output |
 | Capabilities | tools, thinking, `reasoning_effort`, `response_format`, vision |
@@ -948,7 +950,7 @@ Integration findings that shaped the client:
 3. **Latency cost of thinking is large**: ~9 s without, ~42 s with, for a small
    column-classification task. Phase 2 must therefore keep thinking enabled only
    for semantics/critique and disabled for bulk work.
-4. Usage reports `reasoning_tokens`, cached tokens, and an `evren` block with
+4. Usage reports `reasoning_tokens`, cached tokens, and an `<name-2>` block with
    remaining credits — captured in `Usage` for cost accounting.
 
 ### Target provisioning fixes discovered
@@ -2058,3 +2060,35 @@ data source's SME; two regression nets — replayed in every test run, fresh ove
 deliberate regressions of known damage; category proposals measured against people. What waits
 for labels that only use brings — fitted answer levels ("high" right ≥ 95 %), the first real
 calibrator, fitted category weights — and `nge_small`'s golden set (6F) go to Phase 7 (P6-10).
+
+## 46. Phase 7 — why "ready to be run by others" (proposed 2026-11-18)
+
+Phase 6 made Gaia measurable, and the measurements say where the next gains are — none of them in
+the answering itself, which runs at 94 % on `demo_pg`:
+
+* **The labels are one-sided.** People's decisions come from the review queue, and the queue
+  holds only meanings Gaia doubted; an accepted meaning is never queued for review. So the SME's
+  labels are mostly "Gaia doubted, and was right" (all 13 scored below 0.80), the 3C audit that
+  added 17 was a one-off, and of 30 labels 1 is not right — no calibrator can be fitted from
+  that, however long one waits. Labels have to be *sought*: a small weekly sample
+  across the whole score range, blind, accepted meanings included, is the only unbiased source.
+* **The questions are too easy to teach.** 27 of 30 golden questions are right in every run, and
+  "low" confidence answers were right 7 of 7: the levels cannot be fitted, and regressions below
+  3.3 points cannot be resolved, until the set has questions Gaia sometimes gets wrong — and until
+  SQL Server, the first target, has a golden set at all.
+* **Only its builder can run it.** Refresh, profiling, reasoning and golden runs are commands in
+  one person's shell. A schema change goes unnoticed, and so does a provider's silent model update
+  behind a name like "always the latest". The steps exist (hashing and diff since Phase 1, the
+  skip keys, the per-data-source locks); what is missing is a worker that chains them inside the
+  target's windows and a budget, and a weekly golden run that compares itself with its baseline.
+* **A model change is an edit, not an event.** Everything is already recorded per model id, so
+  history survives a change; what is missing is the sequence — register beside the old, measure on
+  the golden set and on columns whose meanings people decided (the decisions are the data's truth,
+  not a model's), switch, keep the way back, start uncalibrated.
+* **What Gaia keeps is fine for synthetic data only.** Samples, top values, raw model responses
+  and result rows rest in the metadata store; before a customer's personal data does, those values
+  are kept as shapes or encrypted, and expire.
+
+What does not serve that goal — further dialects, multi-tenancy, row-level need-to-know,
+workload evidence, known-product recognition — waits under *Later* in PHASES.
+

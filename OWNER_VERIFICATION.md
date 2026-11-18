@@ -20,11 +20,10 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D94 ("Was this right?": nobody-reviews warning, notes kept,
-  make feedback)` — A1's first run triaged (§34): akaya saw no notes. `make feedback` shows every
-  doubt, its data source and who reviews it; a doubt on a data source nobody reviews says so to
-  the person and in the report; a typed note is kept when its box is left, and a change of verdict
-  no longer erases it. **Phase 5 ticked. The next run: §34c (A1 again, diagnosis first).***
+  there. *Latest build: `2026-11-18 · D95 (A1 triaged: make feedback, reviewers as sign-in counts them)`
+  — A1 **passed** on D94 (§35): finn's doubts reached akaya and her decisions are labels.
+  D95 adds the missing `make feedback` target and stops naming an administrator as a reviewer.
+  **The next run: §35d (two commands). Phase 7's plan waits for your decisions (§35e).***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -33,7 +32,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
   failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
   run — **triaged in §33, which closes Phase 6**; its asynchronous item A1 was run once — **triaged in §34**,
-  and **§34c is the next run**. **Send outputs only through `make share`.**
+  §34c was run on D94 — **triaged in §35: A1 passed; §35d is the next run, and Phase 7's
+  plan waits for your decisions (§35e)**. **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3796,7 +3796,7 @@ calibration, 6G's weights, the change of model as a managed event.
 
 **One asynchronous item, non-blocking** (like the SQL Server track):
 
-*A1 was run once on D93 — akaya saw no notes: §34; again in §34c on D94.*
+*A1 was run once on D93 — akaya saw no notes: §34; again in §34c on D94 — **passed** (§35).*
 
 | Id | What | When | Output |
 |---|---|---|---|
@@ -3881,6 +3881,117 @@ Then, in the browser — **on `demo_pg`: choose it in the chat's data-source lis
 
 If A1 passes, 6D is verified on your host end to end; if not, `34_feedback*.out` shows where it
 stops. Then `make share`.
+
+---
+
+## 35 · Triage of the D94 run — A1 passed; build D95; Phase 7's plan (2026-11-18)
+
+Your note: every UI problem solved; the outputs of §34c in `verification/share/` (`34_feedback_before.out`,
+`34_tests.out`, `34_feedback.out`; build D94, git `b751d31`).
+
+### 35a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `34_feedback_before.out` | `make: *** No rule to make target 'feedback'.` | ❌ my fault: 35b-1 |
+| `34_tests.out` | `make test-host`: **785 passed** — D94's own count — **and 3 failed**, all in `test_pii_scan.py` (`unrecognized arguments: --include-src`); 0 skipped; web **64 passed**, `✓ built` (the same bundle hash as in my sandbox) | ✅ D94; the three: 35b-3 |
+| `34_feedback.out` | `make feedback` missing again; then `make quality TARGET=demo_pg --last 3` — *People's feedback*: **2 yes, 1 partly, 1 no; waiting 0; decided 2** — exactly the line A1 expected (§33d: bdemir's yes and finn's three, both doubts decided); *reviewed by: acme/akaya, **acme/dyilmaz*** | ✅ **A1 passed** — with your browser run, 6D works on your host end to end; dyilmaz: 35b-2 |
+
+### 35b · Findings
+
+1. **`make feedback` did not exist.** D94 shipped the tool (`gaia.tools.feedback`), its test, the
+   guide's line and the README's — and no target in the Makefile. The test called the tool
+   directly, so nothing noticed. **Fixed (D95):** the target, and a test that every `make` target
+   README and USER_GUIDE name exists in the Makefile (it fails on D94's Makefile, naming
+   `feedback`).
+2. **An administrator was named as a reviewer.** dyilmaz is an administrator through GAIA-Admins
+   and still holds the SME grant for `demo_pg` from §25 (the conflict made on purpose). Sign-in
+   does not apply it (D68), so he never sees doubted answers — but `reviewers` looked only for an
+   administrator grant on the *account*, not one through a directory role. Harmless today (akaya
+   reviews `demo_pg`); had dyilmaz been the only one, D94's *nobody reviews this data source*
+   would have stayed silent — the very failure D94 was for. **Fixed (D95):** a reviewer is counted
+   as sign-in counts: effective privileges — enabled, not an administrator by any route; a
+   directory role while one of its members reviews through it, or nobody has signed in through it
+   yet. The test reproduces your line (`['acme/akaya', 'acme/dyilmaz']`) on D94's code and passes
+   on D95's. If you no longer want the conflict on *Accounts*: `make auth ARGS="grants"`, then
+   `make auth ARGS="revoke <id> --note 'conflict no longer needed'"`.
+3. **The three `test_pii_scan.py` failures are not Gaia's, and are gone.** The tests call
+   `scripts/pii_scan.py --include-src`; the script that ran has no such option (its usage line in
+   the output lists none, and `parse_args` sits at line 375). In the tree you sent the script has
+   it (`parse_args` now at line 407) and all three pass here — the script changed after the run, or was not committed
+   at `b751d31`. Your export tooling (`make export`, `pii_scan.py`, `redact`) is your work; I did
+   not touch it. Commit it, so the stamp names it. The tree holds 5 tests more than D94's 785:
+   790, and D95 adds 2.
+4. **What the first attempt was, still unknown.** `make feedback` never ran, so §34a's question —
+   finn's first answers on which data source? — has no answer yet. The `demo_pg` report holds
+   nothing of them, which fits §34a-1 (asked on `demo_mssql`, where nobody reviews). §35d's
+   `make feedback` lists every data source: such lines say *NOBODY reviews this data source*.
+5. **Read from the report — for Phase 7, not defects:**
+   * *Confidence levels do not separate yet:* high right 11 of 11, medium 68 of 72, **low 7 of 7**.
+     On 30 easy questions Gaia is right ~95 % at every level; fitting the levels (6D part 2) needs
+     not-right answers, which 27 always-right questions do not produce → harder questions (7B).
+   * *Meaning labels are one-sided:* 30 for `deepseek-flash` (13 yours as SME, 17 from the 3C
+     audit), 1 not right; Gaia's scores under-promise (the identity's calibration error 0.29).
+     Your 13 came from the review queue — all scored below 0.80: meanings Gaia doubted that were
+     right — and an accepted meaning is never queued; the audit was a one-off. At this rate P6-1
+     is never reached → the calibration sample (7A).
+   * *Best guess = your answer* 8 of 27 (30 %, 16–48 %) → D61 (b): P7-1.
+   * *The proposals people saw:* none on `demo_pg` — 6G's second measure has nothing to read
+     until new objects arrive (7C's refresh brings them).
+
+### 35c · Built (D95; no migration)
+
+* The `feedback` target; `tests/unit/test_make_targets.py` (35b-1).
+* `gaia.evaluation.feedback.reviewers` by effective privileges; the test extended with an
+  administrator's SME grant, on the account and through a role (35b-2). The chat's *nobody
+  reviews*, the report's *reviewed by* and `make feedback` all read it.
+* USER_GUIDE: who counts as a reviewer. PHASES: A1 passed, the decisions log completed (D89–D95),
+  **Phase 7 planned**.
+
+Sandbox (both PostgreSQL databases): **782 passed, 10 skipped** (+2; the skips: 8 SQL Server, 2
+Ollama); web **64**, `✓ built`.
+
+### 35d · The run (build D95) — two commands
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make feedback; make quality TARGET=demo_pg ARGS="--last 3") > verification/35_feedback.out 2>&1
+(make stamp; make test-host; make web-test) > verification/35_tests.out 2>&1
+```
+
+- [ ] `make feedback`: finn's two `demo_pg` doubts *decided by akaya*, with their notes, *reviewed
+      by: acme/akaya* — dyilmaz no longer; any lines of the first attempt on `demo_mssql` say
+      *NOBODY reviews this data source* (35b-4)
+- [ ] *People's feedback on answers*: *reviewed by: acme/akaya*
+- [ ] `35_tests.out`: **792 passed, 0 skipped**; web **64 passed**
+
+Then `make share`.
+
+### 35e · Phase 7 — the plan, and what I need from you
+
+The plan is in PHASES (*Phase 7 — Ready to be run by others*). In short: Phase 6 measured Gaia
+well enough to show what is missing — labels that only real use brings, questions hard enough
+to teach something, SQL Server's first numbers — and your own question showed the rest:
+Gaia runs only when you type `make`, a model change is a configuration edit with no way back,
+and what it keeps of the data is fine for synthetic data only.
+
+| Stage | What |
+|---|---|
+| 7.0 | §35d; **S4** — the T-SQL guard live on `nge_small` (the one open safety item); D61 (b) decided |
+| 7A | labels *sought*: a weekly blind calibration sample across the score bands, accepted meanings included; an SME pass on `nge_small`; the report forecasts when P6-1 is reached |
+| 7B | `nge_small`'s golden set (Gaia drafts, you correct) and its first T-SQL runs; `demo_pg` to ~60 harder questions; golden runs as a person, with refusals |
+| 7C | a worker: nightly refresh of what changed, inside windows and a token budget; a weekly drift watch of the golden set; *Runs* starts, stops, schedules |
+| 7D | a change of model as a managed event: registered beside the old, trialled (golden set and SME-decided columns in a shadow), switched, rolled back; starts uncalibrated |
+| 7E | the data Gaia keeps: personal values only as shapes or encrypted, retention, a seeded-values proof; TLS to leave `127.0.0.1` |
+| 7F | when labels exist: the first real calibration, fitted answer levels, fitted category weights — recorded, not gating |
+
+Decisions P7-0 … P7-10, each with a recommendation (PHASES, Phase 7): the goal and cut line (P7-0);
+D61 (b) — reject for now (P7-1); the sample's size (P7-2); who writes the new questions (P7-3);
+where models are configured (P7-4); after a switch (P7-5); the job queue (P7-6); schedule and
+budget (P7-7); the second model — which one does your gateway offer besides `deepseek-flash`?
+(P7-8); personal data at rest and retention periods — yours to set under KVKK (P7-9); TLS
+(P7-10). "As recommended" is enough where you agree; nothing of Phase 7 starts before your
+approval.
 
 ---
 

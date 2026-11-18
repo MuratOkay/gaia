@@ -588,6 +588,8 @@ box is left, and kept if the verdict is changed later). A doubt goes to the expe
 source the conversation is on** — choose the data source before asking; if nobody reviews it, the
 answer says so, and an administrator names an SME (`make auth ARGS="grant sme --user DIR/LOGIN
 --data-source NAME"`). `make feedback` lists every doubt across data sources with who reviews it.
+*Who reviews* counts as sign-in does: an administrator's SME grant is not applied (D68), so an
+administrator is never named as a reviewer, even if such a grant was left in place (D95).
 *Yes* is counted. *Partly* and *No* go to the data source's expert (SME), who decides what the
 answer really was and why; the decision then appears under the answer. Your verdict can be
 changed; after the expert has decided, their decision stands. A question Gaia

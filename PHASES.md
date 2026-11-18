@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**A1's first run triaged; build `2026-11-18 · D94 ("Was this right?": nobody-reviews warning, notes kept, make feedback)`**) · Status: **Phases 0–6 complete** (Phase 5 ticked by the owner 2026-11-18; Phase 6 by P6-10 — "high ≥ 95 %" recorded as not met) · one asynchronous host item open: A1, "Was this right?" with the SME's decision — its first run failed, D94, again in OWNER_VERIFICATION §34c · **Next: Phase 7's plan**
+> Last updated: 2026-11-18 (**A1 passed on the host (§34); build `2026-11-18 · D95 (A1 triaged: make feedback, reviewers as sign-in counts them)`; Phase 7 planned**) · Status: **Phases 0–6 complete** (Phase 5 ticked by the owner 2026-11-18; Phase 6 by P6-10 — "high ≥ 95 %" recorded as not met); "Was this right?" with the SME's decision verified on the host (A1) · **Next: the owner's decisions on Phase 7 (P7-0 … P7-10) and its approval** — one short D95 run (OWNER_VERIFICATION §35d)
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -41,8 +41,9 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 3 | Evidence collection, profiling, views, scoring v2, re-reasoning, review queue | **DONE** — 3.P, 3.0, 3A (PostgreSQL), 3B; 3C accepted 2026-11-17 (P6-0): criteria 1–3 met, criterion 4 (the owner's audit ≥ 90 %) recorded as not met at 86 %; SQL Server residue tracked (D56) | ✅ approved 2026-11-14 · ✅ complete 2026-11-17 |
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **DONE** — 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
-| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision on the host: asynchronous (§33d) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
-| 7 | Masking/FPE, scheduled refresh, further dialects, workload evidence; a change of model or provider as a managed event; what Phase 6 carried over (P6-10) | **backlog — to be planned next** | ⬜ |
+| 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision **passed on the host** (A1, §34–§35) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
+| 7 | Ready to be run by others: labels sought rather than awaited, more and harder questions in both dialects, runs that run themselves, a change of model as a managed event, the data Gaia keeps; what Phase 6 carried over (P6-10) | **planned 2026-11-18 — awaiting the owner's decisions (P7-0 … P7-10) and approval** | ⬜ |
+| Later | Scale-out: further dialects, multi-tenant, row-level need-to-know, workload evidence, known products | backlog, not planned | — |
 
 ### Environment as it stands
 
@@ -60,7 +61,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | host, 2026-11-16: `nge_small` all 71 objects / 607 columns (231 accepted; queue 289); `demo_pg` all 28 objects / 213 columns (108 accepted) |
-| Tests | build D83: **734 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — 744 expected on the host (D80 on the host: **735 passed, 0 skipped**); the web UI: 49 (vitest); the replayed golden net is part of it (6E)
+| Tests | build D95: **782 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — **792 expected on the host, 0 skipped** (D94 on the host: 785 of D94's own passed, 0 skipped; 3 failures in the owner's `test_pii_scan.py`, §35b-3); the web UI: **64** (vitest); the replayed golden net is part of it (6E)
 | Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
 | Sandbox (2026-11-17, D76) | Also a **real LDAPS directory** with the Samba script's people and groups and a Samba-shaped certificate chain (`ldaptor`), a **headless Chromium** driving the web UI, and an OpenAI-compatible **scripted model** and embedding stub: sign-in, review, chat, refusals and the admin pages run through uvicorn and Vite as on the host. Still no SQL Server, no LLM gateway, no Docker
 | Migrations | `0001`–`0019` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store, `0019` = D81 a run's meanings and an item's SQL) |
@@ -400,7 +401,7 @@ table that was stored without thinking. Use `--force` to upgrade such a table.
 ---
 
 
-## Phase 3 — Evidence collection, profiling & re-reasoning · **approved 2026-11-14 — in progress**
+## Phase 3 — Evidence collection, profiling & re-reasoning · **approved 2026-11-14 — complete 2026-11-17 (3C accepted, P6-0)**
 
 **Goal.** For any database Gaia is pointed at, collect every piece of evidence it
 can afford — from metadata, code, statistics and the data itself — reason
@@ -2820,7 +2821,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e); **complete 2026-11-18 (P6-10)**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D92); P6-8 and P6-9 decided 2026-11-18 (D90); the acceptance test of 6E passed on the host (§31e) — complete 2026-11-18 (P6-10)**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -3218,6 +3219,26 @@ data sources, with who reviews it); *nobody reviews this data source* in the cha
 report; a note saved on leaving its box and kept across a change of verdict (a PUT without
 `note` changes the verdict only). Web **64**; tests **775 passed, 10 skipped**. The owner ticked Phase 5.
 
+### A1 passed, and D95 (2026-11-18)
+
+OWNER_VERIFICATION §35. The owner solved the browser side and sent §34c's outputs. **Confirmed:**
+`make quality TARGET=demo_pg`'s *People's feedback* reads **2 yes, 1 partly, 1 no; waiting 0;
+decided 2** — exactly what A1 expected (§33d): finn's verdicts reached akaya and her decisions are
+labels. **6D is verified on the host end to end; A1 is closed.** `make test-host`: D94's own 785
+passed, 0 skipped; web 64, built. **Found:** `make feedback` had no Makefile target (the tool, its
+test, the guide and the README existed; the test called the tool directly); the report named
+dyilmaz a reviewer of `demo_pg` — an administrator through GAIA-Admins whose SME grant (§25's
+deliberate conflict) sign-in does not apply (D68): had he been the only one, D94's *nobody reviews*
+warning would have stayed silent; three failures in `test_pii_scan.py`, the owner's own export
+tooling, whose script on the host predated the test (`--include-src`; the archive's script has
+it and they pass).
+
+**D95 (no migration):** the `feedback` target, and a test that every `make` target README and
+USER_GUIDE name exists; `reviewers` counts as sign-in counts (effective privileges: enabled, not
+an administrator by any route; a role while a member reviews through it or nobody has signed in
+through it yet) — the test reproduces the host's line on D94's code. Tests: **782 passed, 10
+skipped** in the sandbox (+2); web **64**.
+
 ### Raised for Phase 7: a change of model or provider in production (2026-11-18)
 
 The owner's question: a customer changes the LLM provider some time in production — what then?
@@ -3348,7 +3369,8 @@ today's speed) per prompt change; calibration and the replayed net make none.
       cause (§30b-3) and its fix (§33a), P6-8's acceptance test (§32a), "Was this right?" sent on
       the click (§33a); the SME's decision on the host is asynchronous item A1 (§33d), verified in
       the sandbox over HTTP and in a browser — A1's first host run failed (akaya saw no notes,
-      §34): D94, and A1 again in §34c)*
+      §34): D94; **A1 passed on D94** (§35: 2 yes, 1 partly, 1 no, 2 decided) — D95 fixed
+      `make feedback` and who counts as a reviewer)*
 - [x] P6-10 decided — **the Phase 6 gate** (close with "high ≥ 95 %" recorded as not met; 6F,
       6D part 2, the first real calibration and 6G's weights to Phase 7) *(owner, 2026-11-18)*
 - [x] **Phase 6 complete** *(2026-11-18, OWNER_VERIFICATION §33: D91's runs read — o06 fixed;
@@ -3356,46 +3378,262 @@ today's speed) per prompt change; calibration and the replayed net make none.
 
 ---
 
-## Phase 7 — Masking, refresh, scale-out (backlog)
+## Phase 7 — Ready to be run by others · **planned 2026-11-18 — awaiting the owner's decisions (P7-0 … P7-10) and approval**
 
-Not scheduled. Listed so scope creep has somewhere to land.
+**Goal.** Gaia can be left running on a real database, by people who did not build it, for weeks:
+it refreshes itself inside its windows; a change of model is measured before it is made and can
+be undone; what it keeps of the target's data is protected and expires; and every week of use adds
+the labels Phase 6 could not get — measured on a larger, harder question set, in both dialects.
 
-- ~~SME review queue + UI~~ — moved into Phase 5 (R1); Phase 3 builds the queue
-- PII masking applied to samples and answers, not just detected
-  — *Phase 3 adds exposure modes for remote models (P3-7); FPE and data-at-rest of
-  samples (metadata store, `audit.llm_call`) stay here*
-- Scheduled incremental refresh (respecting per-target run windows, A5)
-- Further dialects beyond SQL Server and PostgreSQL (MySQL, Oracle …) — the seam
-  and the per-dialect type vocabulary exist since 3.P
-- Multi-tenant access control and row-level-security awareness in cache keys
-- *From Phase 5 (P5-12, proposed 2026-11-17):* starting and stopping runs from the admin
-  screen, the overnight schedule (a worker, per-data-source locks, cancellation, run windows),
-  and the LLM / embedding connections in the admin screen with an impact preview (a model change
-  re-reasons everything; an embedding change re-embeds and may change `vector(1024)`)
-- *From Phase 5 (P5-5):* row-level need-to-know (a manager sees only their store),
-  aggregate-only grants, masking per role; OIDC/SAML if 5A ships LDAP only
-- ~~View/procedure definitions from `sys.sql_modules`~~ — moved to Phase 3 (capture of
-  all modules, view lineage); **procedure alias mining** remains here
-- Query Store / plan-cache evidence (how applications join, filter, aggregate)
+### Where Phase 6 left things (measured on the host, 2026-11-18)
+
+| Fact | Number | What it means for Phase 7 |
+|---|---|---|
+| `demo_pg`'s golden set | 30 questions; D91 + D92 pooled 94 % (90–97 %); 27 right in every D92 run | saturating: easy questions neither resolve regressions (3.3 points a question, §45) nor produce the not-right answers calibration needs |
+| Answer confidence against the reference | D92: high 11 of 11, medium 68 of 72, **low 7 of 7** | the levels carry little information yet; fitting them (6D part 2) needs P6-1's 75 subjects with 15 not right — today 32 with 8 |
+| Meaning labels, `deepseek-flash` | 30 (13 SME + 17 audit), **1 not right**; the identity's ECE 0.29 | the SME's 13 came from the review queue — all scored below 0.80, meanings Gaia doubted that turned out right (accepted meanings are never queued) — and the audit's 17 were a one-off; at this rate P6-1 is not reached at all. Labels must be *sought*, across the whole score range |
+| Gaia's best guess = the user's answer | 8 of 27 (30 %, 16–48 %) | D61 (b) cannot be earned now (P7-1) |
+| SQL Server | S4 (the T-SQL guard live) never run; no T-SQL golden set (P4-1, S8) | the first target has no quality number and one open safety check |
+| Operation | every run is a `make` command in the owner's shell | nobody else can operate Gaia; nothing notices a schema change, or a provider's silent model update ("always the latest", §21f) |
+| Model | one configured model | a provider change is a configuration edit with no measurement and no way back (§31d, *Raised for Phase 7*) |
+| Data at rest | profile samples and top values, raw model responses, result rows in the metadata store; the LLM cache in Redis for 30 days | acceptable for synthetic data; not for a customer's personal data (KVKK) |
+| Listening | `127.0.0.1` only (P5-9) | nobody else can reach it |
+
+### Design
+
+**7.0 — Phase 6's last host check, and the open items sorted.** D95's short run (OWNER_VERIFICATION
+§35d); **S4** — the T-SQL guard and executor on `nge_small`, refusals included (§15c): the one open
+safety item, due before anyone else uses Gaia on SQL Server (D52 b); D61 (b) decided (P7-1); the
+categories' words on `demo_mssql` (§32b-4) whenever the owner likes.
+
+**7A — labels are sought, not awaited** (first, because labels need calendar time).
+* *The calibration sample* (P7-2): every week, per data source, a few meanings drawn across the
+  score bands — **accepted ones included** — go to the SME's queue as blind items (P6-5's
+  mechanism: no score, no band, no stated doubt). Their decisions are labels like any other, and
+  the only unbiased ones: the queue alone labels what Gaia already doubted.
+* *An SME pass on `nge_small`* (the owner, an hour or two): 231 meanings accepted, 289 in the
+  queue, and the 3C audit found ~14 % not right there — the database that holds the wrong labels
+  calibration needs.
+* *Progress as a forecast*: `make quality` and the *Evaluation* page say per kind and model how far
+  P6-1 is, and when it will be reached at the last weeks' rate ("meanings: 30 of 150, 1 of 30 not
+  right — at this rate, never: review more") — "too few" becomes a date or an instruction.
+
+**7B — more and harder questions (6F).**
+* **`nge_small`'s golden set** (P4-1, P6-6): `make golden-draft TARGET=demo_mssql` — Gaia drafts
+  ~30 questions from the schema, the meanings (SME-accepted first) and the join graph, each with
+  its kind, the objects it needs, and a reference SQL the guard passed and the target ran, with a
+  preview of its result. Drafts carry `status: draft` and are never counted; the owner corrects
+  and accepts them (P7-3). Then three fresh T-SQL golden runs (S8): SQL Server's first quality
+  report.
+* **`demo_pg`'s set to ~60** (P7-3): questions aimed at what Phase 6 found — sibling aggregates
+  (the chasm trap, D90), multi-hop joins, the cryptic `legacy` schema, questions that need an SME's
+  definition, ambiguities of period and population — so that some are *not* always right; each
+  with its reference checked against the seeded data.
+* **Golden runs as a person** (`--as`) for each role pattern, with questions that must be refused:
+  need-to-know measured — answered where the role allows, refused where it does not, and nothing
+  named in a refusal.
+* `retrieval-eval` with clarified questions and vectors (D91).
+* For the nets: 60 questions resolve 1.7 points each (P6-8's arithmetic); the replayed net covers
+  the new `demo_pg` questions.
+
+**7C — runs that run themselves** (P5-12).
+* **A worker and a job table** in the metadata store (P7-6): a job has a kind (refresh, profile,
+  reason, rescore, embed, golden, model trial, retention sweep), a data source, who or which
+  schedule started it, its state, progress, cost so far and its log. D67's per-data-source locks
+  stay the mutual exclusion.
+* **Refresh** — introspect → diff → profile what changed (P3-6's rules) → reason what changed (the
+  skip key) → rescore → embed: the existing steps, chained, inside the target's run window (A5) and
+  a token budget per night (P7-7). Cancelled between tables, it leaves a consistent state; the
+  next run resumes.
+* **Drift watch** — a scheduled fresh golden run (three runs, weekly by default, P7-7) compared
+  with the last accepted baseline by P6-8's verdict; a named break, or a model id the provider
+  reports differently, raises an alert. "Always the latest" stops being silent.
+* ***Runs*** (read-only since 5E) starts, stops and schedules, for administrators; every start and
+  stop audited; a failed or over-budget run shown on the administrators' home page.
+
+**7D — a change of model as a managed event** (*Raised for Phase 7*; P5-12's impact preview; P6-7).
+* **Models registered beside each other** (P7-4): a named connection per model — provider, URL,
+  model id, its key (in `.env`, or encrypted with `GAIA_MASTER_KEY` as a data source's is, 4F) —
+  and which model serves each purpose (reasoning, critique, SQL, narration; embeddings apart). A
+  new model is probed (plain, JSON mode, thinking — `check-llm`) before it can be chosen.
+* **Measured before the switch** — `make model ARGS="trial …"`, or a job: the golden set three
+  times on the candidate and three on the current model **in the same session** (P6-8), compared
+  like builds; a sample of columns whose meanings an SME decided, re-reasoned by the candidate
+  into a **shadow** (nothing stored changes) and compared field by field with the decision (6B's
+  rule, not the LLM judge, P6-0) — both models against people on the same columns; tokens,
+  latency, cost; and the **impact preview**: what re-reasoning everything would cost and take at
+  the measured rate, and what stays (SME decisions carry over, §24d).
+* **The switch, and the way back** (P7-5): the old model stays configured for a rollback period,
+  its meanings, runs and labels read-only for comparison; the new model starts **uncalibrated**
+  (a calibrator never passes between models, only through a declared rename, P6-9); re-reasoning
+  is staged by 7C's worker inside the windows and the budget, and the report says what share of
+  the meanings each model made. A rollback is the same switch, back.
+* **An embedding change** is the same event with its own preview: texts to embed, the time at the
+  measured rate, retrieval recall before and after, and the vector dimension — a different one
+  needs a new vector table beside the old (a migration), switched when complete.
+* Its acceptance needs a real second model (P7-8).
+
+**7E — what Gaia keeps of the data, and leaving `127.0.0.1`.**
+* **An inventory** of where target values rest: profile samples and top values, evidence,
+  `audit.llm_call`'s raw responses, the rows kept with chat messages, evaluation items, the Redis
+  caches.
+* **At rest** (P7-9): values of personal-data columns (detected, or marked by an SME) kept only as
+  shapes — as the remote model already sees them — or, where a PII processor may need them again
+  (a reopened answer), encrypted with the master key.
+* **Retention** (P7-9): result rows of conversations and raw model responses expire after their
+  period (a sweep job, 7C); conversation text and every measurement stay.
+* **The proof**: known personal values seeded in `demo_pg`; profiling, reasoning, golden runs and
+  the chat run over them; then a dump of the metadata store and the Redis keys is searched for
+  them — none in clear (a test, and on the host `scripts/pii_scan.py` over the dump).
+* **Behind TLS** (P5-9, P7-10): a documented reverse proxy, secure cookies, a production start
+  (`make serve`: the built UI, the worker), and the API refusing to listen beyond `127.0.0.1`
+  without them.
+
+**7F — what the labels unlock** (when they exist; not a gate). As soon as P6-1's counts are met
+for a kind and model: the first real calibration (`make calibrate --apply`, only if it beats the
+identity); answer levels fitted so that "high" is right ≥ 95 % with its interval (6D part 2);
+D77's weights fitted to the confirmations (6G) once they number in the hundreds. Until then the
+report shows 7A's forecast and the gate records each item as *waiting for labels* (P7-0, as P6-10
+did).
+
+*Cut line:* 7.0–7C and 7D's measurement and switch (from the command line) are the phase; 7D's
+*Models* page and 7E's TLS deployment can follow if time is short; 7F happens when labels allow.
+Everything under *Later* stays out.
+
+### Order of work
+
+| Step | What | Verifiable in the sandbox | Needs the host |
+|---|---|---|---|
+| 7.0 | D95's run; S4; D61 (b) decided; the categories' words | D95 fully | §35d; S4 on SQL Server |
+| 7A | the calibration sample (blind, across bands, accepted included); the forecast in the report and on the page | fully, with synthetic decisions | ~15 minutes a week of an SME per data source; the `nge_small` SME pass |
+| 7B | `golden-draft`; `demo_pg` to ~60 with references; persona runs with refusals; `retrieval-eval` with clarifications | drafting with the scripted model; the `demo_pg` questions against the seed | the owner's corrections (an hour); T-SQL golden runs ×3; fresh `demo_pg` runs ×3 |
+| 7C | job table and worker; the refresh chain; windows, budget, cancellation, resume; drift watch; *Runs* start, stop, schedule; alerts | fully (a schema change made with the seed tool; the scripted model) | a week of nightly runs on `demo_pg`; one on `nge_small` inside its window |
+| 7D | model registry and probe; trial with shadow re-reasoning; impact preview; switch, rollback, staged re-reasoning; embedding preview; *Models* page | fully, with two scripted models that differ on known questions and columns | a real second model (P7-8): trial, switch and rollback on `demo_pg` |
+| 7E | inventory; shapes and encryption at rest; retention sweep; the seeded-values proof; TLS and `make serve` | fully | the proof on the host's store; the proxy on the owner's machine |
+| 7F | calibrate, fit the levels, fit the weights | with synthetic labels (as in 6C) | when the labels exist |
+
+### Deliverables
+
+- Back end: the calibration sample (7A); `tools/golden_draft.py` (7B); `jobs/` — worker, job kinds,
+  schedules (7C); a model registry and `evaluation/model_trial.py` (7D); at-rest protection and the
+  retention sweep (7E); migrations for jobs and schedules, models and their purposes, and the
+  at-rest changes (numbers at creation, R4)
+- CLI: `make golden-draft`, `make jobs ARGS="list | start KIND | cancel ID | schedule …"`,
+  `make worker`, `make model ARGS="list | add | probe | trial | switch | rollback"`, `make serve`,
+  `make retention ARGS="--dry-run"`
+- Web: *Runs* with start, stop and schedules; *Models* (administrators); the label forecast on
+  *Evaluation*; alerts on the administrators' home page
+- Tests: the sample's draw (bands, blind, accepted included); drafts never counted until accepted;
+  persona runs' refusals name nothing; refresh picks up exactly a changed object; cancellation and
+  resume; a trial changes nothing stored; switch and rollback; a calibrator never crosses models;
+  the seeded-values proof; retention removes only what expired
+- Docs: OUTLINE (Phase 7 as built), USER_GUIDE (operating Gaia: schedules, runs, models,
+  retention, TLS), OWNER_VERIFICATION runs per stage
+
+### Acceptance criteria
+
+*On the owner's host unless said otherwise:*
+
+- [ ] S4 passed: the T-SQL guard and executor on `nge_small`, refusals included (safety, D52 b)
+- [ ] The calibration sample runs weekly on both data sources — accepted meanings included, blind
+      — and the report forecasts every label-dependent item from the observed rate
+- [ ] `nge_small`'s golden set (≥ 30 questions) accepted by the owner; three fresh T-SQL runs and
+      `make quality TARGET=demo_mssql` with intervals
+- [ ] `demo_pg`'s set at ≥ 60 questions, three fresh runs, in the replayed net; at least 15 % of its
+      questions not right in every run (hard enough to teach something)
+- [ ] Golden runs as a person for ≥ 3 role patterns: every question answered or refused as the role
+      allows, and no refusal names a forbidden object
+- [ ] A week of scheduled refreshes on `demo_pg`: a deliberate schema change (a new column, a changed
+      table) picked up, and **only** the changed objects re-profiled and re-reasoned (counts
+      shown); a cancelled run resumes to the same end state; an overlapping start and a start
+      outside the window refused; every start and stop audited
+- [ ] The drift watch compares its weekly runs with the baseline by itself and raises a named break
+      (shown with a deliberate regression, P6-8's `drop:`)
+- [ ] A real second model trialled against the current one — golden ×3 each in one session,
+      SME-decided columns re-reasoned in a shadow and compared field by field, cost and the impact
+      preview — with **nothing stored changed by the trial**; then a switch and a rollback on
+      `demo_pg`, audited; after the switch the new model's scores say *uncalibrated*
+- [ ] After profiling, reasoning, golden runs and chat over seeded personal values, none of them in
+      clear in a dump of the metadata store or in Redis; the retention sweep removes what expired
+      and nothing else
+- [ ] Gaia served behind TLS on the owner's machine: sign-in, chat and review over `https`, secure
+      cookies; a plain bind beyond `127.0.0.1` refused
+- [ ] 7F: each item either done (a calibrator in use only where it beats the identity; "high" ≥ 95 %
+      with its interval; fitted category weights) or recorded *waiting for labels*, with its
+      forecast
+
+### Decisions needed
+
+| # | Decision | Needed by | Options — and the recommendation |
+|---|---|---|---|
+| P7-0 | **Phase 7's goal and cut line** | now | (a) **ready to be run by others** — the plan above; (b) scale-out first (dialects, multi-tenant, row-level need-to-know — *Later*); (c) measurement only (7A, 7B, 7F). **Recommended (a):** (c) alone leaves Gaia operable only by its builder, and (b) widens what is not yet measured. Label-dependent items (7F) are recorded, not gating, as P6-10 did |
+| P7-1 | D61 (b), the soft clarification | 7.0 | Measured: the best guess was the user's answer 8 of 27 times (30 %, 16–48 %); (a) asks for a lower bound above 90 % per kind of ambiguity, on users' clarifications. **Recommended: reject (b) for now** — keep asking, keep recording; reopen for a kind if (a) is ever met. Nothing to build |
+| P7-2 | The calibration sample | 7A | **10 meanings a week per data source**, two per score band (below 0.45, 0.45–0.60, 0.60–0.80, 0.80–0.90, 0.90 and above), all blind — about 15 minutes of an SME's week. Faster labels: 20 |
+| P7-3 | Who writes the new questions | 7B | `nge_small`: Gaia drafts, the owner corrects (P6-6, decided). **`demo_pg`: the assistant writes ~30 more** — a synthetic database it seeded and can check — each with its reference result; the owner skims them |
+| P7-4 | Where models are configured | 7D | (a) `config/gaia.yaml` only (reviewed, versioned; a switch is a deployment); (b) the admin screen only; (c) **both, as data sources are (4F)**: models from the configuration shown read-only, models added on the screen with their keys encrypted, the switch a runtime action, audited. **Recommended (c)** |
+| P7-5 | After a switch | 7D | **The old model stays configured 30 days**; its meanings, runs and labels read-only for good; re-reasoning **staged** by the worker in the run windows under the budget — not all at once — with the share done in the report; SME decisions carry over |
+| P7-6 | The job queue | 7C | (a) **a PostgreSQL job table** the worker claims with `FOR UPDATE SKIP LOCKED` — one source of truth, survives restarts; (b) `arq` on Redis (already a dependency) — but Redis is ephemeral by our own rule (*Cross-cutting concerns*). **Recommended (a)**; one worker process, concurrency per data source through D67's locks |
+| P7-7 | Default schedule and budget | 7C | refresh **nightly**, inside `profiling.window`; a **token budget per night and data source**, its default from `make evaluate-cost` (§13d, still open — until then, a full `nge_small` re-reasoning took 55 min on the host); the drift watch **weekly, three runs** (~640 k tokens, ~6 min). All configurable; off per data source on request |
+| P7-8 | The second model for 7D's acceptance | 7D | one the gateway offers besides `deepseek-flash` (the owner knows which); failing that, a local Ollama model (small, probably worse: a yardstick of known direction); a paid API (Claude, Gemini — D15) only if the owner wants it measured anyway. **Recommended: the gateway's** |
+| P7-9 | Personal data at rest, and how long results are kept | 7E | **Shapes only** for personal-data columns in profiles, evidence and raw responses; result rows of conversations **encrypted** when they hold personal data (a PII processor may reopen them) and **kept 90 days**; raw model responses **30 days**; no personal value in Redis. KVKK's actual periods are the owner's to set |
+| P7-10 | Leaving `127.0.0.1` | 7E | **A reverse proxy that terminates TLS** (Caddy or nginx, documented with an example), the API bound to `127.0.0.1` behind it; a non-local bind refused unless `GAIA_COOKIE_SECURE=true` and a proxy is declared. Certificates are the owner's infrastructure |
+
+### Estimate
+
+7.0 S (½ day + the owner's S4 run) · 7A S (1–2, then ~15 minutes a week of an SME) · 7B M (3–4 +
+the owner's hour + SQL Server runs) · 7C L (5–7) · 7D L (5–7) · 7E M (3–4) · 7F S per item, when the
+labels exist. Model calls: drafting ~30 questions, some 40 calls; a fresh golden run ~72 calls and
+~210 k tokens (×3 per comparison; about twice that once `demo_pg` has 60 questions); a model trial
+about six golden runs plus the shadow re-reasoning of ~10 tables; the drift watch ~640 k tokens a
+week.
+
+### Risks
+
+| Risk | Mitigation |
+|---|---|
+| Labels still do not come (nobody reviews weekly) | the forecast says so early; the `nge_small` SME pass is the one-off source; the gate does not wait for them (P7-0) |
+| Drafted golden questions with wrong references poison every later measurement | drafts never count until accepted; each shows its reference result; a disputed question is dropped, not guessed |
+| A scheduled run does damage nobody watches (cost, load on a target) | windows, a token budget per night, D67's locks, cancellation; the first week watched (acceptance); alerts on the home page |
+| A model trial changes stored meanings | the shadow is separate storage; a test asserts nothing stored changed |
+| After a switch some tables are the old model's and some the new's | everything is per model id already; the report gives the share per model; a comparison across the switch is flagged, like D81's meanings |
+| An embedding model with another dimension | a new vector table per embedding model, built beside the old and switched when complete |
+| Protection at rest removes something a feature needs | the inventory first; each store changed together with its feature's test; PII processors keep access through encryption, never clear text |
+| Scope creep into *Later* | the cut line; *Later* is listed |
+
+### Gate
+
+- [x] Phase 6 gate ticked *(2026-11-18, P6-10)*; A1 passed on D94 *(§35)*
+- [ ] P7-0 … P7-10 answered
+- [ ] **Approved to start Phase 7**
+- [ ] 7.0 done — D95's run (§35d) and S4 passed on SQL Server → 7A
+- [ ] 7A's sample running on the host → 7B
+- [ ] 7B's question sets accepted and run in both dialects → 7C
+- [ ] 7C's week of scheduled runs → 7D
+- [ ] 7D's trial, switch and rollback with a real second model → 7E
+- [ ] 7E's proof and TLS on the host → **Phase 7 done** (7F recorded as done or waiting for labels)
+
+---
+
+## Later — scale-out (backlog, not planned)
+
+Not scheduled. Listed so scope creep has somewhere to land. What was on Phase 7's backlog and is
+not in the plan above moved here on 2026-11-18 (P7-0).
+
+- Further dialects beyond SQL Server and PostgreSQL (MySQL, Oracle …) — the seam and the
+  per-dialect type vocabulary exist since 3.P
+- Multi-tenant access control, and row-level-security awareness in cache keys
+- *From Phase 5 (P5-5):* row-level need-to-know (a manager sees only their store), aggregate-only
+  grants, masking per role beyond the PII processor; generic OIDC/SAML beyond Entra ID (5A.2)
+- Format-preserving encryption of values sent to a remote model — only if a measurement (3C's
+  N-P-m condition) shows masking costs accuracy that FPE would recover
+- Query Store / plan-cache evidence (how applications join, filter, aggregate); **procedure alias
+  mining**
 - Known-product schema recognition (SAP, Dynamics, Logo, Netsis …)
 - Cross-database transfer of SME labels (Phase 3 stores per-column profile signatures)
-- *From Phase 6 (P6-10, 2026-11-18):*
-  - **6F** — `nge_small`'s golden set (P4-1, P6-6: Gaia drafts ~30 questions, the owner corrects
-    them), its first T-SQL golden run; golden runs *as a person* per role pattern; D61 (b), the
-    soft clarification, decided on its agreement interval. More questions are also what resolves
-    regressions smaller than 3.3 points (§45)
-  - **6D part 2** — answer levels fitted to P(right), so that "high" is right ≥ 95 % with the
-    interval to show it (the one Phase 6 criterion not met); needs P6-1's answer labels: decided
-    feedback from real use and 6F's questions
-  - **The first real calibration** (6C) — `make calibrate --apply` once P6-1's subjects exist
-    (meanings: 30 labels, 1 not right on 2026-11-18)
-  - **6G's weights** fitted once the confirmations are many more than 58; meanwhile the owner's
-    category words (*payment*, *inventory*, §32b-4)
-  - **A change of model or provider as a managed event** (Phase 6, *Raised for Phase 7*): register
-    beside the old, measure on the golden set and on SME-decided columns, compare like builds,
-    roll back, start uncalibrated
-  - `retrieval-eval` of clarified questions with vectors (D91 changed what the vectors read;
-    the retrieval set has no clarifications yet)
+- Four-eyes for grants (D70: "later, if wanted")
+- Done elsewhere, kept for the record: ~~SME review queue + UI~~ (Phase 5, R1);
+  ~~view/procedure definitions from `sys.sql_modules`~~ (Phase 3); ~~OIDC if 5A ships LDAP
+  only~~ (Entra ID, 5A.2)
 
 ---
 
@@ -3515,6 +3753,13 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D86 | new (2026-11-18, Phase 6C; P6-1, P6-3) | **Calibrators.** Per kind (meanings, answers), model and scoring version, fitted on people's labels pooled over data sources: isotonic from 150 labels with 30 not right, Platt from 75 with 15, else the identity; judged on held-out labels (five folds by subject) against the identity by ECE and Brier, with a reliability diagram; `make calibrate --apply` puts one in use only if it beats the identity on both (`--force` otherwise, logged here); at most one in use per kind, model and scoring version. A meaning calibrator in use turns stored scores into P(right) with a Wilson lower bound on `make rescore` (P6-3: accepted only with P ≥ 0.90 and bound ≥ 0.80); while none is, the stored inputs do not change. Every uncalibrated score says so on the screens |
 | D87 | new (2026-11-18, Phase 6D part 1, 6E part 2; P6-2, P6-4) | **"Was this right?" and answer confidence.** Under every answer: right, partly, wrong, with a note; right is counted, partly and wrong go to the data source's SMEs (*Answers people doubted*), who decide what the answer was and why; only the decision is a label (with golden items, which keep the confidence shown). Once an answer calibrator is in use, the confidence is P(right) — high from 0.95, medium from 0.75 (`calibration.answer_*`) — shown as a percentage to SMEs, administrators and auditors and as a level to everyone else. `make golden --regress joins-rule` runs the SQL prompt without its JOINS rule, under its own build label, for the fresh net's acceptance test; a comparison prints repairs, calls and tokens per run |
 | D88 | new (2026-11-18, Phase 6G) | **Category proposals measured.** Against what people confirmed: today's rule with each confirmation hidden in turn (leave-one-out, per basis, with the misses), and the proposals people saw before their first decision (kept or not). Both lean towards agreement (people decided with the proposal on screen) and the report says so. D77's weights are not fitted yet — not on ~50 confirmations |
+| D89 | new (2026-11-18, triage of the D88 run) — *D89–D94 added to this log with D95; each is described where it was built (Phase 6)* | **A verification says whether it verified.** `make test-host`: the §9 exports required, any skip fails the run, every run lists its skips by reason. Regression runs are never answer labels, nor the newest "build" of `--last N` / `--compare-builds`. P6-1's minimums count **subjects** (columns, golden questions) once each |
+| D90 | new (2026-11-18; P6-8, P6-9 as decided) | **The fresh net's verdict, and the chasm trap.** `make golden --regress drop:<object>` (damage known in advance); a comparison fails on a **named break** (right in every baseline run, wrong in every candidate run, ≥ 3 a side) and gives an interval that resamples runs and questions; it flags sides made hours apart. The guard refuses a chasm trap (sums or counts over two many-sides of one table); `generate_sql.v4`. `calibration.model_aliases`: renames only. An unordered result longer than `rows_to_model` is sorted before it is cut. `make auth ARGS="refusals"` |
+| D91 | new (2026-11-18) | **Both searches read the same words.** `gaia.query.ask.search_text` — the question, the answers to its clarifications, the previous question of a conversation — is what the word and the vector search read, in the chat, `make ask` and golden runs (o06 fixed) |
+| D92 | new (2026-11-18, triage of the D90 run) | **The click that looks final is final.** Every verdict of "Was this right?" is sent on the click; the note follows. Scripts executable again |
+| D93 | new (2026-11-18, triage of §31f and §32e) | **Known flaky questions are not named.** A question right and wrong within one build, among the last twelve ordinary runs before the candidate, has its flip shown and not named (P6-8's rule otherwise unchanged). `refusals` shows a D78 identity change once, as *NOTICED* |
+| D94 | new (2026-11-18, A1's first run) | **A doubt nobody reviews says so.** `reviewers` / `all_feedback`, `make feedback`; *nobody reviews this data source* under the answer and in the report; a note saved when its box is left and kept across a change of verdict (a verdict alone keeps the note) |
+| D95 | new (2026-11-18, triage of the D94 run — A1 passed) | **Who reviews is counted as sign-in counts it.** An account is a reviewer only if its effective privileges review the data source (enabled; not an administrator by any route — an administrator's SME grant is not applied, D68); a directory role while one of its members reviews through it or nobody has signed in through it yet. The `feedback` target exists, and a test checks that every `make` target README and USER_GUIDE name exists |
 
 ## Definition of done (per phase)
 
@@ -3539,22 +3784,21 @@ D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B
 *2026-11-17 (later): D75 run → §26, build D77; D77 run → §27, Phase 6 approved, build D80;
 D80 run → §28, build D83 (D81–D83).*
 
-1. ~~**Owner — the Phase 5 gate**~~ — ticked 2026-11-18.
-2. **Assistant — next: Phase 7's plan** — its backlog ordered (Phase 6's carried items first:
-   6F, 6D part 2, the first real calibration, 6G's weights, the change of model as a managed
-   event), the decisions it needs, for the owner's approval.
-3. **Owner, asynchronous:** A1 again on D94 — `make feedback` first, then "Was this right?" on
-   `demo_pg` with akaya deciding (OWNER_VERIFICATION §34c); the categories' words on
-   `demo_mssql` (§32b-4).
-4. ~~**Owner:** the Phase 5 gate's tick~~ — done 2026-11-18.
-5. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
-   evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
-6. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %
-   threshold, accepted 2026-11-16). The golden runs' best guesses were the owner's answer in
-   2–3 of 8–9, so asking stays right for now. D61 (c), definitions from an SME through the
-   glossary, is built with 5B: §24d shows it at work on g07.
-7. **Owner:** P4-1 for `nge_small` whenever ready; P4-5/6 — built on the recommendations
-   (D65), say if either should change.
+*2026-11-18: Phase 6 closed (P6-10); A1 passed on D94 (§35); D95 built; Phase 7 planned.*
+
+1. **Owner — Phase 7:** answer P7-0 … P7-10 (Phase 7, *Decisions needed*) and approve the start.
+   One word per decision is enough where the recommendation stands ("P7-0 … P7-10 as
+   recommended").
+2. **Owner, short:** D95's run (OWNER_VERIFICATION §35d) — `make feedback` and `make test-host`;
+   it closes 7.0's first line.
+3. **Owner, asynchronous — now part of Phase 7:** S4, the T-SQL guard live on `nge_small` (7.0,
+   safety); `make evaluate-cost` (§13d; it sets P7-7's budget); the `nge_small` SME pass (7A);
+   P4-1 / S8 become 7B. Optional: the categories' words on `demo_mssql` (§32b-4); the `demo_pg`
+   3C run.
+4. **Owner:** D61 (b) is now P7-1 (measured: the best guess was the user's answer 8 of 27 times,
+   30 %, 16–48 %). D61 (c), definitions from an SME through the glossary, is built with 5B:
+   §24d shows it at work on g07.
+5. **Owner:** P4-5/6 — built on the recommendations (D65); say if either should change.
 
 Resolved, kept for the record:
 
@@ -3575,3 +3819,6 @@ Resolved, kept for the record:
 | Q1–Q3 of the triage (OWNER_VERIFICATION §21e) | Answered 2026-11-17: the two runs possibly overlapped (→ D67's lock either way); `nge_small` ends in 2016 (the empty answer was right); `deepseek-flash` is `deepseek-v4.1-flash` renamed (3C compares like with like) |
 | B-P-nt's `http 400` (T4) | The old gateway's refusals; the calls succeeded on the new provider — B-P-nt complete |
 | Phase 5 approval, P5-1 … P5-12 | Approved 2026-11-17 (D68–D70) |
+| The Phase 5 gate | Ticked by the owner, 2026-11-18 |
+| A1 — "Was this right?" with the SME's decision on the host | Passed on D94 (§35: 2 yes, 1 partly, 1 no, 2 decided); D95 fixed `make feedback` and who counts as a reviewer |
+| Phase 7's plan | Written 2026-11-18 (Phase 7); the backlog not in it moved to *Later* |

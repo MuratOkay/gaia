@@ -302,6 +302,10 @@ calibrate: ## 6C/6D: fit and judge calibrators on held-out labels (ARGS="[--kind
 quality: ## 6A: the quality report over golden runs (TARGET=...; ARGS="--last 5 | --compare-builds | --import 'evaluations/golden_*'")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.quality $(TARGET_ARG) $(ARGS)
 
+.PHONY: feedback
+feedback: ## 6D: every "Was this right?" across data sources, and who reviews each (ARGS="--last 10")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.feedback $(ARGS)
+
 .PHONY: clarifications
 clarifications: ## D61: clarifications asked and how often Gaia's choice was the user's (TARGET=...)
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.clarifications $(TARGET_ARG) $(ARGS)

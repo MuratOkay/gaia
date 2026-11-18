@@ -97,33 +97,55 @@ async def give(session: AsyncSession, message_id: uuid.UUID, *, owner: str, logi
 async def reviewers(session: AsyncSession, data_source_id: uuid.UUID) -> list[str]:
     """Who may decide the doubted answers of a data source (D94): its current SME grants —
     ``acme/akaya`` for an account, ``acme/GAIA-X (role)`` for a directory role. Empty: nobody
-    will ever see them (an administrator's SME grant is not applied, D68, and is left out)."""
-    from gaia.db.models.auth import Account, Directory, DirectoryRole, Grant
+    will ever see them.
 
+    Counted as sign-in counts them (D95): an account is listed only if its *effective*
+    privileges review this data source — enabled, and not an administrator by any route, its
+    own grant or a directory role's (an administrator's SME grant is not applied, D68). A role
+    is listed while one of its members reviews through it, or while nobody has signed in
+    through it yet (its first member may)."""
+    from gaia.auth.service import effective_of
+    from gaia.db.models.auth import Account, AccountRole, Directory, DirectoryRole, Grant
+
+    ds = str(data_source_id)
     grants = (await session.scalars(select(Grant).where(
         Grant.privilege == "sme", Grant.data_source_id == data_source_id,
         Grant.revoked_at.is_(None)))).all()
-    out: list[str] = []
+    verdict: dict[uuid.UUID, bool] = {}
+
+    async def _reviews(account_id: uuid.UUID) -> bool:
+        if account_id not in verdict:
+            account = await session.get(Account, account_id)
+            verdict[account_id] = bool(
+                account is not None and account.enabled
+                and (await effective_of(session, account)).reviews(ds))
+        return verdict[account_id]
+
+    async def _label(account_id: uuid.UUID) -> str:
+        row = (await session.execute(
+            select(Account.login, Directory.name).outerjoin(
+                Directory, Directory.id == Account.directory_id)
+            .where(Account.id == account_id))).one()
+        return f"{row[1]}/{row[0]}" if row[1] else row[0]
+
+    out: set[str] = set()
     for g in grants:
         if g.account_id is not None:
-            row = (await session.execute(
-                select(Account.login, Directory.name).outerjoin(
-                    Directory, Directory.id == Account.directory_id)
-                .where(Account.id == g.account_id, Account.enabled.is_(True)))).first()
-            if row is not None:
-                admin = await session.scalar(select(func.count()).select_from(Grant).where(
-                    Grant.account_id == g.account_id, Grant.privilege == "admin",
-                    Grant.revoked_at.is_(None)))
-                if not admin:
-                    out.append(f"{row[1]}/{row[0]}" if row[1] else row[0])
+            if await _reviews(g.account_id):
+                out.add(await _label(g.account_id))
         elif g.directory_role_id is not None:
             row = (await session.execute(
                 select(DirectoryRole.name, Directory.name).join(
                     Directory, Directory.id == DirectoryRole.directory_id)
-                .where(DirectoryRole.id == g.directory_role_id))).first()
-            if row is not None:
-                out.append(f"{row[1]}/{row[0]} (role)")
-    return sorted(set(out))
+                .where(DirectoryRole.id == g.directory_role_id,
+                       DirectoryRole.gone_at.is_(None)))).first()
+            if row is None:
+                continue
+            members = (await session.scalars(select(AccountRole.account_id).where(
+                AccountRole.directory_role_id == g.directory_role_id))).all()
+            if not members or any([await _reviews(a) for a in members]):
+                out.add(f"{row[1]}/{row[0]} (role)")
+    return sorted(out)
 
 
 async def all_feedback(session: AsyncSession, *, limit: int = 50) -> list[dict[str, Any]]:

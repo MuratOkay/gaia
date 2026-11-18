@@ -10,19 +10,17 @@ Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status (2026-11-18): **Phases 0–6 complete** (3C accepted, P6-0; Phase 5 ticked by the owner;
-> Phase 6 by P6-10). Phase 6 — evaluation and calibration — build **D94**: one evaluation store and report (`make
-> quality`, the *Evaluation* page), labels from people with the LLM judge measured against them
-> (κ 0.65), calibrators used only when they beat the identity (`make calibrate`), "Was this
-> right?" decided by the data source's SME, two regression nets (replayed in every `make test`;
-> fresh over three runs, with deliberate regressions of known damage — `--regress drop:<object>`
-> — named breaks, flaky questions recognised), category proposals measured. On the host the
-> golden set now runs 94 % correct (90–97 %), o06 fixed (D91). "High" confidence right ≥ 95 % is
-> not yet measurable: that, `nge_small`'s golden set and the first real calibration go to Phase 7.
-> One host check is open: "Was this right?" with the SME's decision (A1; `make feedback` shows
-> every doubt and who reviews it).
+> Phase 6 by P6-10); build **D95**. Phase 6 — evaluation and calibration: one evaluation store and
+> report (`make quality`, the *Evaluation* page), labels from people with the LLM judge measured
+> against them (κ 0.65), calibrators used only when they beat the identity (`make calibrate`), "Was
+> this right?" decided by the data source's SME — **verified on the host end to end** (A1; `make
+> feedback` shows every doubt and who reviews it) — two regression nets (replayed in every `make
+> test`; fresh over three runs, with deliberate regressions of known damage), category proposals
+> measured. On the host the golden set runs 94 % correct (90–97 %). **Phase 7 — ready to be run
+> by others — is planned and waits for the owner's decisions (PHASES, P7-0 … P7-10).**
 > Send verification outputs only through `make share`. PostgreSQL is the main dialect (D52); SQL
 > Server is verified asynchronously (D56). What to run on your machine:
-> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§34: A1 again on D94).
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§35d: two commands on D95).
 > See [PHASES.md](PHASES.md).
 ---
 
