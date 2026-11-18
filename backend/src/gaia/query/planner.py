@@ -47,8 +47,9 @@ DIALECT_NAMES = {"postgres": "PostgreSQL", "postgresql": "PostgreSQL",
 
 
 # prompt generation of generate_sql: v1 no best guess; v2 best guess (D61); v3 follow-up
-# questions read with the conversation so far (Phase 4E)
-GENERATION_MAJOR = 3
+# questions read with the conversation so far (Phase 4E); v4 the JOINS rule names the chasm
+# trap instead of advising it ("or go through the parent table", D90)
+GENERATION_MAJOR = 4
 AMBIGUITY_KINDS = ("measure", "period", "population", "entity", "ranking", "scope", "other")
 
 

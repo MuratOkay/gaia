@@ -26,9 +26,9 @@ import threading
 from collections import defaultdict
 from typing import Any
 
-__all__ = ["OUTCOME_FIELDS", "REGRESSIONS", "REGRESSION_MARK", "FingerprintingLLM",
-           "PromptRegression", "differences", "fingerprint", "is_regression", "question_of",
-           "regressed_build", "snapshot"]
+__all__ = ["DROP", "OUTCOME_FIELDS", "REGRESSIONS", "REGRESSION_MARK", "FingerprintingLLM",
+           "PromptRegression", "differences", "drop_object", "expected_breaks", "fingerprint",
+           "is_regression", "parse_regression", "question_of", "regressed_build", "snapshot"]
 
 OUTCOME_FIELDS = ("first_status", "final_status", "correct", "correct_first", "executable",
                   "best_guess", "repairs", "calls", "reason")
@@ -80,10 +80,63 @@ def question_of(messages) -> tuple[str, str]:
 
 
 # Deliberate regressions for the fresh net's acceptance test (6E part 2; PHASES, Phase 6
-# acceptance): a golden run with ``--regress NAME`` sends the SQL prompt without this line.
+# acceptance): a golden run with ``--regress NAME`` sends the SQL prompt without this line …
 REGRESSIONS = {
     "joins-rule": "- Join only as listed under JOINS.",
 }
+# … or, with ``--regress drop:<schema.object>`` (P6-8), answers without one object: it is in no
+# context and the guard does not know it. Which questions need it is written in the golden
+# set (``objects``), so the damage is known before the run — the yardstick P6-8 asks for.
+DROP = "drop:"
+
+
+def parse_regression(name: str) -> tuple[str, str]:
+    """(``prompt``, the rule's line) or (``drop``, the object's key)."""
+    if name in REGRESSIONS:
+        return "prompt", REGRESSIONS[name]
+    if name.startswith(DROP) and "." in name[len(DROP):]:
+        return "drop", name[len(DROP):].strip()
+    raise ValueError(f"unknown regression {name!r}: {', '.join(REGRESSIONS)} or "
+                     f"{DROP}<schema.object>")
+
+
+def drop_object(index, key: str):
+    """``index`` without one object — in no context, unknown to the guard, out of every join
+    and of the glossary entries that name it; nothing else changes."""
+    from dataclasses import replace
+
+    from gaia.query.catalog import GuardCatalog
+
+    obj = index.obj(key)
+    if obj is None:
+        raise ValueError(f"{key} is not an object of {index.data_source}")
+    real = next(k for k, o in index.objects.items() if o is obj)
+    low = real.lower()
+    schema, _, name = real.partition(".")
+    cat = index.catalog
+
+    def kept(column_key: str) -> bool:
+        return not column_key.lower().startswith(low + ".")
+
+    objects = {sch: {o: cols for o, cols in objs.items()
+                     if not (sch.lower() == schema.lower() and o.lower() == name.lower())}
+               for sch, objs in cat.objects.items()}
+    catalog = GuardCatalog(cat.dialect, cat.database, {k: v for k, v in objects.items() if v},
+                           [e for e in cat.edges if kept(e.left) and kept(e.right)],
+                           snapshot_id=cat.snapshot_id,
+                           unique={u for u in cat.unique if kept(u)})
+    catalog.show_only = {c for c in cat.show_only if kept(c)}
+    pattern = re.compile(rf"(?<![\w.]){re.escape(low)}(?![\w])")
+    return replace(index, objects={k: o for k, o in index.objects.items() if k != real},
+                   catalog=catalog,
+                   glossary=[(t, d, syn) for t, d, syn in index.glossary
+                             if not pattern.search(d.lower())])
+
+
+def expected_breaks(golden, key: str) -> list[str]:
+    """The scored questions of a golden set that need ``key`` (its ``objects``)."""
+    return sorted(q.id for q in golden.questions
+                  if q.has_reference and any(o.lower() == key.lower() for o in q.objects))
 # A run made with ``--regress`` is recorded under ``<build>`` + this + the regression's name. Such
 # a run measures the net, not a build: reports leave it out unless it is the comparison asked
 # for, and it is never a label for calibration (D89, OWNER_VERIFICATION §30).

@@ -233,6 +233,33 @@ async def test_sign_in_needs_a_gaia_role_and_says_nothing_more(world):
 
 
 @pytest.mark.asyncio
+async def test_the_operator_reads_why_sign_ins_were_refused(world, monkeypatch, capsys):
+    """D90 (OWNER_VERIFICATION §31): "none of the accounts passes authentication" — the screen
+    rightly says only "sign-in failed"; ``make auth ARGS="refusals"`` says why, from the audit."""
+    import argparse
+    import os
+
+    from gaia.db.engine import dispose_engine
+    from gaia.tools import auth as auth_tool
+
+    svc, _clock, _net, factory = world
+    await _ready(svc, factory)
+    for login, password in [("akaya", PASSWORDS["akaya"]), ("nobody", "x" * 12)]:
+        with pytest.raises(SignInRefused):
+            await svc.sign_in(login, password)
+    await svc.grant("user", actor="admin1", role=("acme", "GAIA-Finance"))
+    await svc.sign_in("akaya", PASSWORDS["akaya"])
+    monkeypatch.setenv("GAIA_METADATA_URL", os.environ["GAIA_TEST_DATABASE_URL"])
+    await dispose_engine()
+    assert await auth_tool._run(argparse.Namespace(command="refusals", last=10)) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert [line.split()[2] for line in out] == ["akaya", "nobody", "akaya"]
+    assert "REFUSED — no Gaia role (no grant to the account or its directory roles)" in out[0]
+    assert "REFUSED — wrong password or unknown login" in out[1]
+    assert out[2].endswith("signed in")
+
+
+@pytest.mark.asyncio
 async def test_roles_permissions_and_separation_of_duties(world):
     svc, _clock, _net, factory = world
     await _ready(svc, factory)

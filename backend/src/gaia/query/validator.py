@@ -28,7 +28,10 @@ Checks, in order (PHASES, Phase 4 "Validation rules (non-negotiable)"):
    through a shared key — **and one side of it is unique** (a key, or a derived
    table grouped by that column), or the join multiplies rows (the fan trap).
    Joins without a condition (comma, ``CROSS``) and ``NATURAL`` joins are not
-   backed. ``query.unverified_joins: warn`` downgrades this one rule;
+   backed. Nor is the **chasm trap** (D90): two tables that each hold many rows per
+   row of a third, joined through it in one query whose sums or counts read them
+   (order lines and payments through their order) — each join is backed, yet the
+   rows multiply. ``query.unverified_joins: warn`` downgrades this one rule;
 8. a row cap: ``LIMIT`` / ``TOP`` / ``FETCH`` is added, or lowered to the cap;
 9. the rendered statement is parsed again and checks 1–3 and 6 re-run on it:
    what executes is exactly what passed.
@@ -96,13 +99,13 @@ class JoinCheck:
     left: str | None  # schema.table.column (resolved through CTEs and subqueries)
     right: str | None
     # fk | hint | sme (…_via_view) | same_column | shared_key | generated — verified;
-    # unverified | fan_out | cross | natural — not
+    # unverified | fan_out | cross | natural | chasm — not
     kind: str
     sql: str  # the join as written
 
     @property
     def verified(self) -> bool:
-        return self.kind not in ("unverified", "fan_out", "cross", "natural")
+        return self.kind not in ("unverified", "fan_out", "cross", "natural", "chasm")
 
 
 @dataclass
@@ -122,6 +125,9 @@ class GuardResult:
     # need-to-know (5C): what a ``forbidden`` statement reached for — for the audit only,
     # never for the person who asked
     forbidden: list[str] = field(default_factory=list)
+    # whether the outermost query orders its rows (D90: an unordered result longer than the
+    # narrative may see is sorted before it is cut, so every server shows the same rows)
+    ordered: bool = False
 
     @property
     def ok(self) -> bool:
@@ -193,6 +199,7 @@ class SqlGuardBase:
             if result.errors:
                 return result
         result.outputs = _outputs(qualified)
+        result.ordered = tree.args.get("order") is not None
         tree, result.row_limit, result.limit_injected = self.apply_limit(tree)
         rendered = tree.sql(dialect=self.read, pretty=True)
         # 9. what executes is what passed: parse the rendering and check it again
@@ -377,8 +384,12 @@ class SqlGuardBase:
             "cross": "a join without a condition (comma or CROSS JOIN)",
             "natural": "a NATURAL join (its columns are implicit)",
             "fan_out": "neither side of this join is unique, so it multiplies rows (a fan "
-                       "trap): aggregate one side by the join column first, or join "
-                       "through the parent table",
+                       "trap): aggregate one side by the join column first",
+            "chasm": f"{check.left} and {check.right} both hold many rows per row of the "
+                     "table they are joined through, so every row of one is repeated for "
+                     "each row of the other and sums and counts grow (a chasm trap): "
+                     "aggregate each of them by that key in a WITH first, then join the "
+                     "results",
         }.get(check.kind, "a join condition with no known join path "
                           "(declared FK, tested hint, SME hint or view lineage)")
         violation = Violation("unverified_join", f"{message}: {check.sql[:120]}")
@@ -387,7 +398,8 @@ class SqlGuardBase:
 
     def _check_joins(self, qualified: exp.Expression, result: GuardResult) -> None:
         """Every join of every scope (in warn mode a NATURAL join is listed twice: as
-        written, and as the explicit join the qualifier made of it)."""
+        written, and as the explicit join the qualifier made of it); then, per scope, the
+        chasm trap."""
         for scope in traverse_scope(qualified):
             select = scope.expression
             if not isinstance(select, exp.Select):
@@ -398,6 +410,43 @@ class SqlGuardBase:
                     result.joins.append(check)
                 else:
                     self._unverified(result, check)
+            chasm = self._chasm(scope, select)
+            if chasm is not None:
+                self._unverified(result, chasm)
+
+    def _chasm(self, scope: Scope, select: exp.Select) -> JoinCheck | None:
+        """Two different sources of one scope each joined from their *many* side to the same
+        source — and a sum, average or plain count reading the scope's rows (here or in a
+        query around it). MIN, MAX and COUNT(DISTINCT …) are not changed by repeated rows."""
+        parents: dict[str, list[tuple[str, str]]] = {}  # one-side alias -> (many alias, text)
+        for join in select.args.get("joins") or []:
+            on = join.args.get("on")
+            if on is None:
+                continue
+            for eq in on.find_all(exp.EQ):
+                a, b = eq.this, eq.expression
+                if not (isinstance(a, exp.Column) and isinstance(b, exp.Column)):
+                    continue
+                (left, lu), (right, ru) = _resolve(scope, a), _resolve(scope, b)
+                if not left or not right or GENERATED in (left, right):
+                    continue
+                if not self.catalog.join_kind(left, right):
+                    continue
+                left_one = lu or self.catalog.is_unique(left)
+                right_one = ru or self.catalog.is_unique(right)
+                if left_one == right_one:
+                    continue  # one to one, or a fan-out (refused on its own)
+                one, many = (a, b) if left_one else (b, a)
+                if one.table == many.table:
+                    continue
+                label = _source_label(scope, many.table)
+                parents.setdefault(one.table, [])
+                if all(m != many.table for m, _l in parents[one.table]):
+                    parents[one.table].append((many.table, label))
+                    if len(parents[one.table]) >= 2 and _aggregates_rows(scope):
+                        (_m1, first), (_m2, second) = parents[one.table][:2]
+                        return JoinCheck(first, second, "chasm", join.sql(self.read))
+        return None
 
     def _join(self, scope: Scope, join: exp.Join) -> JoinCheck:
         text = join.sql(self.read)
@@ -426,6 +475,38 @@ class SqlGuardBase:
 
 
 GENERATED = "<generated>"  # a column of a table function or a VALUES list
+
+# aggregates that repeated rows change (the chasm trap); MIN, MAX and COUNT(DISTINCT) do not
+_ROW_SENSITIVE = (exp.Sum, exp.Avg, exp.Count, exp.Stddev, exp.StddevPop, exp.StddevSamp,
+                  exp.Variance, exp.VariancePop)
+
+
+def _row_sensitive(select: exp.Expression) -> bool:
+    for agg in select.find_all(*_ROW_SENSITIVE):
+        if isinstance(agg, exp.Count) and isinstance(agg.this, exp.Distinct):
+            continue
+        # only this query's own aggregates, not those of a subquery inside it
+        if agg.find_ancestor(exp.Select) is select:
+            return True
+    return False
+
+
+def _aggregates_rows(scope: Scope) -> bool:
+    """Whether the rows of ``scope`` feed a sum, average or count — its own, or of a query
+    it is a derived table or CTE of."""
+    current: Scope | None = scope
+    while current is not None:
+        if isinstance(current.expression, exp.Select) and _row_sensitive(current.expression):
+            return True
+        current = current.parent
+    return False
+
+
+def _source_label(scope: Scope, alias: str) -> str:
+    source = scope.sources.get(alias)
+    if isinstance(source, exp.Table) and isinstance(source.this, exp.Identifier):
+        return f"{source.db}.{source.name}"
+    return alias
 
 
 def _stars(tree: exp.Expression, read: str) -> list[Violation]:

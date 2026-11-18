@@ -377,7 +377,8 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
         assumptions=plan.assumptions, uncertain=answer.uncertain, columns=answer.columns,
         rows=answer.rows, hidden=hidden, capped=answer.row_cap_reached,
         rows_to_model=settings.rows_to_model, thinking=settings.thinking_answer,
-        max_tokens=settings.max_tokens, temperature=settings.temperature)
+        max_tokens=settings.max_tokens, temperature=settings.temperature,
+        ordered=final.guard.ordered)
     answer.calls += narr_calls
     if error:
         answer.notes.append(f"narrative written without the model: {error}")

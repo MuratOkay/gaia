@@ -248,6 +248,11 @@ calibration:
   # 6D (P6-2): an answer is "high" when P(right) >= 0.95, "medium" from 0.75
   answer_high: 0.95
   answer_medium: 0.75
+  # P6-9 (2026-11-18): a provider's renames — labels under an earlier name count for the
+  # model as it is called now. Only a rename: a different model is never an alias.
+  model_aliases:
+    deepseek-v4.1-flash: deepseek-flash            # renamed on 2026-11-16 (§21f, Q3)
+    deepseek/deepseek-v4.1-flash: deepseek-flash   # the same, with the gateway's provider prefix
 
 retrieval:
   # Phase 4B: what a question's schema context may hold (see gaia.query.retrieval).

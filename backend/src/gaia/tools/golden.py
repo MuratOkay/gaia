@@ -6,6 +6,7 @@
     make golden TARGET=demo_pg ARGS="… --replay DIR"          # answers from files (tests)
     make golden TARGET=demo_pg ARGS="… --resume"              # continue an interrupted run
     make golden TARGET=demo_pg ARGS="… --regress joins-rule"  # 6E: a deliberately worse prompt
+    make golden TARGET=demo_pg ARGS="… --regress drop:store.stores"  # P6-8: without one object
 
 Every question goes through the whole pipeline (``gaia.query.golden_run``); the
 references run through the same guard and executor. Writes ``<out>/results.json``
@@ -21,7 +22,9 @@ D61); ``--no-record`` skips all recording.
 ``--regress NAME`` (6E part 2, D87) sends the SQL prompt without one rule and records the run
 under the build label ``<build> + deliberate regression: NAME`` — three such runs against three
 of the build itself (``make quality ARGS="--compare-builds"``) are the fresh net's acceptance
-test: does it catch a worse prompt?
+test: does it catch a worse prompt? ``--regress drop:<schema.object>`` (P6-8, D90) answers
+without one object instead — the questions that need it (the golden set's ``objects``) are
+known before the run, so the comparison can say how many of them it named as broken.
 """
 
 from __future__ import annotations
@@ -83,14 +86,36 @@ async def _run(args: argparse.Namespace) -> int:
     llm = RecordingLLMClient(llm_client(settings, args.replay), out / "llm")
     build = gaia.BUILD
     model_client = llm
-    if args.regress:  # 6E part 2: a deliberately worse prompt, for the fresh net's test
-        from gaia.evaluation.net import REGRESSION_MARK, PromptRegression
+    dropped: str | None = None
+    expected: list[str] = []
+    if args.regress:  # 6E part 2, P6-8: a deliberately worse run, for the fresh net's test
+        from gaia.evaluation.net import (
+            REGRESSION_MARK,
+            PromptRegression,
+            expected_breaks,
+            parse_regression,
+        )
 
-        model_client = PromptRegression(llm, args.regress)
+        try:
+            kind, what = parse_regression(args.regress)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
         build = f"{gaia.BUILD}{REGRESSION_MARK}{args.regress}"
-        print(f"DELIBERATE REGRESSION ({args.regress}): the SQL prompt goes without that rule. "
-              "This run measures whether three fresh runs catch a worse prompt (6E); it is "
-              "recorded under its own build label and says nothing about the build itself.")
+        if kind == "prompt":
+            model_client = PromptRegression(llm, args.regress)
+            print(f"DELIBERATE REGRESSION ({args.regress}): the SQL prompt goes without that "
+                  "rule. This run measures whether three fresh runs catch a worse prompt (6E); "
+                  "it is recorded under its own build label and says nothing about the build "
+                  "itself.")
+        else:
+            dropped = what
+            expected = expected_breaks(golden, what)
+            print(f"DELIBERATE REGRESSION ({args.regress}): every question is answered without "
+                  f"{what} — in no context, unknown to the guard. Expected to break (they need "
+                  f"it): {', '.join(expected) or 'none'} ({len(expected)} question(s)). This run "
+                  "measures whether three fresh runs catch it (6E, P6-8); it is recorded under "
+                  "its own build label and says nothing about the build itself.")
     factory = async_sessionmaker(get_engine(), expire_on_commit=False)
     try:
         async with factory() as session:
@@ -102,6 +127,17 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"as {policy.label}: {len(policy.readable)} object(s) readable"
                       + ("" if policy.pii_processor else ", personal data masked"))
             index = restrict_index(full_index, policy)
+            undropped = index
+            guard_catalog = full_index.catalog
+            if dropped:  # P6-8: the object is gone for the context and the guard alike
+                from gaia.evaluation.net import drop_object
+
+                try:
+                    index = drop_object(index, dropped)
+                except ValueError as exc:
+                    print(str(exc), file=sys.stderr)
+                    return 2
+                guard_catalog = index.catalog
             meanings = await meanings_state(session, label)  # what it answers with (D81)
             hits: dict[str, object] = {}
             if not args.no_vectors:
@@ -118,7 +154,10 @@ async def _run(args: argparse.Namespace) -> int:
                     embedder.close()
                 for n in sorted(set(notes)):
                     print(f"note: {n}")
-            guard = build_access_guard(settings, label, index, full_index.catalog, policy)
+            guard = build_access_guard(settings, label, index, guard_catalog, policy)
+            reference_guard = (build_access_guard(settings, label, undropped,
+                                                  full_index.catalog, policy)
+                               if dropped else None)
             calibrator = await answer_calibrator_for(session, settings)  # 6D: as the chat
 
             def progress(o) -> None:
@@ -131,7 +170,8 @@ async def _run(args: argparse.Namespace) -> int:
                 llm=model_client, settings=ask_settings(settings, label, calibrator),
                 retrieval=settings.retrieval.to_settings(),
                 vectors=(lambda q: hits.get(q)) if hits else None, only=only,
-                workers=args.workers or settings.llm.concurrency, progress=progress)
+                workers=args.workers or settings.llm.concurrency, progress=progress,
+                reference_guard=reference_guard)
             if not args.no_record:
                 store = QueryStore(session)
                 for o in outcomes:
@@ -148,6 +188,9 @@ async def _run(args: argparse.Namespace) -> int:
                                 await store.answer_clarification(row, q.clarified, None)
                 await session.commit()
             summary = summarise(outcomes)
+            if args.regress:
+                summary["regression"] = {"name": args.regress,
+                                         "expected": expected if dropped else None}
             model = getattr(llm.inner, "model", None) or settings.llm.model
             run = None
             if not args.no_record:  # the evaluation store (6A, D80)
@@ -202,7 +245,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--as", dest="as_login", metavar="LOGIN",
                    help="answer as this person would be answered in the chat (need-to-know)")
     p.add_argument("--directory", help="with --as: the person's directory")
-    p.add_argument("--regress", choices=["joins-rule"],
+    p.add_argument("--regress", metavar="joins-rule|drop:SCHEMA.OBJECT",
                    help="6E: send the SQL prompt without this rule (a deliberate regression, "
                         "recorded under its own build label)")
     return asyncio.run(_run(p.parse_args(argv)))

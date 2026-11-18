@@ -35,20 +35,27 @@ __all__ = ["ANSWER_SCORING", "answer_points", "in_use", "meaning_points", "put_i
 ANSWER_SCORING = "confidence-v1"  # the heuristic of gaia.query.ask.confidence
 
 
-def meaning_points(labels: Sequence[HumanLabel]) -> dict[tuple[str, str], list[Point]]:
-    """Production labels by (model, scoring version)."""
+def _name(model: str | None, aliases: dict[str, str] | None) -> str | None:
+    """The model's name now (P6-9: a provider's rename, ``calibration.model_aliases``)."""
+    return (aliases or {}).get(model, model) if model else model
+
+
+def meaning_points(labels: Sequence[HumanLabel], aliases: dict[str, str] | None = None
+                   ) -> dict[tuple[str, str], list[Point]]:
+    """Production labels by (model — by its name now —, scoring version)."""
     out: dict[tuple[str, str], list[Point]] = defaultdict(list)
     for x in labels:
         if x.production and x.model and x.scoring:
-            out[(x.model, x.scoring)].append(Point(x.raw_score, VALUE[x.verdict],
-                                                   f"{x.data_source}:{x.column}"))
+            out[(_name(x.model, aliases), x.scoring)].append(
+                Point(x.raw_score, VALUE[x.verdict], f"{x.data_source}:{x.column}"))
     return dict(out)
 
 
-async def answer_points(session: AsyncSession) -> dict[tuple[str, str], list[Point]]:
-    """Answers scored against a reference or decided by an SME, by (model, scoring). A golden
-    run made with a deliberately worse prompt (``--regress``, 6E) is no label: it answered
-    as Gaia never answers anyone (D89)."""
+async def answer_points(session: AsyncSession, aliases: dict[str, str] | None = None
+                        ) -> dict[tuple[str, str], list[Point]]:
+    """Answers scored against a reference or decided by an SME, by (model — by its name now
+    —, scoring). A golden run made with a deliberately worse prompt (``--regress``, 6E) is no
+    label: it answered as Gaia never answers anyone (D89)."""
     out: dict[tuple[str, str], list[Point]] = defaultdict(list)
     rows = (await session.execute(
         select(EvaluationItem, EvaluationRun.model, EvaluationRun.data_source,
@@ -62,7 +69,7 @@ async def answer_points(session: AsyncSession) -> dict[tuple[str, str], list[Poi
         conf = (item.detail or {}).get("confidence") or {}
         if conf.get("score") is None or not model:
             continue
-        out[(model, ANSWER_SCORING)].append(Point(
+        out[(_name(model, aliases), ANSWER_SCORING)].append(Point(
             float(conf["score"]), 1.0 if item.correct else 0.0, f"{ds}:{item.item_key}"))
     from gaia.db.models.chat import Feedback, Message, QueryRun
 
@@ -75,7 +82,7 @@ async def answer_points(session: AsyncSession) -> dict[tuple[str, str], list[Poi
         conf = (payload or {}).get("confidence") or {}
         if conf.get("score") is None or not model:
             continue
-        out[(model, ANSWER_SCORING)].append(Point(
+        out[(_name(model, aliases), ANSWER_SCORING)].append(Point(
             float(conf["score"]), VALUE[fb.decision], f"feedback:{fb.message_id}"))
     return dict(out)
 

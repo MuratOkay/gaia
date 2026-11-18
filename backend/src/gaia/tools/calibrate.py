@@ -43,14 +43,15 @@ from gaia.evaluation.human_labels import all_labels
 from gaia.evaluation.sections import trial_lines
 
 
-async def _data_sources_of(session, model: str) -> list[str]:
+async def _data_sources_of(session, model: str, earlier: list[str] | None = None) -> list[str]:
     from gaia.db.models.catalog import DataSource, TableRecord
     from gaia.db.models.semantics import ColumnSemantic
 
     rows = await session.scalars(
         select(DataSource.name).join(TableRecord, TableRecord.data_source_id == DataSource.id)
         .join(ColumnSemantic, ColumnSemantic.table_id == TableRecord.id)
-        .where(ColumnSemantic.model == model, ColumnSemantic.is_current.is_(True)).distinct())
+        .where(ColumnSemantic.model.in_([model, *(earlier or [])]),
+               ColumnSemantic.is_current.is_(True)).distinct())
     return sorted(rows.all())
 
 
@@ -83,11 +84,12 @@ async def _run(args: argparse.Namespace) -> int:
                           f"{held.get('brier')}  fitted {r.fitted_at:%Y-%m-%d %H:%M}")
                 return 0
             groups = []
+            aliases = settings.calibration.model_aliases  # P6-9: a provider's renames
             if args.kind in (None, "meaning"):
-                for key, pts in meaning_points(await all_labels(s)).items():
+                for key, pts in meaning_points(await all_labels(s), aliases).items():
                     groups.append(("meaning", key, pts))
             if args.kind in (None, "answer"):
-                for key, pts in (await answer_points(s)).items():
+                for key, pts in (await answer_points(s, aliases)).items():
                     groups.append(("answer", key, pts))
             if args.model:
                 groups = [g for g in groups if g[1][0] == args.model]
@@ -104,8 +106,9 @@ async def _run(args: argparse.Namespace) -> int:
             code = 0
             for kind, (model, scoring), points in sorted(groups, key=lambda g: (g[0], g[1])):
                 t = trial(points, settings.calibration, args.method)
-                for line in trial_lines(kind, model, scoring, t, used.get((kind, model,
-                                                                           scoring))):
+                for line in trial_lines(kind, model, scoring, t,
+                                        used.get((kind, model, scoring)),
+                                        settings.calibration.earlier_names(model)):
                     print(line)
                 for line in _reliability(t):
                     print(line)
@@ -135,7 +138,8 @@ async def _run(args: argparse.Namespace) -> int:
                 await put_in_use(s, row, kind=kind, model=model, scoring=scoring)
                 print(f"  → in use: {row.version}")
                 if kind == "meaning":
-                    for ds in await _data_sources_of(s, model):
+                    for ds in await _data_sources_of(
+                            s, model, settings.calibration.earlier_names(model)):
                         print(f"     now: make rescore TARGET={ds}   (no model call)")
                 else:
                     print("     answers use it from the next question on")

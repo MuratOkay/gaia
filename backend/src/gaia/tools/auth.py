@@ -22,6 +22,7 @@ Directories, roles and grants (the admin screen does the same):
     make auth ARGS="account renew acme/akaya"      # D78: someone else — their own grants revoked
     make auth ARGS="account relink acme --all"     # a test domain provisioned again
     make auth ARGS="audit-check"                     # is the audit chain intact; its head
+    make auth ARGS="refusals [--last 30]"            # why sign-ins were refused (D90)
 
 A password is never an argument (it would stay in the shell history): it is prompted
 for, or read from the environment variable named by ``--password-env``. The actor in the
@@ -213,6 +214,25 @@ async def _run(args: argparse.Namespace) -> int:
                       + (f"; {d['grants_revoked']} own grant(s) revoked"
                          if d["action"] == "renew" else ""))
             return 0
+        if args.command == "refusals":  # D90: why nobody could sign in (the screen won't say)
+            from sqlalchemy import select
+
+            from gaia.db.models.audit import AuthEvent
+
+            async with svc.factory() as s:
+                rows = (await s.scalars(select(AuthEvent).where(AuthEvent.action.in_(
+                    ("sign_in_refused", "identity_changed", "sign_in")))
+                    .order_by(AuthEvent.seq.desc()).limit(args.last))).all()
+            if not rows:
+                print("no sign-in recorded yet")
+            for e in reversed(rows):
+                what = {"sign_in": "signed in", "identity_changed": "REFUSED — the directory "
+                        "object changed (D78: make auth ARGS=\"account relink DIR/LOGIN\" if "
+                        "it is the same person)"}.get(e.action)
+                reason = what or f"REFUSED — {(e.detail or {}).get('reason', '?')}"
+                print(f"  {e.at:%Y-%m-%d %H:%M:%S}  {e.actor or '—':<24} "
+                      f"{e.subject or '—':<10} {reason}")
+            return 0
         if args.command == "audit-check":
             async with svc.factory() as s:
                 check = await audit.verify_chain(s)
@@ -273,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--all", action="store_true", help="every account of the directory waiting")
     s.add_argument("--note")
     sub.add_parser("audit-check", help="verify the hash-chained audit")
+    s = sub.add_parser("refusals", help="the last sign-ins and refusals, with the reason the "
+                                        "sign-in screen does not show")
+    s.add_argument("--last", type=int, default=30)
 
     args = parser.parse_args(argv)
     if args.command == "directory" and args.action not in ("list",) and not args.name:

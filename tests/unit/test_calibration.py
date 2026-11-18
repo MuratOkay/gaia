@@ -153,3 +153,30 @@ def test_repeated_golden_runs_count_as_their_questions():
     # and enough distinct questions are enough, however often each was asked
     many = [Point(p.score, p.y, f"{p.subject}") for p in _labels(100, lambda s: s * s, seed=9)]
     assert choose_method(many + many, CFG)[0] == "platt"
+
+
+def test_a_renamed_model_keeps_its_labels():
+    """P6-9 (2026-11-18): the provider renamed ``deepseek-v4.1-flash`` to ``deepseek-flash``
+    (§21f) — labels under the earlier name count for the model as it is called now."""
+    from gaia.evaluation.calibrators import meaning_points
+    from gaia.evaluation.human_labels import HumanLabel
+
+    def label(model: str, column: str) -> HumanLabel:
+        return HumanLabel(data_source="d", column=column, verdict="right", action="accept",
+                          changed=[], reviewer=None, decided_at=None, stale=False,
+                          blind=False, machine_version=1, model=model, prompt_version="p",
+                          scoring="heuristic-v2", raw_score=0.7, calibrated_score=0.7)
+
+    labels = [label("deepseek-flash", "t.a"), label("deepseek-v4.1-flash", "t.b"),
+              label("deepseek/deepseek-v4.1-flash", "t.c"), label("other-model", "t.d")]
+    aliases = {"deepseek-v4.1-flash": "deepseek-flash",
+               "deepseek/deepseek-v4.1-flash": "deepseek-flash"}
+    pooled = meaning_points(labels, aliases)
+    assert {k: len(v) for k, v in pooled.items()} == {
+        ("deepseek-flash", "heuristic-v2"): 3, ("other-model", "heuristic-v2"): 1}
+    assert len(meaning_points(labels)) == 4  # without aliases, each name on its own
+    cfg = CalibrationConfig(model_aliases=aliases)
+    assert cfg.canonical("deepseek-v4.1-flash") == "deepseek-flash"
+    assert cfg.canonical("deepseek-flash") == "deepseek-flash" and cfg.canonical(None) is None
+    assert cfg.earlier_names("deepseek-flash") == ["deepseek-v4.1-flash",
+                                                   "deepseek/deepseek-v4.1-flash"]

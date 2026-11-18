@@ -345,11 +345,16 @@ def test_the_sql_prompt_is_build_d65s_word_for_word():
     """D72: the golden run gave 97 % on D65 and 90 % three times after D68 added a rule about
     clarifications (the misses mostly answers after a clarification). The prompt and the
     re-ask block are D65's again, byte for byte, until fresh runs measure the difference —
-    a change to either must be a decision, not an accident."""
+    a change to either must be a decision, not an accident.
+
+    D90 made one (P6-8): v4 is v3 — D65's text — with its JOINS rule naming the chasm trap
+    instead of advising it ("or go through the parent table", OWNER_VERIFICATION §30b-8).
+    Nothing else may differ."""
     import hashlib
     from datetime import date
 
-    from gaia.query.planner import generation_messages
+    from gaia.query.planner import GENERATION_MAJOR, generation_messages
+    from gaia.query.prompts import query_prompt
     from gaia.query.retrieval import SchemaContext
 
     ctx = SchemaContext(question="q", data_source="demo_pg", dialect="postgres", objects=[],
@@ -358,6 +363,44 @@ def test_the_sql_prompt_is_build_d65s_word_for_word():
     again = generation_messages(ctx, "Top 5 shops", date(2026, 1, 15),
                                 clarifications=[("Best by what?", "order amount")])
     assert again[0].content == first[0].content
-    assert hashlib.sha256(first[0].content.encode()).hexdigest() == "7454f08cc3db34a6a3f78ac12d12cc36722b16abeee75920a3bad10930288036"
+    v3 = query_prompt("generate_sql", 3).text
+    v3_sha = "7454f08cc3db34a6a3f78ac12d12cc36722b16abeee75920a3bad10930288036"
+    assert hashlib.sha256(v3.encode()).hexdigest() == v3_sha
+    assert GENERATION_MAJOR == 4 and first[0].content == query_prompt("generate_sql", 4).text
+    changed = [(a, b) for a, b in zip(v3.splitlines(), first[0].content.splitlines(),
+                                      strict=True) if a != b]
+    assert len(changed) == 1 and changed[0][0].startswith("- Join only as listed under JOINS.")
+    assert "or go through the parent table" in changed[0][0]
+    assert "neither directly nor through the table that key belongs to" in changed[0][1]
+    v4_sha = "e59ef3f51cc695d51a47b2dc98a5961b8e384ded5eeea03ce011b5006fdb72be"
+    assert hashlib.sha256(first[0].content.encode()).hexdigest() == v4_sha
     assert "\nEarlier clarifications:\n- Asked: Best by what?\n  User: order amount" in \
         again[1].content
+
+
+def test_an_unordered_result_is_cut_the_same_way_on_every_server():
+    """D90 (OWNER_VERIFICATION §31): g09's 40 stores, no ORDER BY — the narrative saw the first
+    30 the plan returned, which differ between servers. Such a result is sorted by its visible
+    columns before it is cut, and says its rows are not a ranking; an ordered result, or one
+    that fits, is left as the query returned it."""
+    from decimal import Decimal
+
+    from gaia.query.answerer import result_for_model
+
+    rows = [(f"S{i:02}", Decimal(i % 7), None if i == 5 else f"name {i}") for i in range(40)]
+    shuffled = rows[::-1][:20] + rows[::-1][20:][::-1]
+    a = result_for_model(["store", "n", "name"], rows, set(), 30, ordered=False)
+    b = result_for_model(["store", "n", "name"], shuffled, set(), 30, ordered=False)
+    assert a == b and a["rows_shown"] == 30 and a["row_count"] == 40
+    assert [r[0] for r in a["rows"]] == [f"S{i:02}" for i in range(30)]
+    assert "not the top or bottom" in a["rows_shown_are"]
+    # hidden columns do not order the rows (their values must not leak through the order)
+    c = result_for_model(["name", "store"], [(f"z{i}", f"S{39 - i:02}") for i in range(40)],
+                         {0}, 30, ordered=False)
+    assert [r[1] for r in c["rows"]] == [f"S{i:02}" for i in range(30)]
+    assert all(r[0] == "[hidden]" for r in c["rows"])
+    ordered = result_for_model(["store"], [(f"S{39 - i:02}",) for i in range(40)], set(), 30,
+                               ordered=True)
+    assert ordered["rows"][0] == ["S39"] and "rows_shown_are" not in ordered
+    small = result_for_model(["store"], [("b",), ("a",)], set(), 30, ordered=False)
+    assert small["rows"] == [["b"], ["a"]] and "rows_shown_are" not in small

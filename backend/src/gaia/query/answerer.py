@@ -43,12 +43,36 @@ def _cell(value: Any) -> Any:
     return str(value)
 
 
+def _sort_key(visible: list[int]):
+    """A total order over result rows by their visible columns: numbers by value, then text
+    and dates by their text, empty last — the same on every server and in every run."""
+    def cell(v: Any) -> tuple:
+        if v is None:
+            return (2, "")
+        if isinstance(v, (int, float, Decimal)) and not isinstance(v, bool):
+            return (0, v)
+        return (1, v.isoformat() if isinstance(v, (date, datetime)) else str(v))
+
+    return lambda row: tuple(cell(row[i]) for i in visible)
+
+
 def result_for_model(columns: list[str], rows: list[tuple], hidden: set[int],
-                     limit: int) -> dict[str, Any]:
+                     limit: int, ordered: bool = True) -> dict[str, Any]:
+    """At most ``limit`` rows for the model. When the query does not order its rows and there
+    are more than ``limit``, which rows come first is the database plan's choice — another
+    server (or another day) would show the model other rows (D90: g09's 40 stores on the
+    owner's host). Such a result is sorted by its visible columns before it is cut, and says
+    so: the rows shown are the first by their values, not a ranking."""
+    doc_extra: dict[str, Any] = {}
+    if not ordered and len(rows) > limit:
+        visible = [i for i in range(len(columns)) if i not in hidden]
+        rows = sorted(rows, key=_sort_key(visible))
+        doc_extra["rows_shown_are"] = ("the first by the columns' values: the query has no "
+                                       "ORDER BY, so they are not the top or bottom of anything")
     shown = [[HIDDEN if i in hidden else _cell(v) for i, v in enumerate(r)]
              for r in rows[:limit]]
     return {"columns": columns, "row_count": len(rows), "rows_shown": len(shown),
-            "rows": shown}
+            "rows": shown, **doc_extra}
 
 
 def _messages(question: str, interpretation: str, assumptions: list[str],
@@ -69,10 +93,10 @@ def _messages(question: str, interpretation: str, assumptions: list[str],
 def narrate(llm: LLMClient, *, model: str, question: str, interpretation: str,
             assumptions: list[str], uncertain: list[str], columns: list[str],
             rows: list[tuple], hidden: set[int], capped: bool, rows_to_model: int,
-            thinking: bool, max_tokens: int | None, temperature: float | None
-            ) -> tuple[str, list[CallRecord], str | None]:
+            thinking: bool, max_tokens: int | None, temperature: float | None,
+            ordered: bool = True) -> tuple[str, list[CallRecord], str | None]:
     """(narrative, calls, error). On failure the narrative is ``fallback_narrative``."""
-    result = result_for_model(columns, rows, hidden, rows_to_model)
+    result = result_for_model(columns, rows, hidden, rows_to_model, ordered)
     prompt = query_prompt("answer")
     try:
         out = complete_structured(

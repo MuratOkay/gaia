@@ -9,6 +9,15 @@ interval from a seeded **paired bootstrap** over the questions. P6-2: a candidat
 lower bound of that difference is above −3 points; fails when the upper bound is below it; else
 the runs cannot tell, and more are needed.
 
+P6-8 (2026-11-18, after the D88 host run) made the verdict two-part. **Named breaks**: a question
+right in every baseline run and wrong in every candidate run (three runs a side at least) fails
+the candidate by itself — a deterministic break of even one question is what a regression looks
+like, and an always-right question does not flip by chance (on the host's flakiness a false
+alarm is ~3 % a comparison). **The overall difference**: its interval resamples the runs as well
+as the questions (a bootstrap over questions alone was over-confident when few questions moved,
+and blind to what a whole run shares — §30b-6). A comparison also says how far apart in time
+the two sides were made: the provider may change its model in between.
+
 Replays are never measurements (they reproduce a run); they are listed and left out.
 """
 
@@ -25,9 +34,11 @@ from typing import Any
 from gaia.evaluation.net import is_regression, regressed_build
 
 __all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
-           "quality_report", "select_runs", "wilson", "wrong_causes"]
+           "named_breaks", "quality_report", "select_runs", "wilson", "wrong_causes"]
 
 THRESHOLD = -0.03  # P6-2: a change may not cost more than 3 points (lower bound)
+MIN_RUNS_FOR_BREAKS = 3  # P6-8: a break is named only with this many runs a side
+SESSION_HOURS = 6.0  # P6-8: sides made further apart may differ by the provider's model
 Z = 1.959964
 
 
@@ -63,6 +74,8 @@ class RunView:
     set_key: str = ""
     meanings_key: str | None = None  # D81: the meanings it answered with (None: unknown)
     meanings: dict[str, Any] = field(default_factory=dict)
+    # P6-8: a deliberate regression's questions expected to break (``drop:``), when known
+    expected_breaks: list[str] | None = None
 
     @property
     def measured(self) -> bool:
@@ -102,6 +115,30 @@ class Comparison:
     questions: int
     verdict: str  # passes | fails | cannot tell
     moved: list[tuple[str, float, float]]  # question, baseline rate, candidate rate
+    breaks: list[str] = field(default_factory=list)  # right in every baseline run, wrong in all
+    fixes: list[str] = field(default_factory=list)  # the other way round
+    gap_hours: float | None = None  # from the baseline's last run to the candidate's first
+
+
+def _scores(runs: Sequence[RunView], key: str) -> list[bool]:
+    return [bool(r.items[key].correct) for r in runs
+            if key in r.items and r.items[key].correct is not None]
+
+
+def named_breaks(baseline: Sequence[RunView], candidate: Sequence[RunView],
+                 keys: Iterable[str]) -> tuple[list[str], list[str]]:
+    """(breaks, fixes): questions right in every baseline run and wrong in every candidate run
+    — and the reverse — each side with at least ``MIN_RUNS_FOR_BREAKS`` scored runs."""
+    breaks, fixes = [], []
+    for k in keys:
+        b, c = _scores(baseline, k), _scores(candidate, k)
+        if len(b) < MIN_RUNS_FOR_BREAKS or len(c) < MIN_RUNS_FOR_BREAKS:
+            continue
+        if all(b) and not any(c):
+            breaks.append(k)
+        elif all(c) and not any(b):
+            fixes.append(k)
+    return breaks, fixes
 
 
 def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
@@ -114,13 +151,38 @@ def compare(baseline: Sequence[RunView], candidate: Sequence[RunView], *,
         return Comparison(0.0, 0.0, 0.0, 0, "cannot tell", [])
     diffs = [c - b for _k, b, c in pairs]
     mean = sum(diffs) / len(diffs)
+    # the interval: resample the runs of each side, then the questions (two-stage, P6-8)
+    qkeys = [k for k, _b, _c in pairs]
+    bmat = [[(r.items[k].correct if k in r.items else None) for k in qkeys] for r in baseline]
+    cmat = [[(r.items[k].correct if k in r.items else None) for k in qkeys] for r in candidate]
+
+    def rate(rows: list[list[bool | None]], j: int) -> float | None:
+        got = [row[j] for row in rows if row[j] is not None]
+        return sum(got) / len(got) if got else None
+
     rng = random.Random(seed)  # noqa: S311 - a reproducible bootstrap, not a secret
-    boots = sorted(sum(rng.choice(diffs) for _ in diffs) / len(diffs)
-                   for _ in range(iterations))
+    boots = []
+    for _ in range(iterations):
+        bs = [rng.choice(bmat) for _ in bmat]
+        cs = [rng.choice(cmat) for _ in cmat]
+        total = n = 0
+        for _q in qkeys:
+            j = rng.randrange(len(qkeys))
+            rb, rc = rate(bs, j), rate(cs, j)
+            if rb is None or rc is None:
+                continue
+            total += rc - rb
+            n += 1
+        boots.append(total / n if n else 0.0)
+    boots.sort()
     low, high = boots[int(0.025 * iterations)], boots[int(0.975 * iterations) - 1]
-    verdict = "passes" if low > threshold else "fails" if high < threshold else "cannot tell"
+    breaks, fixes = named_breaks(baseline, candidate, qkeys)
+    verdict = ("fails" if breaks or high < threshold else
+               "passes" if low > threshold else "cannot tell")
     moved = [(k, b, c) for k, b, c in pairs if abs(c - b) >= 0.5]
-    return Comparison(mean, low, high, len(pairs), verdict, moved)
+    gap = (min(r.started_at for r in candidate) - max(r.started_at for r in baseline)
+           ).total_seconds() / 3600
+    return Comparison(mean, low, high, len(pairs), verdict, moved, breaks, fixes, gap)
 
 
 @dataclass
@@ -413,20 +475,43 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
 
     if baseline and candidate:
         c = compare(baseline, candidate)
-        word = {"passes": "**passes**", "fails": "**fails**",
-                "cannot tell": "**cannot tell** — more runs are needed"}[c.verdict]
-        lines += ["", "## Candidate against baseline (P6-2)", "",
+        word = {"passes": "**passes**",
+                "fails": "**fails**" + (f" — broken: {', '.join(c.breaks)}" if c.breaks else ""),
+                "cannot tell": "**cannot tell** — no question broke, but the overall difference "
+                               "cannot rule out a loss of 3 points (each of 30 questions is 3.3)"
+                }[c.verdict]
+        lines += ["", "## Candidate against baseline (P6-2, P6-8)", "",
                   f"* baseline: {', '.join(f'`{r.id[:8]}`' for r in baseline)} "
                   f"({', '.join(sorted({r.build or '—' for r in baseline}))})",
                   f"* candidate: {', '.join(f'`{r.id[:8]}`' for r in candidate)} "
                   f"({', '.join(sorted({r.build or '—' for r in candidate}))})",
+                  "* named breaks (right in every baseline run, wrong in every candidate run): "
+                  + (", ".join(c.breaks) if c.breaks else
+                     "none" if min(len(baseline), len(candidate)) >= MIN_RUNS_FOR_BREAKS else
+                     f"not looked for (fewer than {MIN_RUNS_FOR_BREAKS} runs a side)")
+                  + (f"; fixed: {', '.join(c.fixes)}" if c.fixes else ""),
                   f"* correct, question by question: {_pct(c.difference)} points (95% interval "
-                  f"{_pct(c.low)} to {_pct(c.high)}) over {c.questions} question(s)",
-                  f"* verdict: {word} (a change may cost at most 3 points)"]
+                  f"{_pct(c.low)} to {_pct(c.high)}, runs and questions resampled) over "
+                  f"{c.questions} question(s)",
+                  f"* verdict: {word}"]
+        if c.gap_hours is not None and c.gap_hours > SESSION_HOURS:
+            lines.append(f"* the baseline's last run was made {c.gap_hours:.0f} h before the "
+                         "candidate's first: the provider may have changed its model in between "
+                         "— for a verdict about the build alone, run the baseline again in the "
+                         "same session")
+        expected = sorted({k for r in candidate for k in (r.expected_breaks or [])})
         if any(is_regression(r.build) for r in candidate):
             lines.append("* the candidate is a **deliberate regression** (6E): the net catches "
                          "it only if the verdict is *fails* — *passes* or *cannot tell* means "
                          "these runs did not see it")
+            if expected:
+                caught = [k for k in expected if k in c.breaks]
+                lines.append(f"  * expected to break (the questions that need what it took "
+                             f"away): {', '.join(expected)} — named: {len(caught)} of "
+                             f"{len(expected)}"
+                             + (f"; named but not expected: "
+                                f"{', '.join(k for k in c.breaks if k not in expected)}"
+                                if any(k not in expected for k in c.breaks) else ""))
         note = meanings_note(baseline, candidate)
         if note:
             lines.append(f"* **{note}**")
@@ -446,5 +531,6 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
         doc["comparison"] = {"difference": c.difference, "low": c.low, "high": c.high,
                              "questions": c.questions, "verdict": c.verdict,
                              "moved": [list(m) for m in c.moved], "meanings": doc_note,
-                             "per_run": cost}
+                             "per_run": cost, "breaks": c.breaks, "fixes": c.fixes,
+                             "gap_hours": c.gap_hours, "expected_breaks": expected or None}
     return "\n".join(lines) + "\n", doc

@@ -275,6 +275,49 @@ def test_fan_out_is_named_as_such(guard):
     assert "multiplies rows" in result.errors[0].message
 
 
+CHASM = ("FROM sales.orders o JOIN sales.order_lines l ON l.order_id = o.order_id "
+         "JOIN sales.payments p ON p.order_id = o.order_id")
+
+
+def test_a_chasm_trap_is_refused_where_it_changes_a_sum(guard):
+    """D90 (OWNER_VERIFICATION §30b-8): order lines and payments joined *through* their order
+    are two backed joins, yet every line repeats for every payment — the guard let it through
+    and the prompt even advised it."""
+    result = guard.check(f"SELECT o.order_id, sum(l.quantity) AS q, sum(p.amount) AS paid "
+                         f"{CHASM} GROUP BY o.order_id")
+    assert not result.ok and [j.kind for j in result.joins][-1] == "chasm"
+    assert "sales.order_lines and sales.payments both hold many rows" in result.errors[0].message
+    # inside a derived table whose rows an outer query sums
+    result = guard.check(f"SELECT sum(x.amount) AS s FROM (SELECT p.amount {CHASM}) x")  # noqa: S608
+    assert not result.ok and "chasm trap" in result.errors[0].message
+    # a plain count is changed too
+    assert not guard.check(f"SELECT count(*) AS n {CHASM}").ok
+
+
+def test_what_a_chasm_trap_does_not_change_passes(guard):
+    # repeated rows change neither MIN/MAX nor COUNT(DISTINCT)
+    assert guard.check(f"SELECT o.order_id, max(l.quantity) AS q, count(DISTINCT p.payment_id) "
+                       f"AS n {CHASM} GROUP BY o.order_id").ok
+    # one side aggregated by the key first: one row per order, nothing multiplies
+    assert guard.check("WITH paid AS (SELECT order_id, sum(amount) AS amount FROM "
+                       "sales.payments GROUP BY order_id) SELECT o.order_id, sum(l.quantity) "
+                       "AS q, max(paid.amount) AS paid FROM sales.orders o JOIN "
+                       "sales.order_lines l ON l.order_id = o.order_id JOIN paid ON "
+                       "paid.order_id = o.order_id GROUP BY o.order_id").ok
+    # a child with two parents is no chasm: lines to their order, orders to their customer
+    assert guard.check("SELECT c.segment, sum(l.quantity) AS q FROM sales.order_lines l JOIN "
+                       "sales.orders o ON o.order_id = l.order_id JOIN crm.customers c ON "
+                       "c.customer_id = o.customer_id GROUP BY c.segment").ok
+    # and the warn mode downgrades it like every unbacked join
+    g = PostgresGuard(_catalog(), row_limit=10, unverified_joins="warn")
+    assert g.check(f"SELECT sum(p.amount) AS paid {CHASM}").ok
+
+
+def test_the_guard_says_whether_the_rows_are_ordered(guard):
+    assert guard.check("SELECT order_id FROM sales.orders ORDER BY order_id").ordered
+    assert not guard.check("SELECT order_id FROM sales.orders").ordered
+
+
 def test_unverified_joins_can_be_downgraded_to_warnings():
     g = PostgresGuard(_catalog(), row_limit=10, unverified_joins="warn")
     result = g.check("SELECT * FROM sales.orders o JOIN crm.customers c ON o.store_id = "

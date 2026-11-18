@@ -797,13 +797,35 @@ on any skipped test. Without them the PostgreSQL and SQL Server tests — the ne
 and a plain `make test` still ends green; it lists every skip by reason and says *NOT A HOST
 VERIFICATION*.
 
-### A deliberate regression (`make golden … --regress joins-rule`, Phase 6E)
+### A deliberate regression (`make golden … --regress NAME`, Phase 6E, P6-8)
 
-A golden run with `--regress NAME` sends a deliberately worse prompt and is recorded as
-`<build> + deliberate regression: NAME`. It measures the fresh net, not a build: `make quality`
+```bash
+make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out DIR --regress drop:store.stores"
+make golden TARGET=demo_pg ARGS="… --regress joins-rule"     # the SQL prompt without its JOINS rule
+```
+
+`drop:<schema.object>` answers every question without that object — in no context, unknown to
+the guard, while the references keep it — and prints the questions that need it (the golden
+set's `objects`): the damage is known before the run. `joins-rule` removes one line of the SQL
+prompt (the guard refuses what that rule forbids, so on today's questions it breaks nothing).
+A golden run with `--regress NAME` is recorded as `<build> + deliberate regression: NAME`. It measures the fresh net, not a build: `make quality`
 leaves such runs out of `--last N` and of `--compare-builds` (and says how many), except when the
 newest runs are one — then `--compare-builds` compares them with the build they were made of, and
 only *fails* means the net caught it. They never count as labels for calibration.
+
+**How a comparison decides (P6-8).** Two parts. A **named break** — a question right in every
+baseline run and wrong in every candidate run, with at least three runs a side — fails the
+candidate on its own: a regression usually breaks a question every time, and a question that is
+always right does not flip by chance. Then the **overall difference** in correct answers, with a
+95 % interval that resamples the runs as well as the questions: *passes* above −3 points, *fails*
+below, *cannot tell* in between — and with 30 questions (3.3 points each) an unchanged build
+mostly reads *cannot tell*. The report also says when the two sides were made more than 6 hours
+apart: the provider may have changed its model in between, so run the baseline again in the same
+session before blaming the build.
+
+**A renamed model (P6-9).** `calibration.model_aliases` maps a model's earlier names to its name
+now; labels under an earlier name then count for it. Only for a provider's rename — a different
+model is never an alias.
 
 ### Sending verification outputs (`make share`)
 
@@ -886,6 +908,7 @@ lists each one; that footprint is one of the things being measured.
 | `make psql` / `make redis-cli` | Shells into the containers |
 | `make test` | Full test suite (`ARGS="tests/... -k name"` for a subset) |
 | `make test-host` | The host's verification: the §9 exports required, any skip fails the run |
+| `make auth ARGS="refusals"` | The last sign-ins and refusals, with the reason the sign-in screen does not show |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |
 | `make measure` | Profiling-cost measurements for Phase 3 budgets (`TARGET=`, `ARGS=`) |
 | `make dev-api` | FastAPI on `127.0.0.1:8000` (`/health`, `/api/meta`) |
@@ -1157,6 +1180,24 @@ git-ignored. The one exception by design: passwords of data sources added at run
 ---
 
 ## 9. Troubleshooting
+
+### Nobody can sign in — the screen says only "sign-in failed"
+
+By design the screen never says why. The audit does:
+
+```bash
+make auth ARGS="refusals --last 40"
+```
+
+| The reason | What to do |
+|---|---|
+| `directory acme: … connect …` | the directory is not answering — for the Samba test AD after a reboot: `infra/auth/samba-ad-test.sh start` |
+| `directory acme: … certificate …` | its CA changed (a test domain provisioned again): `infra/auth/samba-ad-test.sh ca`, then `make auth ARGS="directory probe acme"` |
+| `the directory object changed` | D78: the same login, a new directory object — `make auth ARGS="account relink acme/LOGIN"` if it is the same person (`acme --all` for a test domain provisioned again) |
+| `locked after repeated failures` | 5 failures lock an account for 15 minutes (`auth.lockout_minutes`) — wait, then fix the first cause |
+| `no Gaia role …` | the account and its directory roles have no grant: `make auth ARGS="grant …"` |
+| `Microsoft refused: …` | the Entra side, with Microsoft's own reason |
+| nothing for your attempts | the requests never reached the API: is `make dev-api` running, and `curl http://127.0.0.1:8000/health` answering? |
 
 ### `Login timeout expired (HYT00)`
 

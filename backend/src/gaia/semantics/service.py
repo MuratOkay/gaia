@@ -764,7 +764,9 @@ class _Run:
     calibrators: dict[tuple[str, str], Any] = field(default_factory=dict)
 
     def calibrator(self, model: str) -> Any:
-        return self.calibrators.get((model, V2_SCORING))
+        # P6-9: a meaning written under a model's earlier name is the renamed model's
+        name = self.settings.calibration.canonical(model) or model
+        return self.calibrators.get((name, V2_SCORING))
 
     def calibrator_version(self, model: str) -> str | None:
         fit = self.calibrator(model)

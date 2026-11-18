@@ -213,11 +213,16 @@ def run_golden(golden: GoldenSet, *, index: RetrievalIndex, guard: SqlGuardBase,
                retrieval: RetrievalSettings | None = None,
                vectors: Callable[[str], list[VectorHit] | None] | None = None,
                only: list[str] | None = None, workers: int = 1,
-               progress: Callable[[GoldenOutcome], None] | None = None) -> list[GoldenOutcome]:
+               progress: Callable[[GoldenOutcome], None] | None = None,
+               reference_guard: SqlGuardBase | None = None) -> list[GoldenOutcome]:
+    """``reference_guard`` (P6-8): the guard the references run through when Gaia's own
+    answers run through a narrower one — a deliberate regression that drops an object must
+    not take it away from the reference too."""
     questions = [q for q in golden.questions if not only or q.id in only]
     refs: dict[str, Any] = {}
     for q in questions:
-        refs[q.id] = reference_table(q, guard, target, settings.row_limit) if q.sql else None
+        refs[q.id] = (reference_table(q, reference_guard or guard, target, settings.row_limit)
+                      if q.sql else None)
 
     def run_for(q: GoldenQuestion) -> Callable[..., Answer]:
         hits = vectors(q.question) if vectors else None

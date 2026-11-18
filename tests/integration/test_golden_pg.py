@@ -183,3 +183,48 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
     assert first.took_default is True
     free = rows[by["o05"].question]
     assert free.chosen_option is None and free.took_default is None and free.status == "answered"
+
+
+@pytest.mark.asyncio
+async def test_a_dropped_object_breaks_the_questions_that_need_it(pg_session_factory, tmp_path):
+    """P6-8 (D90): ``--regress drop:<object>`` answers without one object — in no context, unknown
+    to the guard — while the references keep it. The questions the golden set says need it are
+    the ones that break, and only they: the yardstick's damage is known before the run."""
+    from test_profiling_pg import _introspect, _settings, _target
+
+    from gaia.evaluation.net import drop_object, expected_breaks
+
+    factory = pg_session_factory
+    await _introspect(factory)
+    settings = _settings()
+    async with factory() as s:
+        await run_profiling(settings, s, ProfileOptions(
+            target="demo_pg", tables=["legacy.tb_trx02", "crm.customers", "store.stores"]))
+        ds = await s.scalar(sa.text("SELECT id FROM catalog.data_sources LIMIT 1"))
+        for col, schema, table, to_col in [("f2", "crm", "customers", "customer_code"),
+                                           ("f9", "store", "stores", "store_code")]:
+            s.add(JoinHint(data_source_id=ds, from_schema="legacy", from_table="tb_trx02",
+                           from_columns=[col], to_schema=schema, to_table=table,
+                           to_columns=[to_col], source="llm", status="inferred"))
+        await s.commit()
+        index = await load_retrieval_index(s, "demo_pg", settings)
+    golden = load_golden(GOLDEN)
+    expected = expected_breaks(golden, "store.stores")
+    assert expected == ["c03", "g02", "g09", "g17", "o03"]
+    dropped = drop_object(index, "store.stores")
+    assert "store.stores" not in dropped.objects and len(dropped.objects) == len(index.objects) - 1
+    assert "stores" not in dropped.catalog.objects.get("store", {})
+    assert not any("store.stores." in e.left or "store.stores." in e.right
+                   for e in dropped.catalog.edges)
+    assert index.obj("store.stores") is not None  # the original is untouched
+    with pytest.raises(ValueError, match="not an object"):
+        drop_object(index, "store.nothing")
+
+    outcomes = run_golden(golden, index=dropped, guard=PostgresGuard(dropped.catalog,
+                                                                      row_limit=1000),
+                          target=_target(), llm=GoldenModel(golden),
+                          settings=AskSettings(model="scripted", statement_timeout_s=30),
+                          workers=3, reference_guard=PostgresGuard(index.catalog,
+                                                                   row_limit=1000))
+    wrong = sorted(o.id for o in outcomes if o.correct is False)
+    assert wrong == expected

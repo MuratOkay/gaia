@@ -469,6 +469,16 @@ class CalibrationConfig(BaseModel):
     # "high" is right at least 95 % of the time)
     answer_high: float = 0.95
     answer_medium: float = 0.75
+    # P6-9: a model's earlier names -> the name it has now, for a provider's *rename* only —
+    # labels recorded under an earlier name count for the model as it is called now. A new
+    # model under an old name (or an "always the latest" name moving on) is not a rename.
+    model_aliases: dict[str, str] = Field(default_factory=dict)
+
+    def canonical(self, model: str | None) -> str | None:
+        return self.model_aliases.get(model, model) if model else model
+
+    def earlier_names(self, model: str) -> list[str]:
+        return sorted(k for k, v in self.model_aliases.items() if v == model)
 
 
 class Settings(BaseModel):

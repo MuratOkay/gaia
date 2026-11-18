@@ -20,18 +20,18 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D89 (D88 triage: host tests, regression runs, P6-1 by
-  subject)` — the D88 run triaged (§30): `make test-host` (the §9 exports required, every skip a
-  failure), deliberate-regression runs left out of reports and of calibration, P6-1's minimums
-  counted per column or question, a wrong `TARGET` refused. The fresh net's acceptance test is
-  open (§30d, decision P6-8). **The next run: §30e.***
+  there. *Latest build: `2026-11-18 · D90 (P6-8 fresh net, chasm trap, P6-9 aliases; g09
+  narration; refusals)` — the D89 run triaged (§31): P6-8's fresh net (`--regress drop:<object>`,
+  named breaks, runs resampled, the session gap), the chasm trap refused by the guard and no
+  longer advised by the SQL prompt (`generate_sql.v4`), P6-9's model aliases, g09's narration
+  the same on every server, `make auth ARGS="refusals"`. **The next run: §31e.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
   D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
-  in §29; §29d was run on D88 up to step 4 — **triaged in §30**, and **§30e is the next run**
-  (build D89). **Send outputs only through `make share`.**
+  in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
+  failed) — **triaged in §31**, and **§31e is the next run** (build D90). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3208,7 +3208,7 @@ Steps 2 and 5–7 (the Finance sign-in, "Was this right?", categories, the page)
 Sandbox: **759 passed, 10 skipped** (+4: the regression runs, subjects, a wrong name, the wordings);
 web unchanged (61).
 
-### 30d · Open: what the fresh net must catch (P6-8)
+### 30d · What the fresh net must catch (P6-8 — decided 2026-11-18, built in D90)
 
 Three facts from this run decide it: the JOINS rule's removal is invisible on these 30 questions
 (30b-7); the comparison resolves 3.3 points per question — with 3 runs a side it says *fails*
@@ -3217,7 +3217,10 @@ and an unchanged build *passes* only 40–50 % of the time; and runs on differen
 than the interval admits (30b-6). The options and my recommendation are PHASES, Phase 6, P6-8.
 Nothing in §30e depends on it.
 
-### 30e · The run (build D89) — the next run
+### 30e · The run (build D89)
+
+*Run up to step 4 (the `30_*` outputs): no account could sign in, so steps 4–7 wait — triaged in
+§31, whose §31e carries them.*
 
 Outputs `verification/30_*.out`, each starting with `make stamp`; at the end `make share` and send
 `verification/share/`. **No golden run in this one** — step 2 reads the runs you made.
@@ -3311,10 +3314,212 @@ open on Queries, Runs and Evaluation.
 
 ---
 
+## 31 · Triage of the D89 run, and build D90 — the next run (2026-11-18)
+
+I read the four `30_*` files (build D89; your git still says `45a5b50` — fine, the stamp's build
+line is what tells the code apart) and your note: **step 4 could not pass — no account could sign
+in** — so you stopped there. And your decisions: **P6-8 as recommended, P6-9 yes.**
+
+### 31a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `30_migrate.out` | `0020 (head)` | ✅ |
+| `30_tests.out` | `make test-host`: **768 passed, 1 failed, 0 skipped** — every PostgreSQL and SQL Server test ran (769 = the sandbox's 759 + its 10 skips, as expected); the one failure is the replayed net: `g09: the prompt changed — narration` | ✅ `make test-host` does its job; g09 is a finding, 31b-1 |
+| `30_labels3c.out` | 94 labels from your 3C audit (70 right, 6 partly, 18 wrong; 17 as in production); **the judge against you: 81 of 94 (86 %), Cohen's κ 0.65**, more lenient on 10, stricter on 3; and Gaia's score ranks your verdicts with **AUROC 0.74** — every meaning scored 0.80 or more was right (22 of 22) | ✅ κ 0.65 is "substantial" agreement — good for triage, still not a label (P6-0). The AUROC is the first real measurement of the score (the 13 SME labels were too few). *The `TARGET=nge_small` refusal is not in the file — the second command seems not to have run; the sandbox tests cover it* |
+| `30_quality.out` | `--last 3`: the three D88 runs, *3 deliberate-regression run(s) left out*; answers *90 labels on 30 subject(s), 5 of them not always right: too few*; `--compare-builds`: the regression against D88 with the new line; 6G: *none — all 28 confirmations were made with no proposal of Gaia's before them* | ✅ all as §30e expected |
+
+### 31b · Findings
+
+1. **g09's narration moved — a product flaw the net found.** g09 (products below their reorder
+   level, per store) returns **40** rows and has no `ORDER BY`; the narrative is shown at most 30
+   (`rows_to_model`), so *which* 30 it saw was your server's plan's choice — D84a's "rows as a set"
+   could not help, the sets themselves differ. Not only the net's problem: the narrative described
+   an arbitrary two thirds of the stores, and would describe others on another day. **Fixed
+   (D90):** an unordered result longer than the narrative may see is sorted by its visible columns
+   before it is cut, and the model is told the rows shown are not a ranking. Ordered results, and
+   results that fit, are as before.
+2. **Sign-in: nothing in D89 touched it, and the tests cannot have.** D89 changed no file of
+   sign-in; on D89 here the local account signs in and `/auth/me` answers; the tests use a fake
+   directory and a fake Entra and only the disposable `gaia_test` database. So it is your
+   environment, and Gaia recorded why — the screen says only "sign-in failed" (on purpose), the
+   audit has the reason, but no command showed it. **Built (D90): `make auth ARGS="refusals"`** —
+   the last sign-ins and refusals with their reasons. What I expect it to say, most likely first:
+   * `directory acme: … connect …` — the Samba test AD is not running (after a reboot or a Docker
+     restart Samba does not come back by itself): `infra/auth/samba-ad-test.sh start`;
+   * `directory acme: … certificate …` — the domain was provisioned again (`down` + `up`):
+     `infra/auth/samba-ad-test.sh ca`, then `make auth ARGS="directory probe acme"`;
+   * `the directory object changed` (D78) — also after a new domain: every account's directory id
+     is new, so each sign-in is refused until you say it is the same person:
+     `make auth ARGS="account relink acme --all"`;
+   * `locked after repeated failures` — after 5 failures an account is locked for 15 minutes (on
+     top of the first cause: repeated tries lock every account you tried);
+   * `Microsoft refused: …` — the Entra side, with Microsoft's reason;
+   * nothing at all for your attempts — the requests never reached the API (`make dev-api` not
+     running, or the web UI's proxy pointing elsewhere).
+3. **P6-8 and P6-9 — built (31c).**
+
+### 31c · Built (D90; no migration)
+
+* **P6-8, the fresh net.** `make golden … --regress drop:<schema.object>`: every question answered
+  without that object (in no context, unknown to the guard — the references keep it); the run
+  prints and records the questions that need it (from `golden.yaml`'s `objects`): `store.stores` →
+  c03, g02, g09, g17, o03; `finance.invoices` → g07. The comparison (`make quality
+  --compare-builds`) is two-part — **named breaks** (a question right in every baseline run and
+  wrong in every candidate run, three runs a side at least) fail the candidate by themselves; the
+  overall difference has an interval that resamples runs as well as questions — and it says how
+  far apart the two sides were made (over 6 hours: *run the baseline again in the same session*)
+  and, for a drop, *expected to break … — named: k of n*. Read on your own runs: D88 against D83
+  becomes −5.6 points (−14.4 to 0.0) *cannot tell*, no named break, the 7.8 h gap flagged; the
+  JOINS-rule regression *cannot tell*, no break.
+* **The chasm trap** (§30b-8): refused by the guard — two tables that each hold many rows per row
+  of a third, joined through it in a query whose sums or counts read them; MIN/MAX, `COUNT
+  (DISTINCT …)`, a side aggregated in a `WITH` first, and a child with two parents still pass. The
+  SQL prompt is **`generate_sql.v4`**: v3 with the JOINS rule's sentence changed — it no longer
+  advises "or go through the parent table". Every golden reference still passes; the replayed net's
+  outcomes are unchanged, its generation prompts all moved (re-accepted) — a prompt change, so
+  step 2 measures it against D88.
+* **P6-9.** `calibration.model_aliases` in `config/gaia.yaml`: `deepseek-v4.1-flash` and
+  `deepseek/deepseek-v4.1-flash` → `deepseek-flash`. Your 17 N-P audits now count with the 13 SME
+  labels for `deepseek-flash` (*"meanings of `deepseek-flash` (with its earlier name(s) …)"*), and a
+  calibrator put in use also reaches meanings stored under the earlier names. *If your
+  `config/gaia.yaml` is a local copy, add the `model_aliases:` block under `calibration:`.* The
+  prefixed name is the 3C run's B-C/B-P conditions — the same model through the gateway's provider
+  prefix, as I read it; tell me if it was not.
+* **g09's narration** (31b-1) and **`make auth ARGS="refusals"`** (31b-2).
+
+Sandbox: **770 passed, 10 skipped** (+11: the chasm trap, ordered results, the cut narrative, named
+breaks, the interval, the session gap, a dropped object end to end, the regressions' names,
+aliases, refusals); web unchanged (61).
+
+### 31d · Your question: a change of provider in production
+
+PHASES, Phase 6, *Raised for Phase 7*. In short: yes — keep every model. Everything Gaia
+measures is already kept per model id, so the history survives; what a customer needs is the
+change as a managed event (the new model beside the old, measured on the golden set and on the
+columns people decided before the switch, rollback, the old model's results kept read-only) and
+an honest start: a new model is **uncalibrated** until its own labels say otherwise — a
+calibrator passes from one model to another only through an alias, and only for a rename (P6-9).
+
+### 31e · The run (build D90) — the next run
+
+Outputs `verification/31_*.out`, each starting with `make stamp`; a new `--out` for every golden
+run; at the end `make share` and send `verification/share/`.
+
+**Step 0 — setup and tests.**
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3: the §9 exports, in THIS shell
+(make stamp; cd backend && ../gaia-env/bin/alembic current) > verification/31_migrate.out 2>&1
+(make stamp; make test-host) > verification/31_tests.out 2>&1
+```
+
+- [ ] `31_migrate.out`: `0020 (head)` (no migration)
+- [ ] `31_tests.out`: `gaia build 2026-11-18 · D90 (P6-8 fresh net, chasm trap, P6-9 aliases;
+      g09 narration; refusals)` and **780 passed, 0 skipped, 0 failed** — the net included
+      (g09 now the same on your server as here)
+
+**Step 1 — why nobody could sign in.**
+
+```bash
+(make stamp; infra/auth/samba-ad-test.sh status; make auth ARGS="directory list"
+ make auth ARGS="directory probe acme"; make auth ARGS="directory probe corp"
+ make auth ARGS="refusals --last 40"; curl -s http://127.0.0.1:8000/health) > verification/31_signin.out 2>&1
+```
+
+Then act on what `refusals` says (31b-2 lists the fixes), sign in as **finn** and as **akaya**, and
+append the proof:
+
+```bash
+(make stamp; make auth ARGS="refusals --last 10") >> verification/31_signin.out 2>&1
+```
+
+- [ ] the first `refusals` names the reason for each failed attempt; after the fix, the last
+      lines say `signed in` for finn and akaya (and for the Finance user through Microsoft)
+
+**Step 2 — the fresh net's acceptance test (P6-8), in one session.** Nine golden runs, ~2 minutes
+each, one after another — do not stop in between (the session is part of the test):
+
+```bash
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d90$run") \
+    > verification/31_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/31_quality_d88.out 2>&1
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d90s$run --regress drop:store.stores") \
+    > verification/31_drop_stores_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/31_quality_stores.out 2>&1
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d90i$run --regress drop:finance.invoices") \
+    > verification/31_drop_invoices_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/31_quality_invoices.out 2>&1
+```
+
+- [ ] `31_quality_d88.out` — **D90 against D88** (the SQL prompt v4 against v3): baseline the three
+      D88 runs, candidate the three D90 runs; *named breaks: none* is what I expect (the changed
+      sentence is about queries none of the 30 questions needs), the verdict most likely *cannot
+      tell*, and the line *the baseline's last run was made … h before the candidate's first* (the
+      D88 runs are from this morning). A named break here is a finding about v4
+- [ ] each `31_drop_stores_*.out` starts *DELIBERATE REGRESSION (drop:store.stores): … Expected to
+      break (they need it): c03, g02, g09, g17, o03 (5 question(s))*
+- [ ] `31_quality_stores.out` — baseline the three D90 runs, candidate the three `drop:store.stores`
+      runs: **verdict *fails*, with named breaks**, and *expected to break … — named: k of 5*. k is
+      what the net can see: a question that was not right in all three D90 runs (o03 was flaky on
+      D88) cannot be named, and one a view can still answer may survive — both are findings, not
+      failures. **The acceptance criterion: *fails*, with at least one expected question named**
+- [ ] `31_quality_invoices.out` — the same with `drop:finance.invoices`: expected g07 only; if g07
+      was right in all three D90 runs (it was in all recent runs), **one question named is enough
+      to fail** — the net's limit is one question that breaks every time
+- [ ] no *made … h before* line in the two regression comparisons (same session)
+
+**Step 3 — "Was this right?" in the browser, then the SME** (§30e step 4, once sign-in works).
+
+1. As **finn** (Chat, `demo_pg`): ask three questions. Under the first answer click **Yes**; under
+   the second **Partly**, with a note; under the third **No**, with a note.
+2. As **akaya**: *Review* — `demo_pg` says *2 answer(s) people doubted*; open them: the question,
+   the table, the SQL, finn's note. Decide one *wrong* with a reason, the other *right after all*.
+3. As **finn**: reopen the conversations — the decisions are under the answers.
+4. As **akaya**, open any column of the queue: its score says *(uncalibrated)*.
+
+```bash
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make calibrate; make calibrate ARGS="--list") \
+  > verification/31_feedback.out 2>&1
+```
+
+- [ ] the report ends with *People's feedback on answers*: 1 yes, 1 partly, 1 no; 2 decided
+- [ ] *Calibration*: meanings of `deepseek-flash` **with its earlier name(s) `deepseek-v4.1-flash`,
+      `deepseek/deepseek-v4.1-flash`** — *30 label(s), 1 not right: too few* (13 SME + 17 N-P audits,
+      pooled, P6-9); answers — *182 labels on 32 subject(s) …: too few* (D88's and D90's runs, the
+      regressions left out, and the two decisions); *in use: the identity*; `--list`: *no
+      calibrator fitted yet*. **Do not run `make calibrate … --apply`**
+
+**Step 4 — category proposals against your confirmations (6G).**
+
+```bash
+(make stamp; make access TARGET=demo_pg ARGS="accuracy --why"; make access TARGET=demo_mssql ARGS="accuracy --why") \
+  > verification/31_categories.out 2>&1
+```
+
+- [ ] `demo_pg`: 28 confirmed, *26 as people confirmed*, the two misses with the rule's reason
+- [ ] `demo_mssql`: the same for your confirmations there — send the misses as they are
+
+**Step 5 — the Evaluation page.** As dyilmaz: *Evaluation* — the comparison now with *named
+breaks* and the session line, the labels on `demo_mssql` with the judge's κ, the calibration
+cards (the pooled names), category proposals, the feedback. As bdemir: *Audit → Evaluation*.
+
+**Step 6 — send.** `make share` → send `verification/share/`.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
+| Every sign-in says only "sign-in failed" | the screen never says why (on purpose); the audit does | `make auth ARGS="refusals"` — the reasons and their fixes: §31b-2, USER_GUIDE §9 |
+| `make test-host: not set in this shell` / a run ending *NOT A HOST VERIFICATION* | the §9 exports are missing in this shell | the §9 exports, then `make test-host` (§30b-1) |
 | `unresolved env placeholders: GAIA_PG_TARGET_PASSWORD` | missing in `.env` | §1 |
 | `pg-target-seed`: `set GAIA_PG_TARGET_ADMIN_URL` | missing in `.env` | §1 |
 | `relation "semantics.evidence_item" does not exist` | migration `0004` not applied | §1 `alembic upgrade head` |

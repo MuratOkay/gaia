@@ -68,7 +68,8 @@ async def answer_calibrator_for(session, settings: Settings):
     """The answer calibrator in use for the configured model (6D), or None."""
     from gaia.evaluation.calibrators import ANSWER_SCORING, in_use
 
-    return (await in_use(session, "answer")).get((settings.llm.model, ANSWER_SCORING))
+    return (await in_use(session, "answer")).get(
+        (settings.calibration.canonical(settings.llm.model), ANSWER_SCORING))
 
 
 def llm_client(settings: Settings, replay: str | None):

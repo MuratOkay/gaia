@@ -93,3 +93,19 @@ def test_a_deliberate_regression_removes_one_rule_only():
         wrapped.complete([Message("system", "You write one read-only SQL query. No rules.")])
     with pytest.raises(ValueError, match="unknown regression"):
         PromptRegression(Model(), "nothing")
+
+
+def test_which_deliberate_regressions_there_are():
+    """P6-8 (D90): a prompt rule taken out, or one object taken away (``drop:schema.object``)."""
+    import pytest
+
+    from gaia.evaluation.net import is_regression, parse_regression, regressed_build
+
+    assert parse_regression("joins-rule") == ("prompt", "- Join only as listed under JOINS.")
+    assert parse_regression("drop:store.stores") == ("drop", "store.stores")
+    for bad in ("drop:stores", "nothing", "drop:"):
+        with pytest.raises(ValueError, match="unknown regression"):
+            parse_regression(bad)
+    label = "D90 + deliberate regression: drop:store.stores"
+    assert is_regression(label) and regressed_build(label) == "D90"
+    assert not is_regression("D90") and regressed_build("D90") is None

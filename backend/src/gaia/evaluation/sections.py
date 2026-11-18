@@ -65,10 +65,13 @@ def _m(x: dict[str, Any] | None, key: str) -> str:
     return "—" if not x or x.get(key) is None else f"{x[key]:.3f}"
 
 
-def trial_lines(kind: str, model: str, scoring: str, t, in_use: str | None) -> list[str]:
-    """One calibration trial in words."""
+def trial_lines(kind: str, model: str, scoring: str, t, in_use: str | None,
+                earlier: list[str] | None = None) -> list[str]:
+    """One calibration trial in words; ``earlier``: the model's earlier names (P6-9)."""
     word = {"meaning": "meanings", "answer": "answers"}[kind]
-    lines = [f"{word} of `{model}` ({scoring}): {t.why}"]
+    also = (f" (with its earlier name(s) {', '.join(f'`{n}`' for n in earlier)})"
+            if earlier else "")
+    lines = [f"{word} of `{model}`{also} ({scoring}): {t.why}"]
     if t.held_out is not None:
         verdict = ("beats the identity on both" if t.improves else
                    "does **not** beat the identity — not to be put in use")
@@ -98,9 +101,10 @@ async def extra_sections(session: AsyncSession, data_source: str, settings, fact
         select(Calibrator).where(Calibrator.in_use.is_(True)))).all()}
     groups: list[tuple[str, tuple[str, str], list]] = []
     # a model's meanings are calibrated on every data source's labels (pooled)
-    for key, points in sorted(meaning_points(await all_labels(session)).items()):
+    aliases = settings.calibration.model_aliases  # P6-9: a provider's renames
+    for key, points in sorted(meaning_points(await all_labels(session), aliases).items()):
         groups.append(("meaning", key, points))
-    for key, points in sorted((await answer_points(session)).items()):
+    for key, points in sorted((await answer_points(session, aliases)).items()):
         groups.append(("answer", key, points))
     if groups:
         lines += ["", "## Calibration (6C, 6D)", "",
@@ -111,7 +115,8 @@ async def extra_sections(session: AsyncSession, data_source: str, settings, fact
             t = trial(points, settings.calibration)
             lines += [f"* {x.strip()}" if not x.startswith("  ") else f"  * {x.strip()}"
                       for x in trial_lines(kind, model, scoring, t,
-                                           used.get((kind, model, scoring)))]
+                                           used.get((kind, model, scoring)),
+                                           settings.calibration.earlier_names(model))]
             doc["calibration"].append({"kind": kind, "model": model, "scoring": scoring,
                                        "in_use": used.get((kind, model, scoring)),
                                        **t.as_dict()})

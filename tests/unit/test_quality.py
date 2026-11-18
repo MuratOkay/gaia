@@ -88,7 +88,8 @@ def test_which_runs_a_report_reads():
     assert [r.id for r in sel.baseline] == ["a1"]  # a replay is never a measurement
     text, doc = quality_report(sel.shown, data_source="d", question_set_key="S",
                                baseline=sel.baseline, candidate=sel.candidate)
-    assert "## Candidate against baseline (P6-2)" in text and doc["comparison"]["questions"] == 30
+    assert "## Candidate against baseline (P6-2, P6-8)" in text
+    assert doc["comparison"]["questions"] == 30
 
 
 def test_a_comparison_says_when_the_meanings_differ():
@@ -210,3 +211,58 @@ def test_the_confidence_shown_says_what_is_not_known():
     text, _doc = quality_report(runs, data_source="d", question_set_key="S")
     assert "shown as high: right 2 of 2" in text
     assert "not known: 58 answer(s) (runs recorded before build D84" in text
+
+
+def test_a_question_broken_in_every_run_fails_the_candidate():
+    """P6-8: one question right in every baseline run and wrong in every candidate run is a
+    named break — the candidate fails, although 3.3 points are within the overall interval.
+    One flaky question moving does not (the owner's D83 → D88: o03 3/3 → 1/3)."""
+    base = [run(f"b{i}", thirty({"q07"}), n=i) for i in range(3)]
+    broken = [run(f"c{i}", thirty({"q07", "q05"}), n=3 + i) for i in range(3)]
+    c = compare(base, broken)
+    assert c.verdict == "fails" and c.breaks == ["q05"] and c.fixes == []
+    flaky = [run(f"f{i}", thirty({"q07"} | ({"q05"} if i else set())), n=3 + i)
+             for i in range(3)]
+    c = compare(base, flaky)
+    assert c.breaks == [] and c.verdict == "cannot tell"
+    fixed = [run(f"x{i}", thirty(set()), n=3 + i) for i in range(3)]
+    assert compare(base, fixed).fixes == ["q07"]
+    # fewer than three runs a side: no break is named, the interval decides alone
+    assert compare(base[:2], broken[:2]).breaks == []
+
+
+def test_the_interval_resamples_runs_too():
+    """The owner's D83 → D88 (§30b-6): four questions moved, all down, none in every run. The
+    bootstrap over questions alone said −11.1 to −1.1; resampling the runs too, the interval
+    reaches zero — as exact tests on the same runs do (sign test p = 0.125)."""
+    keys = [f"q{i:02}" for i in range(30)]
+
+    def r(rid, wrong, n):
+        return run(rid, {k: k not in wrong for k in keys}, n=n)
+
+    d83 = [r("a", {"q25", "q26"}, 0), r("b", {"q25"}, 0), r("c", {"q25"}, 0)]
+    d88 = [r("d", {"q27", "q25"}, 8), r("e", {"q27", "q26", "q25", "q28"}, 8),
+           r("f", {"q29", "q26", "q25"}, 8)]
+    c = compare(d83, d88)
+    assert round(c.difference * 100, 1) == -5.6 and c.breaks == []
+    assert c.low < -0.11 and c.high >= 0.0 and c.verdict == "cannot tell"
+    assert c.gap_hours == pytest.approx(8.0)
+    text, doc = quality_report([*d83, *d88], data_source="d", question_set_key="S",
+                               baseline=d83, candidate=d88)
+    assert "made 8 h before the candidate's first" in text
+    assert doc["comparison"]["gap_hours"] == pytest.approx(8.0)
+
+
+def test_a_dropped_object_says_how_many_of_its_questions_were_named():
+    reg = "B1 + deliberate regression: drop:store.stores"
+    base = [run(f"b{i}", thirty(set()), n=i) for i in range(3)]
+    cand = [run(f"r{i}", thirty({"q01", "q02", "q03"}), build=reg, n=1 + i) for i in range(3)]
+    for r_ in cand:
+        r_.expected_breaks = ["q01", "q02", "q03", "q04"]
+    text, doc = quality_report([*base, *cand], data_source="d", question_set_key="S",
+                               baseline=base, candidate=cand)
+    assert "**fails** — broken: q01, q02, q03" in text
+    assert "expected to break (the questions that need what it took away): q01, q02, q03, q04 " \
+           "— named: 3 of 4" in text
+    assert doc["comparison"]["expected_breaks"] == ["q01", "q02", "q03", "q04"]
+    assert "made" not in text.split("## Candidate")[1].split("per run")[0]  # same session

@@ -173,5 +173,6 @@ async def load_runs(session: AsyncSession, data_source: str, *, set_key: str | N
                                  i.sql, dict(i.detail) if i.detail else None,
                                  repairs=i.repairs or 0)
             for i in items}, set_key=r.question_set_key, meanings_key=r.meanings_key,
-            meanings=dict(r.meanings or {})))
+            meanings=dict(r.meanings or {}),
+            expected_breaks=((r.summary or {}).get("regression") or {}).get("expected")))
     return out
