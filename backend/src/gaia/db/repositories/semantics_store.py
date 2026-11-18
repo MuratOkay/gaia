@@ -66,6 +66,19 @@ class SemanticsStore:
     async def data_source(self, name: str) -> DataSource | None:
         return await self.session.scalar(select(DataSource).where(DataSource.name == name))
 
+    async def unknown_name(self, name: str, configured: Iterable[str] = ()) -> str | None:
+        """``None`` when ``name`` is a data source (in the store, or configured); otherwise
+        what to say — with the names there are. A report on a name that is no data source
+        would otherwise read as "nothing yet" (D89: ``TARGET=nge_small``, the database's
+        name, for the data source ``demo_mssql``)."""
+        configured = set(configured)
+        if name in configured or await self.data_source(name) is not None:
+            return None
+        stored = (await self.session.scalars(select(DataSource.name).where(
+            DataSource.status != "tombstoned"))).all()
+        known = ", ".join(sorted(configured | set(stored))) or "none"
+        return f"no data source {name!r}; the data sources are: {known} (TARGET=<one of them>)"
+
     async def latest_snapshot(self, data_source_id: uuid.UUID) -> SnapshotRecord | None:
         return await self.session.scalar(
             select(SnapshotRecord)

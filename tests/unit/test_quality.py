@@ -165,3 +165,48 @@ def test_unknown_meanings_say_why():
     assert "recorded before build D81" in meanings_note(old, known)
     imp = [run("i1", thirty(set()), mode="imported")]
     assert "(imported runs)" in meanings_note(imp, known)
+
+
+def test_a_deliberate_regression_measures_the_net_not_a_build():
+    """D89 (OWNER_VERIFICATION §30): the host's three ``--regress joins-rule`` runs became the
+    newest "build" — ``--last 3`` would have reported them as the current quality, and the next
+    build would have been compared with them. They are left out of both, except as the
+    comparison they were made for: the regression against the build it was made of."""
+    reg = "B2 + deliberate regression: joins-rule"
+    runs = [*(run(f"a{i}", thirty(set()), build="B1", n=i) for i in range(3)),
+            *(run(f"b{i}", thirty({"q01"} if i == 0 else set()), build="B2", n=3 + i)
+              for i in range(3)),
+            *(run(f"r{i}", thirty(set()), build=reg, n=6 + i) for i in range(3))]
+    sel = select_runs(runs, last=3)
+    assert [r.id for r in sel.shown] == ["b0", "b1", "b2"]
+    assert [r.id for r in sel.regressions] == ["r0", "r1", "r2"]
+    text, doc = quality_report(sel.shown, data_source="d", question_set_key="S",
+                               regressions=sel.regressions)
+    assert "3 deliberate-regression run(s) left out" in text
+    assert doc["regressions_left_out"] == ["r0", "r1", "r2"]
+    # the newest runs are a regression: compared with the build it was made of
+    sel = select_runs(runs, compare_builds=True)
+    assert [r.id for r in sel.baseline] == ["b0", "b1", "b2"]
+    assert [r.id for r in sel.candidate] == ["r0", "r1", "r2"] and sel.regressions == []
+    text, _doc = quality_report(sel.shown, data_source="d", question_set_key="S",
+                                baseline=sel.baseline, candidate=sel.candidate)
+    assert "the candidate is a **deliberate regression**" in text
+    # a later build is compared with B2, not with the regression
+    runs += [run(f"c{i}", thirty(set()), build="B3", n=9 + i) for i in range(3)]
+    sel = select_runs(runs, compare_builds=True)
+    assert {r.build for r in sel.baseline} == {"B2"} and {r.build for r in sel.candidate} == {"B3"}
+    assert [r.id for r in sel.regressions] == ["r0", "r1", "r2"]
+    text, _doc = quality_report(sel.shown, data_source="d", question_set_key="S",
+                                baseline=sel.baseline, candidate=sel.candidate)
+    assert "deliberate regression**" not in text
+    # runs named are read as named
+    assert [r.id for r in select_runs(runs, ids=["r"]).shown] == ["r0", "r1", "r2"]
+
+
+def test_the_confidence_shown_says_what_is_not_known():
+    runs = [run(f"r{i}", thirty({"q07"}), n=i) for i in range(2)]
+    for k in ("q00", "q01"):
+        runs[1].items[k].detail = {"confidence": {"level": "high", "score": 0.9}}
+    text, _doc = quality_report(runs, data_source="d", question_set_key="S")
+    assert "shown as high: right 2 of 2" in text
+    assert "not known: 58 answer(s) (runs recorded before build D84" in text

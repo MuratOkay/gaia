@@ -220,3 +220,50 @@ async def test_the_owners_3c_audit_becomes_labels(pg_session_factory, tmp_path):
     # only the production-mode audits are calibrated on
     points = meaning_points(labels)
     assert [len(v) for v in points.values()] == [2]
+
+
+@pytest.mark.asyncio
+async def test_regressions_are_no_labels_and_a_wrong_name_is_refused(pg_session_factory,
+                                                                      monkeypatch, capsys):
+    """D89 (OWNER_VERIFICATION §30): the host's three ``--regress joins-rule`` runs were read as
+    answer labels (a prompt Gaia never answers anyone with), and ``make labels TARGET=nge_small``
+    — the database's name, not the data source's — said "no label yet" instead of no."""
+    from datetime import UTC, datetime
+
+    from gaia.datasources.resolver import clear_cache
+    from gaia.db.engine import dispose_engine
+    from gaia.db.models.evaluation import EvaluationItem, EvaluationRun
+    from gaia.evaluation.calibrators import ANSWER_SCORING, answer_points
+    from gaia.tools import labels as labels_tool
+    from gaia.tools import quality as quality_tool
+
+    monkeypatch.setenv("GAIA_METADATA_URL", DB)
+    clear_cache()
+    await dispose_engine()
+    factory = pg_session_factory
+    async with factory() as s:
+        for build, ok in (("D88", True), ("D88 + deliberate regression: joins-rule", False)):
+            run = EvaluationRun(kind="golden", data_source="demo_pg", question_set_key="S",
+                                build=build, model="m", mode="fresh",
+                                started_at=datetime.now(UTC))
+            s.add(run)
+            await s.flush()
+            s.add(EvaluationItem(run_id=run.id, item_key="g01", correct=ok,
+                                 final_status="answered",
+                                 detail={"confidence": {"score": 0.7, "level": "medium"}}))
+        await s.commit()
+        points = await answer_points(s)
+    assert [(p.score, p.y) for p in points[("m", ANSWER_SCORING)]] == [(0.7, 1.0)]
+
+    assert await labels_tool._run(argparse.Namespace(
+        target="nge_small", import_3c=None, csv=None, audit=None, reviewer=None)) == 2
+    err = capsys.readouterr().err
+    assert "no data source 'nge_small'" in err and "demo_mssql" in err and "demo_pg" in err
+    assert await quality_tool._run(argparse.Namespace(
+        target="nge_small", last=3, runs=None, set=None, baseline=None, candidate=None,
+        compare_builds=False, list=False, import_glob=None)) == 2
+    assert "no data source 'nge_small'" in capsys.readouterr().err
+    # a configured name with nothing yet still says so, as before
+    assert await labels_tool._run(argparse.Namespace(
+        target="demo_pg", import_3c=None, csv=None, audit=None, reviewer=None)) == 0
+    assert "no label on demo_pg yet" in capsys.readouterr().out

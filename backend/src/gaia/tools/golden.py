@@ -84,10 +84,10 @@ async def _run(args: argparse.Namespace) -> int:
     build = gaia.BUILD
     model_client = llm
     if args.regress:  # 6E part 2: a deliberately worse prompt, for the fresh net's test
-        from gaia.evaluation.net import PromptRegression
+        from gaia.evaluation.net import REGRESSION_MARK, PromptRegression
 
         model_client = PromptRegression(llm, args.regress)
-        build = f"{gaia.BUILD} + deliberate regression: {args.regress}"
+        build = f"{gaia.BUILD}{REGRESSION_MARK}{args.regress}"
         print(f"DELIBERATE REGRESSION ({args.regress}): the SQL prompt goes without that rule. "
               "This run measures whether three fresh runs catch a worse prompt (6E); it is "
               "recorded under its own build label and says nothing about the build itself.")

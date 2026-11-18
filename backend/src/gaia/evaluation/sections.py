@@ -156,9 +156,14 @@ async def extra_sections(session: AsyncSession, data_source: str, settings, fact
                       *(f"  * {b}: {k} of {n}" for b, (k, n) in sorted(rule["by_basis"].items())),
                       *(f"  * wrong: {m['object']} — proposed {m['proposed']} ({m['basis']}), "
                         f"people said {m['confirmed']}" for m in rule["misses"][:10])]
-            if seen["n"]:
-                lines.append(f"* the proposals people saw: {seen['kept']} of "
-                             f"{seen['n'] - seen['no_proposal']} kept (they saw them while "
-                             "deciding: this leans towards agreement)")
+            shown = seen["n"] - seen["no_proposal"]
+            if seen["n"] and not shown:
+                lines.append(f"* the proposals people saw: none — all {seen['n']} "
+                             "confirmations were made with no proposal of Gaia's before them")
+            elif seen["n"]:
+                lines.append(f"* the proposals people saw: {seen['kept']} of {shown} kept "
+                             "(they saw them while deciding: this leans towards agreement)"
+                             + (f"; {seen['no_proposal']} confirmed with no proposal before"
+                                if seen["no_proposal"] else ""))
             doc["categories"] = acc
     return ("\n".join(lines) + "\n" if lines else ""), doc

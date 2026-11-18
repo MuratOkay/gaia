@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from gaia.db.models.evaluation import Calibrator, EvaluationItem, EvaluationRun
 from gaia.evaluation.calibration import Fit, Point, Trial
 from gaia.evaluation.human_labels import VALUE, HumanLabel
+from gaia.evaluation.net import is_regression
 
 __all__ = ["ANSWER_SCORING", "answer_points", "in_use", "meaning_points", "put_in_use",
            "record_trial"]
@@ -45,14 +46,19 @@ def meaning_points(labels: Sequence[HumanLabel]) -> dict[tuple[str, str], list[P
 
 
 async def answer_points(session: AsyncSession) -> dict[tuple[str, str], list[Point]]:
-    """Answers scored against a reference or decided by an SME, by (model, scoring)."""
+    """Answers scored against a reference or decided by an SME, by (model, scoring). A golden
+    run made with a deliberately worse prompt (``--regress``, 6E) is no label: it answered
+    as Gaia never answers anyone (D89)."""
     out: dict[tuple[str, str], list[Point]] = defaultdict(list)
     rows = (await session.execute(
-        select(EvaluationItem, EvaluationRun.model, EvaluationRun.data_source)
+        select(EvaluationItem, EvaluationRun.model, EvaluationRun.data_source,
+               EvaluationRun.build)
         .join(EvaluationRun, EvaluationRun.id == EvaluationItem.run_id)
         .where(EvaluationRun.mode != "replay", EvaluationItem.correct.is_not(None),
                EvaluationItem.final_status == "answered"))).all()
-    for item, model, ds in rows:
+    for item, model, ds, build in rows:
+        if is_regression(build):
+            continue
         conf = (item.detail or {}).get("confidence") or {}
         if conf.get("score") is None or not model:
             continue

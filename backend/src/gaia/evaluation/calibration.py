@@ -6,7 +6,9 @@ from people (6B) for one model and one scoring version — a score's meaning cha
 * **Which method** (P6-1): isotonic regression from ``isotonic_min_labels`` labels with at least
   ``isotonic_min_wrong`` not right (wrong or partly); Platt scaling (a logistic curve: two
   numbers, safer on fewer labels) from ``platt_min_labels``/``platt_min_wrong``; below that the
-  **identity**, and the screens say "uncalibrated".
+  **identity**, and the screens say "uncalibrated". Since D89 the minimums count **subjects**
+  (a column, a golden question), not labels: repeated runs of 30 questions are not 180 pieces
+  of evidence.
 * **Judged on labels it did not see**: the labels are split into ``folds`` (by the column, or the
   question, so one subject never sits on both sides); each fold is predicted by a calibrator
   fitted on the others. On those held-out predictions, against the identity: the **expected
@@ -33,7 +35,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 __all__ = ["Fit", "Point", "Trial", "choose_method", "cross_validated", "fit", "identity",
-           "labels_key", "metrics", "trial", "wilson_lower"]
+           "labels_key", "metrics", "subjects", "trial", "wilson_lower"]
 
 Z = 1.959964
 
@@ -196,15 +198,30 @@ def not_right(points: Sequence[Point]) -> int:
     return sum(1 for p in points if p.y < 1.0)
 
 
+def subjects(points: Sequence[Point]) -> tuple[int, int]:
+    """(subjects, subjects not always right): the independent evidence behind the labels. Six
+    golden runs of one question are six labels but one question — its repeats say how often
+    the model errs on it, not on another (D89, OWNER_VERIFICATION §30)."""
+    seen = {p.subject for p in points}
+    wrong = {p.subject for p in points if p.y < 1.0}
+    return len(seen), len(wrong)
+
+
 def choose_method(points: Sequence[Point], cfg) -> tuple[str, str]:
-    """(method, why) by P6-1's minimums (``cfg``: the ``calibration`` settings)."""
-    n, wrong = len(points), not_right(points)
+    """(method, why) by P6-1's minimums (``cfg``: the ``calibration`` settings). The minimums
+    count **subjects** — columns, questions — not labels: a subject labelled again (a golden
+    question in every run) counts once, and as not right if any of its labels is not."""
+    labels = len(points)
+    n, wrong = subjects(points)
+    what = (f"{n} label(s), {wrong} not right" if n == labels else
+            f"{labels} labels on {n} subject(s) (columns or questions, each counted once), "
+            f"{wrong} of them not always right")
     if n >= cfg.isotonic_min_labels and wrong >= cfg.isotonic_min_wrong:
-        return "isotonic", f"{n} labels, {wrong} not right: enough for isotonic regression"
+        return "isotonic", f"{what}: enough for isotonic regression"
     if n >= cfg.platt_min_labels and wrong >= cfg.platt_min_wrong:
-        return "platt", (f"{n} labels, {wrong} not right: Platt scaling (isotonic needs "
+        return "platt", (f"{what}: Platt scaling (isotonic needs "
                          f"{cfg.isotonic_min_labels} with {cfg.isotonic_min_wrong} not right)")
-    return "identity", (f"{n} label(s), {wrong} not right: too few to calibrate (Platt needs "
+    return "identity", (f"{what}: too few to calibrate (Platt needs "
                         f"{cfg.platt_min_labels} with {cfg.platt_min_wrong} not right, "
                         f"isotonic {cfg.isotonic_min_labels} with {cfg.isotonic_min_wrong})")
 
@@ -259,6 +276,7 @@ class Trial:
     fit: Fit
     before: dict[str, Any]  # the identity, on every label
     held_out: dict[str, Any] | None  # the calibrator, on labels it was not fitted on
+    subjects: tuple[int, int] = (0, 0)  # subjects, subjects not always right (P6-1 counts these)
 
     @property
     def improves(self) -> bool:
@@ -269,7 +287,8 @@ class Trial:
 
     def as_dict(self) -> dict[str, Any]:
         return {"method": self.method, "why": self.why, "labels": self.labels,
-                "wrong": self.wrong, "key": self.key, "version": self.fit.version,
+                "wrong": self.wrong, "subjects": self.subjects[0],
+                "subjects_wrong": self.subjects[1], "key": self.key, "version": self.fit.version,
                 "improves": self.improves, "identity": self.before,
                 "held_out": self.held_out}
 
@@ -288,4 +307,4 @@ def trial(points: Sequence[Point], cfg, method: str | None = None) -> Trial:
         held = metrics(cross_validated(points, chosen, max(2, cfg.folds)), points, cfg.bins)
         model = fit(points, chosen)
     return Trial(chosen, why, len(points), not_right(points), labels_key(points), model,
-                 before, held)
+                 before, held, subjects(points))

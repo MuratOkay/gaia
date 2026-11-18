@@ -130,3 +130,26 @@ def test_cohens_kappa():
     assert cohen_kappa(["right"] * 4, ["right"] * 4) is None  # one verdict only: undefined
     k = cohen_kappa(["right", "right", "wrong", "wrong"], ["right", "wrong", "wrong", "right"])
     assert k == pytest.approx(0.0)
+
+
+def test_repeated_golden_runs_count_as_their_questions():
+    """D89 (OWNER_VERIFICATION §30): after six golden runs the host's report offered Platt
+    scaling for answers — "180 labels, 17 not right" — but those were 30 questions, and the 17
+    misses came from six of them. P6-1's minimums count subjects, not labels."""
+    rng = random.Random(4)  # noqa: S311 - reproducible labels, not a secret
+    flaky = {f"demo_pg:q{i:02}" for i in range(6)}
+    points = [Point(round(rng.uniform(0.5, 0.9), 3),
+                    0.0 if q in flaky and run % 2 else 1.0, q)
+              for run in range(6) for q in (f"demo_pg:q{i:02}" for i in range(30))]
+    assert len(points) == 180 and sum(1 for p in points if p.y < 1) == 18
+    method, why = choose_method(points, CFG)
+    assert method == "identity"
+    assert "180 labels on 30 subject(s)" in why and "6 of them not always right" in why
+    t = trial(points, CFG)
+    assert t.held_out is None and t.subjects == (30, 6) and t.labels == 180
+    assert t.as_dict()["subjects"] == 30 and t.as_dict()["subjects_wrong"] == 6
+    # one label per subject reads as before
+    assert choose_method(_labels(13, lambda s: s), CFG)[1].startswith("13 label(s), ")
+    # and enough distinct questions are enough, however often each was asked
+    many = [Point(p.score, p.y, f"{p.subject}") for p in _labels(100, lambda s: s * s, seed=9)]
+    assert choose_method(many + many, CFG)[0] == "platt"

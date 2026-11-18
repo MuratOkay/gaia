@@ -26,6 +26,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from gaia.auth.service import cli_actor
 from gaia.core.config import ROOT, get_settings
 from gaia.db.engine import dispose_engine, get_engine
+from gaia.db.repositories.semantics_store import SemanticsStore
 from gaia.evaluation.quality import quality_report, select_runs
 from gaia.evaluation.sections import extra_sections
 from gaia.evaluation.store import import_golden_dir, load_runs
@@ -54,6 +55,10 @@ async def _run(args: argparse.Namespace) -> int:
                 print(f"{done} run(s) imported")
                 return 0
             label = args.target or settings.app.default_target
+            unknown = await SemanticsStore(s).unknown_name(label, settings.targets)
+            if unknown:
+                print(unknown, file=sys.stderr)
+                return 2
             runs = await load_runs(s, label)
             # 6B–6D: the meanings against people, the calibrators, feedback on answers
             extra, _extra_doc = await extra_sections(s, label, settings, factory)
@@ -75,7 +80,7 @@ async def _run(args: argparse.Namespace) -> int:
                   "--baseline and --candidate, or record runs of two builds", file=sys.stderr)
         text, _doc = quality_report(sel.shown, data_source=label, question_set_key=sel.set_key,
                                     excluded=sel.excluded, baseline=sel.baseline,
-                                    candidate=sel.candidate)
+                                    candidate=sel.candidate, regressions=sel.regressions)
         text += extra
         print(text)
         out = ROOT / "evaluations" / f"quality_{label}_{datetime.now(UTC):%Y%m%d_%H%M}.md"

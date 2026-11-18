@@ -741,7 +741,11 @@ can be compared — people may follow Gaia's certainty too readily, and this mea
 
 ```bash
 make labels ARGS="--import-3c evaluations/nge_small"   # the owner's filled 3C audit, once
+make labels TARGET=demo_mssql                          # its labels, and the judge against people
 ```
+
+The audit is kept under the data source its run was made on — `demo_mssql`, not the database's
+name `nge_small`; a `TARGET` that is no data source is refused with the names there are.
 
 The **3C audit** — the columns the owner judged himself during Phase 3C (`audit.csv`,
 *owner_meaning* yes / partial / no) — is a second source: each audited answer is kept once as a
@@ -766,7 +770,10 @@ A calibrator turns a raw score into **P(right)** for one model and scoring versi
 fitted on people's labels (above); *answers* on golden runs (each answer's confidence against the
 reference) and SMEs' decisions on doubted answers. How, depends on how many labels there are
 (P6-1): isotonic regression from 150 with at least 30 not right, Platt scaling from 75 with 15,
-otherwise nothing — the scores stay **uncalibrated** and say so. Each calibrator is judged on
+otherwise nothing — the scores stay **uncalibrated** and say so. These counts are of **subjects** —
+columns, golden questions — not of labels: six golden runs of 30 questions are 180 labels but 30
+subjects (*"180 labels on 30 subject(s), 6 of them not always right"*). Golden runs made with
+`--regress` are never labels. Each calibrator is judged on
 labels it was not fitted on, against simply believing the raw score: the **calibration error**
 (how far "predicted" is from "observed", per band), the **Brier score** (lower is better), and a
 **reliability diagram** (on the *Evaluation* page: dots on the diagonal mean the score says what it
@@ -783,6 +790,20 @@ Every `make test` sends the golden questions through the whole pipeline with a s
 net (`tests/fixtures/golden_net/demo_pg.json`). A change that moves one fails and names the
 question: a moved **outcome** is a regression of the guard, the executor or the scoring; a moved
 **prompt** needs fresh golden runs before it is accepted (`make golden-net-accept`).
+
+**On the host, run `make test-host`**, not `make test`: it refuses to start unless the three §9
+exports (`GAIA_TEST_DATABASE_URL`, `GAIA_TEST_PG_TARGET_URL`, `GAIA_TEST_MSSQL`) are set, and fails
+on any skipped test. Without them the PostgreSQL and SQL Server tests — the net among them — skip,
+and a plain `make test` still ends green; it lists every skip by reason and says *NOT A HOST
+VERIFICATION*.
+
+### A deliberate regression (`make golden … --regress joins-rule`, Phase 6E)
+
+A golden run with `--regress NAME` sends a deliberately worse prompt and is recorded as
+`<build> + deliberate regression: NAME`. It measures the fresh net, not a build: `make quality`
+leaves such runs out of `--last N` and of `--compare-builds` (and says how many), except when the
+newest runs are one — then `--compare-builds` compares them with the build they were made of, and
+only *fails* means the net caught it. They never count as labels for calibration.
 
 ### Sending verification outputs (`make share`)
 
@@ -864,6 +885,7 @@ lists each one; that footprint is one of the things being measured.
 | `make reset-db` | **Destroys** the metadata DB and re-initialises it |
 | `make psql` / `make redis-cli` | Shells into the containers |
 | `make test` | Full test suite (`ARGS="tests/... -k name"` for a subset) |
+| `make test-host` | The host's verification: the §9 exports required, any skip fails the run |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |
 | `make measure` | Profiling-cost measurements for Phase 3 budgets (`TARGET=`, `ARGS=`) |
 | `make dev-api` | FastAPI on `127.0.0.1:8000` (`/health`, `/api/meta`) |

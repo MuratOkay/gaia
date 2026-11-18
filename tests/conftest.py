@@ -485,6 +485,51 @@ def fake_embedder() -> FakeEmbedder:
     return FakeEmbedder()
 
 
+# -- the host's verification (D89) -------------------------------------------------------------
+#
+# The §9 exports decide what a run proves: without them every PostgreSQL and SQL Server test
+# skips and the run still ends green (the D88 host run: 683 passed, 82 skipped — nothing of
+# the database side verified). So every run says why tests skipped, and says loudly when the
+# exports are missing; ``make test-host`` (GAIA_TEST_HOST=1) refuses to start without them and
+# fails on any skip — on the host every skip is a finding.
+
+HOST_VARS = ("GAIA_TEST_DATABASE_URL", "GAIA_TEST_PG_TARGET_URL", "GAIA_TEST_MSSQL")
+
+
+def _skip_reasons(config) -> Counter:
+    reporter = config.pluginmanager.get_plugin("terminalreporter")
+    reasons: Counter = Counter()
+    for rep in (reporter.stats.get("skipped", []) if reporter else []):
+        longrepr = rep.longrepr
+        text = longrepr[2] if isinstance(longrepr, tuple) and len(longrepr) == 3 else str(longrepr)
+        reasons[str(text).removeprefix("Skipped: ")] += 1
+    return reasons
+
+
+def pytest_terminal_summary(terminalreporter, exitstatus, config):
+    reasons = _skip_reasons(config)
+    if not reasons:
+        return
+    terminalreporter.section("skipped, by reason")
+    for reason, n in reasons.most_common():
+        terminalreporter.line(f"{n:>5}  {reason}")
+    missing = [v for v in HOST_VARS if not os.environ.get(v)]
+    if missing:
+        terminalreporter.line(
+            f"NOT A HOST VERIFICATION: {', '.join(missing)} not set in this shell — "
+            f"{sum(reasons.values())} test(s) skipped. On the host: the §9 exports, then "
+            "`make test-host`.", red=True, bold=True)
+    if os.environ.get("GAIA_TEST_HOST"):
+        terminalreporter.line(
+            f"make test-host: {sum(reasons.values())} test(s) skipped — on the host every skip "
+            "is a finding; the run fails", red=True, bold=True)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    if os.environ.get("GAIA_TEST_HOST") and exitstatus == 0 and _skip_reasons(session.config):
+        session.exitstatus = 1
+
+
 # -- disposable PostgreSQL ---------------------------------------------------------------
 
 

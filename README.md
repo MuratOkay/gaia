@@ -10,19 +10,18 @@ Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
 > Status (2026-11-18): **Phases 0–4 complete** (3C accepted, P6-0). **Phase 5 — every stage
-> built and verified on the owner's host**: sign-in with a real **Active Directory** (Samba AD) and a
-> real **Microsoft Entra ID** tenant, four Gaia roles and the PII-processor permission, the SME
-> review — g07 answered right by an SME's decision alone — need-to-know by data category, the chat
-> screen, the runs view (`make dev-web`); the owner's gate closes it. **Phase 6 (evaluation and
-> calibration) is under way** — build **D88**: every golden run recorded with its meanings and
-> what each answer was made of, `make quality` and the *Evaluation* page (6A), the replayed golden
-> net in `make test` and a deliberate regression for the fresh one (6E), labels from SME decisions
-> and the owner's 3C audit with the judge's κ (6B), calibrators judged on held-out labels —
-> `make calibrate`, "uncalibrated" until there are enough (6C) — and "Was this right?" under every
-> answer, decided by the data source's SME (6D). Send verification outputs only through `make share`.
-> PostgreSQL is the main dialect (D52); SQL Server is verified asynchronously (D56). What to run
-> on your machine: **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§29: the D83 run triaged,
-> and §29d, the next run on build D88). See [PHASES.md](PHASES.md).
+> built and verified on the owner's host**; the owner's gate closes it. **Phase 6 (evaluation and
+> calibration) is under way** — build **D89**: the D88 host run triaged — `make test-host` (the
+> §9 exports required, every skip a failure), deliberate-regression runs kept out of reports and
+> of calibration, P6-1's minimums counted per column or question, a wrong `TARGET` refused. Built
+> before: golden runs with what each answer was made of, `make quality` and the *Evaluation* page
+> (6A), the replayed golden net in `make test` (6E), labels from SME decisions and the owner's 3C
+> audit (6B), calibrators judged on held-out labels — `make calibrate` (6C), "Was this right?"
+> under every answer (6D), category proposals against people (6G). Open: what the fresh net must
+> catch (P6-8). Send verification outputs only through `make share`. PostgreSQL is the main
+> dialect (D52); SQL Server is verified asynchronously (D56). What to run on your machine:
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§30: the D88 run triaged, and §30e, the next
+> run on build D89). See [PHASES.md](PHASES.md).
 ---
 
 ## Layout

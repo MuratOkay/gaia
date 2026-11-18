@@ -27,7 +27,9 @@ cleanup:
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type d -name ".pytest_cache" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
-	@echo "Cleaned up pycache and pytest cache files for Taiga upload."
+	@$(PY) $(ROOT)/scripts/pii_scan.py
+	@echo "Cleaned up pycache and pytest cache files."
+	@echo "The files listed above hold personal data or a credential; 'scripts/pii_scan.py -v' says where."
 
 .PHONY: share
 share: ## Verification outputs safe to send: personal data replaced consistently (ARGS="[--check] [--also NAME] files")
@@ -99,6 +101,15 @@ stamp: ## Print which code this is (first line of every verification output)
 .PHONY: test
 test: ## Run the test suite (ARGS="tests/integration/test_x.py -k name" for a subset)
 	cd $(ROOT) && $(VENV)/bin/pytest -q -c backend/pyproject.toml $(ARGS)
+
+.PHONY: test-host
+test-host: ## The host's verification: make test with the §9 exports required; any skip fails (D89)
+	@missing=""; for v in GAIA_TEST_DATABASE_URL GAIA_TEST_PG_TARGET_URL GAIA_TEST_MSSQL; do \
+	  [[ -n "$${!v}" ]] || missing="$$missing $$v"; done; \
+	  if [[ -n "$$missing" ]]; then \
+	    echo "make test-host: not set in this shell:$$missing — the §9 exports first (OWNER_VERIFICATION §9)"; \
+	    exit 2; fi
+	cd $(ROOT) && GAIA_TEST_HOST=1 $(VENV)/bin/pytest -q -c backend/pyproject.toml $(ARGS)
 
 .PHONY: test-db
 test-db: ## Create the disposable gaia_test database used by the PostgreSQL integration tests

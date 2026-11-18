@@ -26,8 +26,9 @@ import threading
 from collections import defaultdict
 from typing import Any
 
-__all__ = ["OUTCOME_FIELDS", "REGRESSIONS", "FingerprintingLLM", "PromptRegression",
-           "differences", "fingerprint", "question_of", "snapshot"]
+__all__ = ["OUTCOME_FIELDS", "REGRESSIONS", "REGRESSION_MARK", "FingerprintingLLM",
+           "PromptRegression", "differences", "fingerprint", "is_regression", "question_of",
+           "regressed_build", "snapshot"]
 
 OUTCOME_FIELDS = ("first_status", "final_status", "correct", "correct_first", "executable",
                   "best_guess", "repairs", "calls", "reason")
@@ -83,6 +84,20 @@ def question_of(messages) -> tuple[str, str]:
 REGRESSIONS = {
     "joins-rule": "- Join only as listed under JOINS.",
 }
+# A run made with ``--regress`` is recorded under ``<build>`` + this + the regression's name. Such
+# a run measures the net, not a build: reports leave it out unless it is the comparison asked
+# for, and it is never a label for calibration (D89, OWNER_VERIFICATION §30).
+REGRESSION_MARK = " + deliberate regression: "
+
+
+def is_regression(build: str | None) -> bool:
+    """Whether a run's build label says it was a deliberate regression (6E part 2)."""
+    return bool(build) and REGRESSION_MARK in build
+
+
+def regressed_build(build: str | None) -> str | None:
+    """The build a deliberate regression was made of (``None`` for an ordinary run)."""
+    return build.split(REGRESSION_MARK, 1)[0] if is_regression(build) else None
 
 
 class PromptRegression:

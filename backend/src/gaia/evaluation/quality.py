@@ -22,6 +22,8 @@ from datetime import datetime
 from statistics import median
 from typing import Any
 
+from gaia.evaluation.net import is_regression, regressed_build
+
 __all__ = ["Comparison", "ItemView", "RunView", "Selection", "compare", "confidence_levels",
            "quality_report", "select_runs", "wilson", "wrong_causes"]
 
@@ -128,6 +130,7 @@ class Selection:
     excluded: list[RunView]
     baseline: list[RunView] | None = None
     candidate: list[RunView] | None = None
+    regressions: list[RunView] = field(default_factory=list)  # left out: they measure the net
 
 
 def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: str | None = None,
@@ -135,7 +138,12 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
                 candidate_ids: Sequence[str] = (), compare_builds: bool = False) -> Selection:
     """Which runs a report reads: one question set (the newest run's unless given); the last
     ``last`` measured runs, or the runs named; for a comparison, the baseline and candidate
-    named — or, with ``compare_builds``, the newest build's runs against the build before."""
+    named — or, with ``compare_builds``, the newest build's runs against the build before.
+
+    A deliberate regression (``make golden --regress``, 6E part 2) measures the net, not a build:
+    it is left out of the last runs and of a comparison of builds — except when the newest runs
+    are one, and then ``compare_builds`` compares them with the build they were made of (the
+    net's acceptance test). Named runs are always read as named (D89)."""
     def named(prefixes: Sequence[str]) -> list[RunView]:
         return [r for r in runs if any(r.id.startswith(p.lower()) for p in prefixes)]
 
@@ -144,22 +152,29 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
     pool = [r for r in pool if r.set_key == key]
     measured = [r for r in pool if r.measured]
     excluded = [r for r in pool if not r.measured]
+    regressions = [] if ids else [r for r in measured if is_regression(r.build)]
+    ordinary = [r for r in measured if r not in regressions]
     baseline = candidate = None
     if baseline_ids or candidate_ids:
         baseline = [r for r in named(baseline_ids) if r.measured and r.set_key == key]
         candidate = [r for r in named(candidate_ids) if r.measured and r.set_key == key]
+    elif compare_builds and measured and is_regression(measured[-1].build):
+        newest = measured[-1].build
+        candidate = [r for r in measured if r.build == newest]
+        baseline = [r for r in ordinary if r.build == regressed_build(newest)]
     elif compare_builds:
-        builds = list(dict.fromkeys(r.build for r in reversed(measured)))
+        builds = list(dict.fromkeys(r.build for r in reversed(ordinary)))
         if len(builds) >= 2:
-            candidate = [r for r in measured if r.build == builds[0]]
-            baseline = [r for r in measured if r.build == builds[1]]
+            candidate = [r for r in ordinary if r.build == builds[0]]
+            baseline = [r for r in ordinary if r.build == builds[1]]
     if baseline and candidate:
         chosen = {r.id: r for r in [*baseline, *candidate]}
         shown = sorted(chosen.values(), key=lambda r: r.started_at)
+        regressions = [r for r in regressions if r.id not in chosen]
     else:
         baseline = candidate = None
-        shown = measured if ids else measured[-last:]
-    return Selection(key, shown, excluded, baseline, candidate)
+        shown = measured if ids else ordinary[-last:]
+    return Selection(key, shown, excluded, baseline, candidate, regressions)
 
 
 def _meanings(r: RunView) -> str:
@@ -253,16 +268,21 @@ def _pct(x: float) -> str:
 
 def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_key: str,
                    excluded: Iterable[RunView] = (), baseline: Sequence[RunView] | None = None,
-                   candidate: Sequence[RunView] | None = None) -> tuple[str, dict[str, Any]]:
+                   candidate: Sequence[RunView] | None = None,
+                   regressions: Iterable[RunView] = ()) -> tuple[str, dict[str, Any]]:
     """The report over measured runs, and the same numbers as a document."""
     runs = [r for r in runs if r.measured]
     excluded = list(excluded)
+    regressions = list(regressions)
     lines = [f"# Quality — {data_source}", "",
              f"Question set `{question_set_key}` · {len(runs)} measured run(s)"
              + (f" · {len(excluded)} replay(s) left out (they reproduce a run)" if excluded
-                else ""), ""]
+                else "")
+             + (f" · {len(regressions)} deliberate-regression run(s) left out (they measure "
+                "the net, not a build)" if regressions else ""), ""]
     doc: dict[str, Any] = {"data_source": data_source, "question_set_key": question_set_key,
-                           "runs": [r.id for r in runs], "excluded": [r.id for r in excluded]}
+                           "runs": [r.id for r in runs], "excluded": [r.id for r in excluded],
+                           "regressions_left_out": [r.id for r in regressions]}
     if not runs:
         lines.append("No measured run of this question set yet: `make golden` with a new "
                      "`--out`, then `make quality` again.")
@@ -357,6 +377,12 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
         lines += ["", "## The confidence Gaia showed, against the reference (6D)", ""]
         for level, (k, n) in levels.items():
             lines.append(f"* shown as {level}: right {_share(k, n)}")
+        unknown = sum(1 for i in all_items if i.correct is not None
+                      and i.final_status == "answered"
+                      and not ((i.detail or {}).get("confidence") or {}).get("level"))
+        if unknown:
+            lines.append(f"* not known: {unknown} answer(s) (runs recorded before build D84 kept "
+                         "no confidence)")
         lines.append("* \"high\" should be right at least 95% of the time — the interval's lower "
                      "bound says whether it is (P6-2)")
         doc["confidence_levels"] = {lv: list(kn) for lv, kn in levels.items()}
@@ -397,6 +423,10 @@ def quality_report(runs: Sequence[RunView], *, data_source: str, question_set_ke
                   f"* correct, question by question: {_pct(c.difference)} points (95% interval "
                   f"{_pct(c.low)} to {_pct(c.high)}) over {c.questions} question(s)",
                   f"* verdict: {word} (a change may cost at most 3 points)"]
+        if any(is_regression(r.build) for r in candidate):
+            lines.append("* the candidate is a **deliberate regression** (6E): the net catches "
+                         "it only if the verdict is *fails* — *passes* or *cannot tell* means "
+                         "these runs did not see it")
         note = meanings_note(baseline, candidate)
         if note:
             lines.append(f"* **{note}**")

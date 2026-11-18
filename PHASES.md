@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-17 (**the D80 host run triaged; build `2026-11-17 · D83 (6A, 6B, 6E net; D81)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** (real AD, real Entra tenant, g07 right by an SME decision alone) — the owner's gate closes it · **Phase 6 in progress**: 6.0, 6A (verified on the host), 6E's replayed net, 6B part 1 built · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) — **§28d is the next run**
+> Last updated: 2026-11-18 (**the D88 host run triaged; build `2026-11-18 · D89 (D88 triage: host tests, regression runs, P6-1 by subject)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6 in progress**: 6.0, 6A, 6B, 6C, 6D part 1, 6E, 6G's measurement built; the fresh net's acceptance test open (**P6-8**) · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) — **§30e is the next run**
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -2820,7 +2820,7 @@ proposing categories can reuse the stored meanings; Gaia's role suggestions are 
 ---
 
 
-## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D88); 6F to come**
+## Phase 6 — Evaluation & calibration · **approved 2026-11-17 (P6-0 … P6-7 as recommended) — 6.0, 6A, 6B, 6C, 6D part 1, 6E and 6G's measurement built (D78–D89); 6F to come; P6-8 (what the fresh net must catch) open**
 
 **Goal.** Every quality claim Gaia makes is a number **with an interval**, measured the same
 way every time; a regression is seen **before** a build ships; and a score means what it says —
@@ -2922,9 +2922,9 @@ overnight refresh stay in Phase 7 (P5-12); 6A makes a model switch *measurable*,
 | 6.0 ✅ | §26e triaged (§27); 3C gate (P6-0 ✅); D78 built; §27d triaged (§28); the Phase 5 gate is the owner's | D78 with the LDAPS directory | ✅ §27d |
 | 6A ✅ | `evaluation` schema; golden runs write to it; fresh vs replay; `make quality`; older runs imported; the meanings of a run and an item's SQL (D81); the *Evaluation* page | fully, with the scripted model | ✅ a real report (§28a); the page, §28d |
 | 6B ✅ | labels from SME decisions (`make labels`, in `make quality`); the blind share of review items (P6-5); the owner's 3C audit as labels and the judge's κ (D85) | fully | ✅ the owner's decisions, some blind (§29a); the 3C import (§29d step 1) |
-| 6C ✅ (built) | calibrators per model and scoring version (P6-1); held-out ECE/Brier/reliability against the identity; `--apply` and `make rescore`; bands as probabilities (P6-3); "uncalibrated" on the screens (D86) | with synthetic labels (known distributions) | a fit on real labels — P6-1's count (13 + ~19 N-P audits today) |
+| 6C ✅ (built) | calibrators per model and scoring version (P6-1, counted per column or question since D89); held-out ECE/Brier/reliability against the identity; `--apply` and `make rescore`; bands as probabilities (P6-3); "uncalibrated" on the screens (D86) | with synthetic labels (known distributions) | a fit on real labels — P6-1's count (13 SME + 17 N-P audits today) |
 | 6D ✅ (part 1) | "Was this right?" → the SME's *Answers people doubted* → a decided label; answer calibration from golden items and decisions; P(right) for SMEs/admins/auditors once calibrated (D87) — *levels fitted on real data: part 2* | fully | people's feedback over weeks (§29d step 5 starts it) |
-| 6E ✅ (replayed net; the fresh net's tooling) | the replayed net in `make test` (D82; narration rows as a set, D84), its deliberate regressions caught; the fresh net is 6A's comparison over three runs; `make golden --regress joins-rule` and the cost per run in a comparison (D87) | fully (scripted model) | ✅ the net on the host's data (§29a, after D84a); the deliberate prompt regression (§29d step 4) |
+| 6E (replayed net ✅; the fresh net's acceptance open, P6-8) | the replayed net in `make test` (D82; narration rows as a set, D84), its deliberate regressions caught; the fresh net is 6A's comparison over three runs; `make golden --regress joins-rule` and the cost per run in a comparison (D87); regression runs kept out of reports and labels (D89) | fully (scripted model) | the net on the host's data (§30e step 0 — `29_tests.out` skipped it); the JOINS-rule regression ran: **not caught, and rightly** (§30b-7) |
 | 6F | `nge_small` golden set (drafted, corrected), T-SQL golden run, persona runs, D61 (b) | drafting only | the owner's corrections; SQL Server |
 | 6G ✅ (measured; weights not fitted) | proposal accuracy per basis — today's rule with each confirmation hidden in turn, and the proposals people saw (`make access ARGS=accuracy`, in `make quality` and on the page; D88) — *fitting D77's weights waits for more confirmations* | with confirmations made in the test | the owner's ~50 confirmed placements (§29d step 6) |
 
@@ -3078,6 +3078,40 @@ Tests: **755 passed, 10 skipped** in the sandbox (+21 since D83), web **61** (+1
 down and up; DDL identical to `create_all`. Not yet: answer levels fitted on real data (6D part 2),
 6F, 6G; a calibrator in use needs P6-1's labels.
 
+### The D88 host run, and D89 (2026-11-18)
+
+The owner ran §29d up to step 4 on D88 (OWNER_VERIFICATION §30). **Confirmed:** the 3C audit
+imported (94 labels, idempotent); three fresh D88 runs 28, 26, 27 of 30 — pooled 90 % (82–95 %),
+executable 100 %; the D84 sections on real runs: **o06 is retrieval** (the context lacked
+`sales.orders` in all six D88 runs; the model then invented a filter on `order_lines.condition`),
+wrong answers split into retrieval (3) and reading (6), the levels against the reference;
+the regression tooling. **Not verified:** `make test` ran without the §9 exports (82 skipped — the
+instructions had dropped the check). **Found:**
+
+* the deliberate regression was read as answer labels, and 180 labels of 30 questions were counted
+  against P6-1 as 180 — the report offered a Platt calibrator "beating the identity";
+* regression runs would have been the newest "build" for `--last N` and `--compare-builds`;
+* D88 against D83 (no prompt changed): −5.6 points with an interval of −11.1 to −1.1 — 4 of 30
+  questions moved, all down; exact sign test p = 0.125, whole-run permutation p = 0.20. The
+  per-question bootstrap is over-confident with few discordant questions and blind to what a
+  session shares (the provider's model, "always the latest");
+* the JOINS rule's removal: +1.1 points, repairs 1.0 → 1.0 — **not caught, and rightly**: the guard
+  refuses what the rule forbids and none of the 30 questions needs two child tables of one parent;
+* the guard accepts a **chasm trap** (order lines → orders ← payments: two verified FK joins; in
+  `demo_pg` 15,347 orders have 2+ payments), which the prompt's JOINS rule even advises ("or go
+  through the parent table").
+
+**D89 (no migration).** `make test-host` (the §9 exports required, every skip fails the run) and a
+skip report in every run; `make labels` and `make quality` refuse a name that is no data source;
+`REGRESSION_MARK` / `is_regression` (`gaia.evaluation.net`): regression runs are never answer
+labels, are left out of `--last N` and `--compare-builds` (counted at the top of the report) unless
+they are the newest runs — then compared with the build they regressed, with a line saying only
+*fails* is a catch; P6-1's minimums count **subjects** (columns, golden questions) once each, as
+not right if any of their labels is — as P6-1 was written ("150 labelled columns"); the confidence
+section counts pre-D84 answers as *not known*; 6G's "0 of 0" says what it is.
+
+Tests: **759 passed, 10 skipped** in the sandbox (+4); web unchanged (61).
+
 ### Deliverables
 
 - Back end: `db/models/evaluation.py` and its migration; `gaia/evaluation/store.py` (runs and items),
@@ -3112,7 +3146,10 @@ down and up; DDL identical to `create_all`. Not yet: answer levels fitted on rea
       synthetic labels; on the host today "too few labels")*
 - [ ] A deliberate prompt regression (JOINS rule removed) and a deliberate code regression (a
       fan-out join allowed) are both caught — the first by the fresh net, the second by the
-      replayed one, which runs in `make test`
+      replayed one, which runs in `make test` *(D88 on the host: the replayed net catches both;
+      the fresh net did not see the JOINS rule's removal — +1.1 points, repairs unchanged —
+      because the guard already refuses what the rule forbids and no golden question needs it.
+      What the fresh net must catch is open: **P6-8**)*
 - [ ] The golden run is reported over three runs, and a change is compared question by question
       with its baseline (P6-2)
 - [ ] "High" confidence answers are right at least as often as their threshold says, with the
@@ -3136,6 +3173,13 @@ down and up; DDL identical to `create_all`. Not yet: answer levels fitted on rea
 | P6-5 | A blind share of review items (no certainty shown) to measure anchoring | 6B | **10 %**, randomly, reported |
 | P6-6 | `nge_small`'s golden questions (P4-1) | 6F | Gaia drafts ~30 from the schema and the meanings; the owner corrects them (an hour) |
 | P6-7 | A second model through the same harness (D15: Claude or Gemini "may be evaluated later") | 6A | Optional, after 6E: the report compares models like builds |
+
+*Open since the D88 host run (2026-11-18):*
+
+| # | Decision | Needed by | Options — and the recommendation |
+|---|---|---|---|
+| P6-8 | **What the fresh net must catch, and how it says so** (replaces the JOINS-rule half of the acceptance) | 6E's acceptance | **The yardstick** — (a) keep the JOINS rule and add questions that need it: even then the guard refuses what the rule forbids, so its removal can only cost repairs; (b) **a regression whose damage is known in advance**: `--regress drop:<object>` takes one object out of every context, and `golden.yaml`'s `objects` say which questions lose what they need — `finance.invoices` 1 (g07), `store.stores` 5, `product.products` 8, `sales.orders` 14; (c) a weaker model (P6-7) — realistic, but its damage is not known in advance. **The verdict** — the per-question bootstrap resolves 3.3 points a question: with 3 runs a side it says *fails* reliably only when ~6 questions break, and an unchanged build *passes* only 40–50 % of the time (simulated on the host's flakiness); more runs barely help, more questions do. **Recommended:** (b) as the yardstick, at two sizes — `store.stores` (5 questions) must be *caught*, `finance.invoices` (1) documents the limit; a two-part verdict — **any question right in every baseline run and wrong in every candidate run is named and blocks** (a deterministic break of even one question is caught; on the host's flakiness a false alarm ~3 % a comparison; none on D83→D88 or D88→regression), and the overall difference with an interval that resamples runs as well as questions; the baseline re-run **in the same session** as the candidate (provider drift, §30b-6); 6F's questions to resolve smaller losses. The chasm trap is fixed in the guard either way (a correctness fix, caught by the replayed net, with golden questions that need sibling aggregates) |
+| P6-9 | Pool `deepseek-v4.1-flash` with `deepseek-flash` for calibration (§21f: renamed) | 6C, once labels near P6-1 | Pool them through a configured alias **only** for labels from before the rename; `deepseek-flash` is "always the latest", so its own labels stay per model id (the risk row above) |
 
 ### Estimate
 

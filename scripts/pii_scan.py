@@ -338,8 +338,9 @@ def _walk(root: Path, skip: list[str]) -> tuple[list[Path], Counter[str]]:
             rel = path.relative_to(root).as_posix()
             if path.is_symlink():
                 skipped["symlink"] += 1
-            elif name.endswith(SKIP_SUFFIX) or path.resolve() == Path(__file__).resolve():
-                skipped["not a text source"] += 1
+            elif not path.is_file() or name.endswith(SKIP_SUFFIX) \
+                    or path.resolve() == Path(__file__).resolve():
+                skipped["not a text source"] += 1  # a fifo or a socket would block a read
             elif any(fnmatch(rel, glob) or fnmatch(name, glob) for glob in skip):
                 skipped["skipped by --skip"] += 1
             else:

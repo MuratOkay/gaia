@@ -24,6 +24,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from gaia.auth.service import cli_actor
 from gaia.core.config import ROOT, get_settings
 from gaia.db.engine import dispose_engine, get_engine
+from gaia.db.repositories.semantics_store import SemanticsStore
 from gaia.evaluation.human_labels import (
     all_labels,
     import_3c_audit,
@@ -69,8 +70,13 @@ async def _run(args: argparse.Namespace) -> int:
     try:
         async with factory() as s:
             labels = await all_labels(s, label)
+            unknown = None if labels else await SemanticsStore(s).unknown_name(
+                label, settings.targets)
     finally:
         await dispose_engine()
+    if unknown:
+        print(unknown, file=sys.stderr)
+        return 2
     if not labels:
         print(f"no label on {label} yet: the review screen (Review) makes them, and "
               "--import-3c brings the owner's 3C audit in")

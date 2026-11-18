@@ -20,19 +20,18 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D88 (6B–6D, 6G; D84 triage; audit menu)` — the D83 run triaged (§29): the
-  net's narration rows as a set, what each golden answer was made of, AUROC on few labels (D84);
-  Phase 6: the owner's 3C audit as labels and the judge's κ (6B, D85), calibrators judged on
-  held-out labels and `make calibrate` (6C, D86), "Was this right?" under answers and the SME's
-  *Answers people doubted*, answer confidence as a probability once calibrated (6D, D87), a
-  deliberate prompt regression for the fresh net (6E), category proposals against people's
-  confirmations (6G, D88). **The next run: §29d.***
+  there. *Latest build: `2026-11-18 · D89 (D88 triage: host tests, regression runs, P6-1 by
+  subject)` — the D88 run triaged (§30): `make test-host` (the §9 exports required, every skip a
+  failure), deliberate-regression runs left out of reports and of calibration, P6-1's minimums
+  counted per column or question, a wrong `TARGET` refused. The fresh net's acceptance test is
+  open (§30d, decision P6-8). **The next run: §30e.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
-  D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — **triaged
-  in §29**, and **§29d is the next run** (build D88). **Send outputs only through `make share`.**
+  D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
+  in §29; §29d was run on D88 up to step 4 — **triaged in §30**, and **§30e is the next run**
+  (build D89). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -2984,7 +2983,11 @@ yours: PHASES, Phase 5, *Gate*, last box. Tell me if anything is still open.
 Sandbox: **755 passed, 10 skipped**; web **61** (+12); migration `0020` down and up; DDL as
 `create_all`.
 
-### 29d · The run (build D88) — the next run
+### 29d · The run (build D88)
+
+*Run up to step 4 (the `29_*` outputs); triaged in §30. Steps 1, 5 and 6 name `nge_small` where the
+data source is `demo_mssql`, and step 5 expects what D88 no longer gives — §30e replaces steps 1
+and 5–8.*
 
 Outputs `verification/29_*.out`, each starting with `make stamp`; a new `--out` for every golden
 run; at the end `make share` and send `verification/share/`. **Do steps 3 and 4 before any new SME
@@ -3107,6 +3110,204 @@ model with its reliability diagram, category proposals against people, the feedb
 *Audit → Evaluation*, the same.
 
 **Step 8 — send.** `make share` → send `verification/share/`.
+
+---
+
+## 30 · Triage of the D88 run, and build D89 — the next run (2026-11-18)
+
+I read the twelve `29_*` files of `share/` (build D88, git `45a5b50`): steps 0, 1, 3 and 4 of §29d.
+Steps 2 and 5–7 (the Finance sign-in, "Was this right?", categories, the page) have not come yet —
+§30e carries them, corrected. The files are clean: no address, id or path survived `make share`.
+
+### 30a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `29_migrate.out` | `0020 (head)`; no `Running upgrade` line — the store was at `0020` already, as in §28a | ✅ |
+| `29_tests.out` | **683 passed, 82 skipped** in 17 s — every PostgreSQL and SQL Server test skipped | ❌ not a verification: 30b-1 |
+| `29_web.out` | 61 passed, `✓ built` | ✅ |
+| `29_labels3c.out` | `demo_mssql: 94 audit verdict(s) imported, 0 known already, 2 row(s) without the owner's verdict`; again: `0 … imported, 94 known already` | ✅ the import (idempotent) — but no κ: my command named the wrong data source, 30b-2 |
+| `29_golden_a/b/c.out` | 28, 26, 27 of 30; executable 30/30 each; 71–72 calls, ~2 min a run | ✅ |
+| `29_quality.out` | D88 pooled **81 of 90 = 90 % (82–95 %)**; o06 wrong in every run — **"the context lacked sales.orders (retrieval)"**; every wrong answer counted as retrieval (3) or reading (6); the levels against the reference (high 8/8, medium 65/72, low 8/10); D88 against D83 **−5.6 points (−11.1 to −1.1): cannot tell**, same meanings `770ed5` | ✅ the sections work; o06 is answered (30b-3); the comparison's interval is too narrow (30b-6) |
+| `29_regress_a/b/c.out` | each starts `DELIBERATE REGRESSION (joins-rule)`, build `… + deliberate regression: joins-rule`; 27, 28, 27 of 30 | ✅ the tooling |
+| `29_regress_quality.out` | the regression against D88: **+1.1 points (−2.2 to +5.6): passes**; per run repairs 1.0 → 1.0, calls 71 → 73; *answers of deepseek-flash: 180 labels, 17 not right: Platt … beats the identity on both* | the net did **not** catch it (30b-7); the calibration line is a bug (30b-4) |
+
+### 30b · Findings
+
+1. **`make test` ran without the §9 exports.** 82 tests skipped — the replayed net (D84a's fix on
+   your data), every PostgreSQL and SQL Server test — and the run still ended green. My fault: §28d
+   and §29d dropped the `env | grep -c '^GAIA_TEST_'` line that §22–§27 had (T8 again). **Fixed
+   (D89):** every run now lists its skips by reason and says *NOT A HOST VERIFICATION* when an
+   export is missing; and **`make test-host`** refuses to start without the three exports and fails
+   on any skip. From now on the host runs `make test-host`.
+2. **The 3C import is right; my command was wrong.** `nge_small` is the database, the data source is
+   `demo_mssql` (the run's `plan.json` says so, and the import took it from there). `make labels
+   TARGET=nge_small` then said *"no label on nge_small yet"* — so the judge's κ is still unseen.
+   §29d step 6 had the same mistake (`make access` would have refused it). **Fixed (D89):** `make
+   labels` and `make quality` refuse a name that is no data source and list the ones there are.
+3. **o06 is retrieval.** In all six D88 runs (three of them regressions) the context lacked
+   `sales.orders`; lacking it, the model made up a cancellation filter on
+   `sales.order_lines.condition` (`<> 'R'` in one run, `= 'N'` in another) and said so in its
+   assumptions. The context is ranked partly from the *question's* embedding ("Top 5 most
+   profitable products"), and only the word search sees the clarification. This is now evidence,
+   not a guess: the fix is retrieval (the clarified question into the vector search too), next
+   build, with its own golden runs.
+4. **Calibration read the deliberate regression as labels.** After step 4 the report offered Platt
+   scaling for answers: *180 labels, 17 not right — beats the identity*. Two errors: the three
+   regression runs answered with a prompt Gaia never uses for anyone, and 180 "labels" were 30
+   questions asked six times — the 17 not right came from **six** questions. P6-1 says *150
+   labelled columns*; repeats of one question are not new evidence. Nothing was applied (`--apply`
+   was not run, and must not be on D88). **Fixed (D89):** regression runs are no labels; P6-1's
+   minimums count **subjects** — a column, a golden question — once each, as not right if any of
+   its labels is. Your answers now read *90 labels on 30 subject(s), 5 of them not always right:
+   too few*.
+5. **The regression runs would have become "the latest build".** `make quality --last 3` after step
+   4 reports the three regression runs as today's quality, and D89's `--compare-builds` would take
+   them as its baseline. **Fixed (D89):** a deliberate regression is left out of both (the report
+   says how many it left out); only when the newest runs *are* one does `--compare-builds` compare
+   them — with the build they were made of, saying the net catches it only on *fails*.
+6. **D88 against D83: the interval is too narrow.** Nothing in D88 changes a prompt, yet the
+   interval (−11.1 to −1.1) excludes zero. I reproduced it exactly: 4 of 30 questions moved, all
+   down (o03 3/3 → 1/3, g03, o02, o05 one run each). An exact sign test gives p = 0.125; a
+   permutation of whole runs (the 20 ways to split six runs in three and three) p = 0.20. The
+   percentile bootstrap over questions is over-confident when only a handful of questions move,
+   and it cannot see what is shared by a whole session — the D83 runs were made in the evening,
+   the D88 runs the next morning, and `deepseek-flash` is "always the latest" (§21f). The
+   regression runs, made in the same session as D88's, differ from them by +1.1. Not changed yet:
+   it belongs to P6-8 (30d).
+7. **The fresh net did not catch the JOINS rule's removal — correctly.** +1.1 points, repairs 1.0 →
+   1.0, one call more per run. The guard already refuses everything the rule forbids (a join with
+   no known path: `unverified_joins: reject`; a direct fan-out), the model wrote no such join on
+   these questions with or without the rule, and **none of the 30 scored questions needs two child
+   tables of one parent** — the case the rule is about. The regression removed nothing these
+   questions use. PHASES' acceptance says it *must* be caught: the criterion, not the net, is wrong
+   — 30d.
+8. **Found on the way: the guard lets a chasm trap through.** Order lines and payments joined
+   *through* `sales.orders` (lines → orders ← payments) are two verified FK joins, so the guard
+   accepts the query — and the rows multiply: in `demo_pg` 15,347 orders have two or more payments.
+   The prompt's own rule advises it (*"… or go through the parent table"*). Wrong numbers, not a
+   write — not a safety finding (D52 b), but a correctness one, and no golden question would see
+   it. 30d.
+9. **Smaller.** The meanings' labels sit under two model names — `deepseek-v4.1-flash` (your 17 N-P
+   audits) and `deepseek-flash` (13 SME) — though §21f says one is the other renamed; pooling them
+   is a decision (30d). The levels barely separate right from wrong (low is still right 80 % of the
+   time); that is what 6D part 2 fits. Two wordings fixed: *the confidence shown* now counts the
+   answers of runs older than D84 as *not known*, and 6G's *"0 of 0 kept"* says that all 28
+   `demo_pg` confirmations came with no proposal of Gaia's before them.
+
+### 30c · Built (D89; no migration)
+
+* `make test-host` and the skip report (30b-1); `make labels` / `make quality` refuse an unknown
+  `TARGET` (30b-2).
+* Deliberate-regression runs: never answer labels; left out of `--last N` and of `--compare-builds`
+  unless they are the newest runs, then compared with their own build (30b-4, 30b-5).
+* P6-1's minimums per subject; `make calibrate` and the report say *N labels on M subject(s)*
+  (30b-4).
+* The two wordings (30b-9).
+
+Sandbox: **759 passed, 10 skipped** (+4: the regression runs, subjects, a wrong name, the wordings);
+web unchanged (61).
+
+### 30d · Open: what the fresh net must catch (P6-8)
+
+Three facts from this run decide it: the JOINS rule's removal is invisible on these 30 questions
+(30b-7); the comparison resolves 3.3 points per question — with 3 runs a side it says *fails*
+reliably (≥ 85 % of the time, simulated on your runs' flakiness) only when **six** questions break,
+and an unchanged build *passes* only 40–50 % of the time; and runs on different days differ more
+than the interval admits (30b-6). The options and my recommendation are PHASES, Phase 6, P6-8.
+Nothing in §30e depends on it.
+
+### 30e · The run (build D89) — the next run
+
+Outputs `verification/30_*.out`, each starting with `make stamp`; at the end `make share` and send
+`verification/share/`. **No golden run in this one** — step 2 reads the runs you made.
+
+**Step 0 — setup and tests.**
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3: the §9 exports, in THIS shell
+(make stamp; cd backend && ../gaia-env/bin/alembic upgrade head && ../gaia-env/bin/alembic current) \
+  > verification/30_migrate.out 2>&1
+(make stamp; make test-host) > verification/30_tests.out 2>&1
+```
+
+- [ ] `30_migrate.out`: `0020 (head)` (D89 has no migration)
+- [ ] `30_tests.out`: `gaia build 2026-11-18 · D89 (D88 triage: host tests, regression runs, P6-1
+      by subject)` and **769 passed, 0 skipped** (sandbox: 759 passed, 10 skipped — SQL Server and
+      Ollama, listed under *skipped, by reason*).
+      If it says *make test-host: not set in this shell*, the exports are missing; if a test skips,
+      the run fails and the reason is listed under *skipped, by reason* — send it as it is. The
+      net (`test_golden_net_pg.py`) must pass on your data without a net of its own (D84a)
+
+**Step 1 — your 3C audit's labels, and the judge's κ.**
+
+```bash
+(make stamp; make labels TARGET=demo_mssql; make labels TARGET=nge_small) > verification/30_labels3c.out 2>&1
+```
+
+- [ ] `demo_mssql`: 94 labels from the owner's 3C audit, *"N of them on answers scored as in
+      production"* (the N-P ones, 17), and **the LLM judge against people: the same verdict on k of
+      94, Cohen's κ …, more lenient on …, stricter on …** — §26's 86.2 %, now with κ
+- [ ] `nge_small`: *no data source 'nge_small'; the data sources are: demo_mssql, demo_pg …* (and
+      exit status 2)
+
+**Step 2 — the reports without the regression (no model call).**
+
+```bash
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make quality TARGET=demo_pg ARGS="--compare-builds") \
+  > verification/30_quality.out 2>&1
+```
+
+- [ ] `--last 3`: the three **D88** runs (`7c92409f`, `ae106af0`, `b99dd0a9`), and at the top *3
+      deliberate-regression run(s) left out*
+- [ ] *Calibration*: answers of `deepseek-flash` — **90 labels on 30 subject(s), 5 of them not always
+      right: too few to calibrate**; meanings unchanged (13, and 17 under `deepseek-v4.1-flash`)
+- [ ] `--compare-builds`: baseline D88, candidate the regression — the same +1.1 points as §29,
+      with *the candidate is a deliberate regression … passes or cannot tell means these runs did
+      not see it*
+
+**Step 3 — the Finance user in Entra** (skip if done): as §29d step 2.
+
+**Step 4 — "Was this right?" in the browser, then the SME** (§29d step 5, unchanged in the browser).
+
+1. As **finn** (Chat, `demo_pg`): ask three questions. Under the first answer click **Yes**; under
+   the second **Partly**, with a note; under the third **No**, with a note.
+2. As **akaya**: *Review* — `demo_pg` says *2 answer(s) people doubted*; open them: the question,
+   the table, the SQL, finn's note. Decide one *wrong* with a reason, the other *right after all*.
+3. As **finn**: reopen the conversations — the decisions are under the answers.
+4. As **akaya**, open any column of the queue: its score says *(uncalibrated)*.
+
+```bash
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3"; make calibrate; make calibrate ARGS="--list") \
+  > verification/30_feedback.out 2>&1
+```
+
+- [ ] the report ends with *People's feedback on answers*: 1 yes, 1 partly, 1 no; 2 decided
+- [ ] *Calibration*: answers — *92 labels on 32 subject(s) …, 6 of them not always right: too
+      few*; meanings — too few; *in
+      use: the identity (uncalibrated)*; `make calibrate ARGS="--list"`: *no calibrator fitted yet*.
+      **Do not run `make calibrate … --apply`** until P6-1 is met
+
+**Step 5 — category proposals against your confirmations (6G).**
+
+```bash
+(make stamp; make access TARGET=demo_pg ARGS="accuracy --why"; make access TARGET=demo_mssql ARGS="accuracy --why") \
+  > verification/30_categories.out 2>&1
+```
+
+- [ ] `demo_pg`: 28 confirmed; *today's rule … proposes 28, 26 as people confirmed* (as in
+      `29_quality.out`: `rpt.v_customer_overview` and `sales.payments` the misses), each with the
+      rule's reason; *the proposals people saw: 0 of 0 kept; 28 confirmed without a proposal
+      before*
+- [ ] `demo_mssql`: the same for your confirmations there. The misses tell me where D77's rule is
+      wrong — send them as they are
+
+**Step 6 — the Evaluation page.** As dyilmaz: *Evaluation* — why answers were wrong, the levels
+against the reference, the labels (on `demo_mssql`: with the judge's κ), a calibration card per
+model, category proposals, the feedback. As bdemir: *Audit → Evaluation*, the same; the menu stays
+open on Queries, Runs and Evaluation.
+
+**Step 7 — send.** `make share` → send `verification/share/`.
 
 ---
 
