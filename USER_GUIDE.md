@@ -861,6 +861,34 @@ ids, your OS user name in paths, once even a one-time setup code. `make share` r
 writes the key to map them back to `verification/share-key.json`, which you keep. Send
 `verification/share/` only.
 
+### A clean copy for delivery (`make export`)
+
+```bash
+make export                                   # ../gaia-clean-YYYYMMDD/ and .zip
+make export ARGS="--also 'Acme Ltd' --force"  # one more name to replace; replace an old copy
+make export ARGS="--out /tmp/gaia --no-zip"   # the copy only, somewhere else
+```
+
+`make export` builds a copy you can hand to someone else, and proves it is clean:
+
+* **Only what git tracks**, at its working-tree state, plus `verification/share/` and its
+  contents — the one exception. `.env`, `gaia-env/`, `.git/`, `evaluations/`, the other
+  verification outputs, `__pycache__`, `node_modules`, `dist` and the caches never enter it.
+* **Personal data replaced** in every document and recorded output (`make share`'s rules
+  for what is personal there: real addresses, tenants, home paths, the OS user), so the
+  copy still reads — a run id, a private address or a masked shape in a doc stays.
+  Source, lock files and fixtures lose only the words listed in
+  `scripts/export_also.txt` (a company, an internal host name) and in `--also`: a
+  replacement anywhere else would change what the copy builds or what its tests measure.
+  The mapping is written beside the copy as `gaia-clean-<date>-key.json` and is never
+  part of it.
+* **Code is left untouched** — a replacement in source would break the copy — and the PII
+  scan reads it anyway (`--include-src`, credentials only). **A single finding stops the
+  run before anything is zipped**; the copy stays for inspection.
+
+The archive is written beside the project (`../gaia-clean-<date>.zip`) with a short report
+next to it. `make export` is repeatable: `--force` replaces a copy of the same day.
+
 ### Finding what a question needs (`make retrieve`, Phase 4B)
 
 ```bash

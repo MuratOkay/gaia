@@ -321,6 +321,7 @@ Key decisions already fixed:
 | `make calibrate` | 6C/6D: fit calibrators per model on people's labels and judge them on held-out ones against the identity (`--kind meaning\|answer --model M --apply \| --reset`, `--list`); after applying a meaning calibrator, `make rescore` |
 | `make golden-net-accept` | 6E: accept the replayed golden net after an intended change (the net runs in `make test`) |
 | `make share` | verification outputs safe to send: accounts, tenants, user names, ids and codes replaced consistently; send `verification/share/` only |
+| `make export` | a clean copy to hand over, zipped beside the project: git-tracked files plus `verification/share/` only, no `.env`/`gaia-env`/caches, personal data replaced and the copy scanned (`ARGS="--also 'A Name' --force"`) |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
 | `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |
