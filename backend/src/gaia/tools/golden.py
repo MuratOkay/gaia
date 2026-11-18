@@ -145,11 +145,24 @@ async def _run(args: argparse.Namespace) -> int:
 
                 embedder = _embedder(settings)
                 notes: list[str] = []
+                from gaia.query.ask import search_text
+                from gaia.query.golden_run import AS_STATED
+
                 try:
                     for q in golden.questions:
-                        if (not only or q.id in only) and not notes:  # down once: words only
-                            hits[q.question] = await _vectors(session, settings, index,
-                                                              q.question, embedder, notes)
+                        if only and q.id not in only:
+                            continue
+                        # D91: what each call of the question searches with — alone, after
+                        # its clarification, after "exactly as stated"
+                        texts = [search_text(q.question)]
+                        if q.clarified:
+                            texts.append(search_text(q.question, [("", q.clarified)]))
+                        if q.expect == "answer":
+                            texts.append(search_text(q.question, [("", AS_STATED)]))
+                        for text in texts:
+                            if not notes:  # down once: words only
+                                hits[text] = await _vectors(session, settings, index, text,
+                                                            embedder, notes)
                 finally:
                     embedder.close()
                 for n in sorted(set(notes)):

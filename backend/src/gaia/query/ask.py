@@ -242,6 +242,17 @@ def _problem(guard: GuardResult, execution: ExecutionResult | None, timeout_s: i
     return f"Your query failed on the database ({execution.status}): {execution.error}"
 
 
+def search_text(question: str, clarifications: list[tuple[str, str]] | None = None,
+                history: list[tuple[str, str]] | None = None) -> str:
+    """What retrieval searches with: the question, the user's answers to its clarifications,
+    and the previous question of a conversation. The word search and the vector search read the
+    same text (D91): before, the vectors saw the question alone, and o06's clarification ("…
+    over all orders that were not cancelled") never reached them — the context lacked
+    ``sales.orders`` in every run (OWNER_VERIFICATION §30b-3)."""
+    previous = [q for q, _c in (history or [])[-1:]]
+    return " ".join([question] + [a for _q, a in clarifications or []] + previous)
+
+
 def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: TargetConfig,
         llm: LLMClient, settings: AskSettings, today: date,
         clarifications: list[tuple[str, str]] | None = None,
@@ -263,8 +274,7 @@ def ask(question: str, *, index: RetrievalIndex, guard: SqlGuardBase, target: Ta
             except Exception:  # a listener that fails must not fail the answer
                 logger.warning("progress listener failed at %s", stage, exc_info=True)
 
-    previous = [q for q, _c in (history or [])[-1:]]
-    search = " ".join([question] + [a for _q, a in clarifications or []] + previous)
+    search = search_text(question, clarifications, history)
     tell("retrieval")
     ctx = retrieve(index, search, vector_hits=vector_hits, settings=retrieval,
                    notes=answer.notes)

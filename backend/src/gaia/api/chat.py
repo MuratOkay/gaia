@@ -71,7 +71,7 @@ from gaia.db.models.catalog import DataSource
 from gaia.db.models.chat import Conversation, Message
 from gaia.db.repositories.query_store import QueryStore, match_option
 from gaia.query.answerer import HIDDEN, _cell
-from gaia.query.ask import Answer, answer_dict, ask
+from gaia.query.ask import Answer, answer_dict, ask, search_text
 from gaia.query.planner import SqlPlan
 from gaia.query.retrieval import RetrievalIndex, VectorHit
 from gaia.query.retrieval_store import load_retrieval_index, vector_search
@@ -391,7 +391,9 @@ class ChatService:
                                      sql=pending.best_guess_sql)
             history = [] if pending else self._history(messages)
             notes: list[str] = []
-            hits = await self._vectors(session, index, question, notes)
+            # the vectors search what the words search: the answers and the turn before too
+            hits = await self._vectors(session, index,
+                                       search_text(question, clarifications, history), notes)
 
             from gaia.tools.ask import answer_calibrator_for, ask_settings
 

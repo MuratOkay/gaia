@@ -228,3 +228,30 @@ async def test_a_dropped_object_breaks_the_questions_that_need_it(pg_session_fac
                                                                    row_limit=1000))
     wrong = sorted(o.id for o in outcomes if o.correct is False)
     assert wrong == expected
+
+
+@pytest.mark.asyncio
+async def test_a_clarified_question_searches_its_answer_too(pg_session_factory):
+    """D91: a golden run asks the vector search for the text each call searches with — after a
+    clarification, the question and the answer given (o06: "… not cancelled" brings
+    sales.orders) — and falls back to the question's hits for a text nobody embedded."""
+    from test_profiling_pg import _introspect, _settings, _target
+
+    factory = pg_session_factory
+    await _introspect(factory)
+    settings = _settings()
+    async with factory() as s:
+        index = await load_retrieval_index(s, "demo_pg", settings)
+    golden = load_golden(GOLDEN)
+    o06 = next(q for q in golden.questions if q.id == "o06")
+    asked: list[str] = []
+
+    def vectors(text):
+        asked.append(text)
+        return [] if text == o06.question else None
+
+    run_golden(golden, index=index, guard=PostgresGuard(index.catalog, row_limit=1000),
+               target=_target(), llm=GoldenModel(golden),
+               settings=AskSettings(model="scripted", statement_timeout_s=30), only=["o06"],
+               vectors=vectors)
+    assert asked == [o06.question, f"{o06.question} {o06.clarified}", o06.question]

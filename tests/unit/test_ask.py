@@ -404,3 +404,17 @@ def test_an_unordered_result_is_cut_the_same_way_on_every_server():
     assert ordered["rows"][0] == ["S39"] and "rows_shown_are" not in ordered
     small = result_for_model(["store"], [("b",), ("a",)], set(), 30, ordered=False)
     assert small["rows"] == [["b"], ["a"]] and "rows_shown_are" not in small
+
+
+def test_words_and_vectors_search_the_same_text():
+    """D91 (OWNER_VERIFICATION §30b-3): o06's clarification reached the word search but not the
+    vectors, and the context lacked sales.orders in every run."""
+    from gaia.query.ask import search_text
+
+    q = "Top 5 most profitable products"
+    said = "profit realised on sales, over all orders that were not cancelled"
+    assert search_text(q) == q
+    assert search_text(q, [("What does profitable mean?", said)]) == f"{q} {said}"
+    assert search_text("and in 2024?", None, [("Revenue by city in 2025", "computed"),
+                                              ("only Ankara", "computed")]) == \
+        "and in 2024? only Ankara"

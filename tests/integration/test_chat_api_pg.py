@@ -129,6 +129,12 @@ async def test_chat_api(pg_session_factory):
         return index
 
     service.index = counting
+    searched: list[str] = []  # D91: what the vector search was given, turn by turn
+
+    async def recording(session, index, text, notes) -> None:
+        searched.append(text)  # no hits: the words alone rank, as with use_vectors=False
+
+    service._vectors = recording
     app = FastAPI()
     app.include_router(router)
     app.state.chat = service
@@ -188,6 +194,8 @@ async def test_chat_api(pg_session_factory):
         reply = dict(ev)["answer"]
         assert len(reply["rows"]) == 20 and reply["question"] == q3
         assert sum(1 for p, _m in model.requests if p == "generation") == calls_before
+        # D91: the vectors searched what the words did — the turn before, the answer given
+        assert searched == [q1, f"{q2} {q1}", f"{q3} {q2}", f"{q3} total order amount, all time"]
 
         # a new question while a clarification is open
         ev = await say(q3)

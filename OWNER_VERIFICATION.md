@@ -20,18 +20,18 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D90 (P6-8 fresh net, chasm trap, P6-9 aliases; g09
-  narration; refusals)` — the D89 run triaged (§31): P6-8's fresh net (`--regress drop:<object>`,
-  named breaks, runs resampled, the session gap), the chasm trap refused by the guard and no
-  longer advised by the SQL prompt (`generate_sql.v4`), P6-9's model aliases, g09's narration
-  the same on every server, `make auth ARGS="refusals"`. **The next run: §31e.***
+  there. *Latest build: `2026-11-18 · D91 (o06: the vectors search the clarified question; D90 +
+  P6-8, P6-9)` — built while §31e ran on D90: the vector search reads the same text as the word
+  search (the question, the answers to its clarifications, the turn before), so o06's "… over all
+  orders that were not cancelled" reaches both (§31f). **Finish §31e on D90, then §31f on D91.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
   items (§22e, §23c). §25 was run on D75 up to the directory — triaged in §26; §26e was run on
   D77 — triaged in §27; §27d was run on D80 — triaged in §28; §28d was run on D83 — triaged
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
-  failed) — **triaged in §31**, and **§31e is the next run** (build D90). **Send outputs only through `make share`.**
+  failed) — **triaged in §31**, and **§31e is the next run** (build D90), then **§31f** (build
+  D91). **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3511,6 +3511,49 @@ breaks* and the session line, the labels on `demo_mssql` with the judge's κ, th
 cards (the pooled names), category proposals, the feedback. As bdemir: *Audit → Evaluation*.
 
 **Step 6 — send.** `make share` → send `verification/share/`.
+
+### 31f · Built while §31e ran: D91 — o06's retrieval (run it after §31e)
+
+**Finish §31e on D90 first** — its nine golden runs are D91's baseline. Then install D91.
+
+**What changed.** The context is ranked by two searches, words and vectors. The words always read
+the question *with* the answers to its clarifications; the vectors read the question alone — in
+golden runs they were even computed once per question, before any clarification. o06's answer,
+"… over all orders that were not cancelled", therefore reached only the word search; the vectors
+of "Top 5 most profitable products" pulled the context towards products and margins, and
+`sales.orders` stayed out in all six D88 runs (§30b-3). Here, with the words alone and no meanings,
+the clarified text ranks `sales.orders` third and puts it in the context; the question alone does
+not rank it at all. **D91:** both searches read one text (`search_text`: the question, the answers
+to its clarifications, the previous question of a conversation) — in the chat, in `make ask`, and
+in golden runs, which now embed each text a question may be searched with (alone, after its
+clarification, after "exactly as stated"). Nothing else changed; the replayed net runs without
+vectors, so it cannot see this — fresh runs must.
+
+Sandbox: **772 passed, 10 skipped** (+2: one search text for both; a golden run embeds the
+clarified text; the chat test now checks what the vectors searched).
+
+**The run** — three fresh golden runs on D91, compared with the three D90 runs of §31e step 2
+(`--compare-builds` takes D90's, not its regressions):
+
+```bash
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make test-host) > verification/31f_tests.out 2>&1
+for run in a b c; do
+  (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d91$run") \
+    > verification/31f_golden_$run.out 2>&1
+done
+(make stamp; make quality TARGET=demo_pg ARGS="--compare-builds") > verification/31f_quality.out 2>&1
+```
+
+- [ ] `31f_tests.out`: `… D91 …` and **782 passed, 0 skipped, 0 failed**
+- [ ] `31f_quality.out`, baseline D90, candidate D91: **o06** — if it was wrong in all three D90
+      runs and is right in all three D91 runs, it is listed as *fixed*; in any case its line under
+      *Questions* should no longer say *the context lacked sales.orders*. If it is still wrong with
+      `sales.orders` in the context, the cause has moved to the model's reading — a finding
+- [ ] *named breaks*: none expected — but every clarified question (c01, c03, o01–o07) now ranks
+      its context with its answer's vectors too, so a break there is possible and is exactly what
+      this comparison is for: send it as it is
+- [ ] the line *made … h before* only if more than 6 hours passed since §31e's runs
 
 ---
 

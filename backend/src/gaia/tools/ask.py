@@ -107,16 +107,6 @@ async def _run(args: argparse.Namespace) -> int:
                                                 args.directory)
             index = restrict_index(full_index, policy)
             notes: list[str] = []
-            hits = None
-            if not args.no_vectors:
-                from gaia.tools.retrieve import _embedder, _vectors
-
-                embedder = _embedder(settings)
-                try:
-                    hits = await _vectors(session, settings, index, args.question, embedder,
-                                          notes)
-                finally:
-                    embedder.close()
             guard = build_access_guard(settings, label, index, full_index.catalog, policy)
             store = QueryStore(session)
             clarifications = [("", c) for c in args.clarified or []]
@@ -148,6 +138,18 @@ async def _run(args: argparse.Namespace) -> int:
                                      interpretation=stored.best_guess_interpretation or "",
                                      assumptions=list(stored.best_guess_assumptions or []),
                                      sql=stored.best_guess_sql)
+            hits = None
+            if not args.no_vectors:  # D91: the same text the words search, answers included
+                from gaia.query.ask import search_text
+                from gaia.tools.retrieve import _embedder, _vectors
+
+                embedder = _embedder(settings)
+                try:
+                    hits = await _vectors(session, settings, index,
+                                          search_text(args.question, clarifications), embedder,
+                                          notes)
+                finally:
+                    embedder.close()
             calibrator = await answer_calibrator_for(session, settings)
             answer = await asyncio.to_thread(
                 ask, args.question, index=index, guard=guard, target=settings.target(label),

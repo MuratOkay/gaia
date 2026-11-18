@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**the D89 host run triaged; build `2026-11-18 · D90 (P6-8 fresh net, chasm trap, P6-9 aliases; g09 narration; refusals)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6 in progress**: 6.0, 6A, 6B, 6C, 6D part 1, 6E, 6G's measurement built; P6-8 and P6-9 decided and built (D90) · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) — **§31e is the next run**
+> Last updated: 2026-11-18 (**the D89 host run triaged; build `2026-11-18 · D91 (o06: the vectors search the clarified question; D90 + P6-8, P6-9)`**) · Status: Phases 0–4 complete · **Phase 5 verified on the owner's host** — the owner's gate closes it · **Phase 6 in progress**: 6.0, 6A, 6B, 6C, 6D part 1, 6E, 6G's measurement built; P6-8 and P6-9 decided and built (D90) · Owner checklist: [OWNER_VERIFICATION.md](OWNER_VERIFICATION.md) — **§31e (D90), then §31f (D91) are the next runs**
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -3156,6 +3156,19 @@ every account** in step 4, which stopped the run there.
 
 Tests: **770 passed, 10 skipped** in the sandbox (+11); web unchanged (61).
 
+### D91 — o06's retrieval (2026-11-18, while the owner ran §31e)
+
+o06 was wrong in every run since D80, and D84's item detail showed why (§30b-3): its context
+lacked `sales.orders` in all six D88 runs. The word search read the question with the answer to
+its clarification ("… over all orders that were not cancelled"); the vector search read the
+question alone — in golden runs computed once per question, before any clarification. In the
+sandbox (words only, no meanings) the clarified text ranks `sales.orders` third and puts it in the
+context; the question alone does not rank it. **D91:** `gaia.query.ask.search_text` — the
+question, the answers to its clarifications, the previous question of a conversation — is what
+both searches read, in the chat, `make ask` and golden runs (which embed every text a question may
+be searched with). The replayed net runs without vectors and cannot see the change: §31f measures
+it with three fresh runs against §31e's D90 runs. Tests: **772 passed, 10 skipped** in the sandbox (+2).
+
 ### Raised for Phase 7: a change of model or provider in production (2026-11-18)
 
 The owner's question: a customer changes the LLM provider some time in production — what then?
@@ -3448,16 +3461,17 @@ D80 run → §28, build D83 (D81–D83).*
    failed (`make auth ARGS="refusals"`) and sign-in again; the fresh net's acceptance test
    (P6-8: three D90 runs, three `drop:store.stores`, three `drop:finance.invoices`, in one
    session); then "Was this right?", categories and the *Evaluation* page; `make share`.
-3. **Assistant — next:** triage of §31e; o06's retrieval (the clarified question into the vector
-   search, §30b-3) with its own golden runs; 6F (`nge_small`'s golden set); 6C once P6-1's
+3. **Owner — after §31e: §31f** (build D91): `make test-host`, three fresh golden runs, the
+   comparison with D90 — does o06's context now hold `sales.orders`?
+4. **Assistant — next:** triage of §31e and §31f; 6F (`nge_small`'s golden set); 6C once P6-1's
    subjects are near.
-4. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
+5. **Owner, asynchronous:** the `demo_pg` 3C run; the SQL Server track S4, S8; `make
    evaluate-cost` (§13d). *(The 3C audit is done: 86.2 % of 94 — P6-0.)*
-5. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %
+6. **Owner:** D61 (b) the soft clarification — accept, change or reject ((a), the 90 %
    threshold, accepted 2026-11-16). The golden runs' best guesses were the owner's answer in
    2–3 of 8–9, so asking stays right for now. D61 (c), definitions from an SME through the
    glossary, is built with 5B: §24d shows it at work on g07.
-6. **Owner:** P4-1 for `nge_small` whenever ready; P4-5/6 — built on the recommendations
+7. **Owner:** P4-1 for `nge_small` whenever ready; P4-5/6 — built on the recommendations
    (D65), say if either should change.
 
 Resolved, kept for the record:

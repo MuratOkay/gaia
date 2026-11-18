@@ -36,7 +36,7 @@ from sqlglot import exp
 
 from gaia.core.config import TargetConfig
 from gaia.llm.base import LLMClient
-from gaia.query.ask import Answer, AskSettings, ask
+from gaia.query.ask import Answer, AskSettings, ask, search_text
 from gaia.query.compare import Table, compare
 from gaia.query.executor import execute
 from gaia.query.golden import GoldenQuestion, GoldenSet
@@ -225,9 +225,13 @@ def run_golden(golden: GoldenSet, *, index: RetrievalIndex, guard: SqlGuardBase,
                       if q.sql else None)
 
     def run_for(q: GoldenQuestion) -> Callable[..., Answer]:
-        hits = vectors(q.question) if vectors else None
-
         def run(question: str, clarifications: list[tuple[str, str]] | None = None) -> Answer:
+            # the vectors of what this call searches with — the clarification's answer too
+            # (D91); a text nobody embedded falls back to the question's
+            text = search_text(question, clarifications)
+            hits = vectors(text) if vectors else None
+            if hits is None and vectors and text != question:
+                hits = vectors(question)
             return ask(question, index=index, guard=guard, target=target, llm=llm,
                        settings=settings, today=golden.as_of, clarifications=clarifications,
                        vector_hits=hits, retrieval=retrieval)
