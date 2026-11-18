@@ -79,6 +79,7 @@ class HumanLabel:
     source: str = "sme"  # sme | 3c-audit
     production: bool = True  # scored as production scores (3C: N-P only)
     judge: str | None = None  # 3C: the judge's verdict on the same answer
+    sampled: bool = False  # drawn at random for the calibration sample (7A): not chosen by Gaia
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -154,6 +155,7 @@ async def decision_labels(session: AsyncSession, data_source: str | None = None
             data_source=ds, column=f"{schema}.{table}.{col}", verdict=verdict, action=action,
             changed=changed, reviewer=decided.reviewed_by, decided_at=decided.reviewed_at,
             stale=decided.status == "stale", blind=bool(sme.get("blind")),
+            sampled=bool(sme.get("sampled")),
             machine_version=version, model=machine.model, prompt_version=machine.prompt_version,
             scoring=machine.weights_version, raw_score=float(machine.raw_score),
             calibrated_score=float(machine.calibrated_score))

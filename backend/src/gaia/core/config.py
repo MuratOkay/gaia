@@ -131,6 +131,7 @@ class ThinkingConfig(BaseModel):
     repair: bool = False
     classification: bool = False
     answer: bool = False  # Phase 4C: the narrative next to the result table
+    drafting: bool = True  # Phase 7B: golden questions drafted for a person to correct
 
 
 class RetryConfig(BaseModel):
@@ -473,6 +474,13 @@ class CalibrationConfig(BaseModel):
     # labels recorded under an earlier name count for the model as it is called now. A new
     # model under an old name (or an "always the latest" name moving on) is not a rename.
     model_aliases: dict[str, str] = Field(default_factory=dict)
+    # P7-2 (7A): the calibration sample — meanings drawn each week per data source, evenly
+    # over the bands the edges make (raw score), accepted ones included, shown to the SME blind.
+    # 0 turns it off.
+    sample_per_week: int = 10
+    sample_bands: list[float] = Field(default_factory=lambda: [0.45, 0.60, 0.80, 0.90])
+    # 7A: how far back the forecast of P6-1 looks for the rate of new labels (at least a week)
+    forecast_days: int = 28
 
     def canonical(self, model: str | None) -> str | None:
         return self.model_aliases.get(model, model) if model else model

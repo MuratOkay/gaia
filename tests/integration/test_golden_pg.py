@@ -111,7 +111,7 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
     outcomes = run_golden(golden, index=index, guard=guard, target=_target(), llm=llm,
                           settings=ask_settings, workers=3)
     by = {o.id: o for o in outcomes}
-    assert len(outcomes) == 32
+    assert len(outcomes) == 66  # 32, and 34 harder ones since D97 (7B)
 
     # every reference passed the guard and ran (else run_golden would have raised), and
     # the model's right answers are scored right
@@ -140,12 +140,13 @@ async def test_golden_runner_scores_what_it_should(pg_session_factory, tmp_path)
     assert "clarification" not in by["g02"].detail and by["g02"].detail["interpretation"]
 
     summary = summarise(outcomes)
-    assert summary["with_reference"] == 30  # 21 answers + 9 clarified with a reference
-    assert summary["correct"] == 29 / 30 and summary["executable"] == 1.0
+    # 21 + 29 answers, 9 + 3 clarified with a reference (D97: h01–h29, c05–c07)
+    assert summary["with_reference"] == 62
+    assert summary["correct"] == 61 / 62 and summary["executable"] == 1.0
     assert summary["over_clarified"] == 1 and summary["answered_directly"] == 1
-    assert summary["best_guess_correct"] == 7 / 8
+    assert summary["best_guess_correct"] == 10 / 11
     text = report_markdown(golden, outcomes, summary, "scripted", "test")
-    assert "| Correct result (= the reference) | 97% |" in text
+    assert "| Correct result (= the reference) | 98% |" in text
     assert "o06" in text and AS_STATED not in text
 
     # a re-run replays every model answer
@@ -210,7 +211,7 @@ async def test_a_dropped_object_breaks_the_questions_that_need_it(pg_session_fac
         index = await load_retrieval_index(s, "demo_pg", settings)
     golden = load_golden(GOLDEN)
     expected = expected_breaks(golden, "store.stores")
-    assert expected == ["c03", "g02", "g09", "g17", "o03"]
+    assert expected == ["c03", "g02", "g09", "g17", "h02", "h05", "h22", "h25", "o03"]
     dropped = drop_object(index, "store.stores")
     assert "store.stores" not in dropped.objects and len(dropped.objects) == len(index.objects) - 1
     assert "stores" not in dropped.catalog.objects.get("store", {})

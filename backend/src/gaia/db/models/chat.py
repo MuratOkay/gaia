@@ -245,3 +245,7 @@ class Feedback(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
     updated_at: Mapped[datetime] = mapped_column(
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now())
+    # D96: set aside (a test, a mistake) — kept and shown, never a label or a count
+    voided_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+    voided_by: Mapped[str | None] = mapped_column(sa.Text)
+    void_note: Mapped[str | None] = mapped_column(sa.Text)

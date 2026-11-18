@@ -1,0 +1,736 @@
+# Golden questions for demo_mssql, DRAFTED by Gaia (deepseek-flash, build 2026-11-18 · D97 (Phase 7A labels sought; 7B harder questions, drafts, persona runs)) —
+# for a person to correct (Phase 7B, P6-6). Nothing here is measured until it is.
+#
+# For each question: read the question as a business user would; check the reference
+# SQL and its preview (the `draft` block: what the guard saw it read, how many rows,
+# the first rows — personal data as shapes); correct the wording, the SQL, `objects`,
+# `identify_by`, `rank_by`; then delete the line `status: draft`. Delete a question
+# you cannot vouch for: a wrong reference poisons every later measurement.
+# `as_of` is the day relative periods are read from: set it to the data's "today".
+#
+# 30 draft(s): 30 ran and returned rows; 0 returned none; 0 were refused or failed (kept, marked). 0 duplicate(s) dropped. 10 model call(s), 79,042 tokens.
+data_source: demo_mssql
+as_of: '2016-12-31'
+questions:
+- id: d01
+  status: draft
+  question: For trade-ins recorded in 2015 that are linked to a sales transaction, how many days on average
+    passed between the trade-in and that sale (sale date minus trade-in date)? Round the average to 2
+    decimals; trade-ins without a linked sale do not count.
+  expect: answer
+  objects: [dbo.trade_ins, dbo.transactions]
+  notes: Sign convention is sale minus trade-in, so a negative value means the sale preceded the trade-in;
+    occurred_at precision varies by source system.
+  sql: |
+    SELECT ROUND(AVG(CAST(DATEDIFF(day, ti.occurred_at, t.occurred_at) AS decimal(10, 2))), 2) AS avg_days FROM dbo.trade_ins ti JOIN dbo.transactions t ON t.transaction_id = ti.transaction_id WHERE ti.occurred_at >= '2015-01-01' AND ti.occurred_at < '2016-01-01'
+  draft:
+    kind: period
+    seed: dbo.source_systems
+    check: ok
+    rows: 1
+    columns: [avg_days]
+    preview:
+    - ['0.000000']
+- id: d02
+  status: draft
+  question: What percentage of web page views in 2015 received an HTTP 404 response? Give the percentage
+    as a number rounded to 2 decimals, over all page views of that year.
+  expect: answer
+  objects: [web.page_views]
+  notes: http_status is a numeric code column; 404 is read as 'not found', all other statuses count as
+    the remainder.
+  sql: |
+    SELECT ROUND(100.0 * SUM(CASE WHEN pv.http_status = 404 THEN 1 ELSE 0 END) / COUNT(*), 2) AS not_found_percentage FROM web.page_views pv WHERE pv.occurred_at >= '2015-01-01' AND pv.occurred_at < '2016-01-01'
+  draft:
+    kind: ratio
+    seed: dbo.source_systems
+    check: ok
+    rows: 1
+    columns: [not_found_percentage]
+    preview:
+    - ['2.500000000000']
+- id: d03
+  status: draft
+  question: Which 5 shops recorded the most trade-ins in 2015? List the shop identifier and the number
+    of trade-ins, largest first, with ties broken by the lower shop identifier.
+  expect: answer
+  objects: [dbo.trade_ins]
+  identify_by: [shop_id]
+  rank_by: trade_ins
+  order_matters: true
+  notes: Counts only trade-in deals, not linked sales; ties are resolved on shop_id so the top 5 is deterministic.
+  sql: |
+    SELECT TOP (5) ti.shop_id, COUNT(*) AS trade_ins FROM dbo.trade_ins ti WHERE ti.occurred_at >= '2015-01-01' AND ti.occurred_at < '2016-01-01' GROUP BY ti.shop_id ORDER BY COUNT(*) DESC, ti.shop_id
+  draft:
+    kind: ranking
+    seed: dbo.source_systems
+    check: ok
+    rows: 5
+    columns: [shop_id, trade_ins]
+    preview:
+    - ['13', '2083']
+    - ['58', '1295']
+    - ['40', '1031']
+    - ['67', '923']
+    - ['66', '892']
+- id: d04
+  status: draft
+  question: Which 5 publishers brought in the most sales revenue in US dollars during 2015? List each
+    publisher with its total revenue, largest first, breaking ties alphabetically by publisher name. Count
+    every sales line of the year as recorded, including return lines with negative quantities.
+  expect: answer
+  objects: [dw.dim_product, dw.sales_wide]
+  identify_by: [publisher]
+  rank_by: total_revenue_usd
+  order_matters: true
+  notes: Product key is unique in the catalogue, so the join does not multiply sales lines; hardware items
+    without a publisher form their own blank group.
+  sql: |
+    SELECT TOP (5) p.publisher, SUM(s.line_total_usd) AS total_revenue_usd
+    FROM dw.sales_wide s
+    JOIN dw.dim_product p ON s.product_key = p.product_key
+    WHERE s.date_key >= 20150101 AND s.date_key <= 20151231
+    GROUP BY p.publisher
+    ORDER BY SUM(s.line_total_usd) DESC, p.publisher ASC
+  draft:
+    kind: ranking
+    seed: dw.sales_wide
+    check: ok
+    rows: 5
+    columns: [publisher, total_revenue_usd]
+    preview:
+    - [None, '10384385.3381']
+    - [Nintendo, '553887.4387']
+    - [Sony Computer Entertainment, '416296.0988']
+    - [Ubisoft, '347383.2862']
+    - [Activision, '331760.1026']
+- id: d05
+  status: draft
+  question: What percentage of the total sales revenue in US dollars for 2015 came from hardware items
+    rather than games? Give the percentage as a number rounded to 2 decimals, over all 2015 sales lines
+    including returns with negative quantities.
+  expect: answer
+  objects: [dw.dim_product, dw.sales_wide]
+  notes: Product kind is read from its two catalogue values 'game' and 'hardware'; the share can exceed
+    100 or fall below 0 because return lines carry negative amounts.
+  sql: |
+    SELECT CAST(100.0 * SUM(CASE WHEN p.product_kind = 'hardware' THEN s.line_total_usd ELSE 0 END)
+                / NULLIF(SUM(s.line_total_usd), 0) AS decimal(10,2)) AS hardware_revenue_percentage
+    FROM dw.sales_wide s
+    JOIN dw.dim_product p ON s.product_key = p.product_key
+    WHERE s.date_key >= 20150101 AND s.date_key <= 20151231
+  draft:
+    kind: ratio
+    seed: dw.sales_wide
+    check: ok
+    rows: 1
+    columns: [hardware_revenue_percentage]
+    preview:
+    - ['51.79']
+- id: d06
+  status: draft
+  question: What was the total sales revenue in US dollars for each quarter of 2015, listed in calendar
+    order from the first quarter to the fourth? Include return lines with negative quantities as recorded.
+  expect: answer
+  objects: [dw.dim_date, dw.sales_wide]
+  order_matters: true
+  notes: Quarter comes from the calendar table joined on the integer date key rather than from the timestamp
+    column, so the year filter must use the calendar's own year.
+  sql: |
+    SELECT d.quarter, SUM(s.line_total_usd) AS total_revenue_usd
+    FROM dw.sales_wide s
+    JOIN dw.dim_date d ON s.date_key = d.date_key
+    WHERE d.year = 2015
+    GROUP BY d.quarter
+    ORDER BY d.quarter
+  draft:
+    kind: period
+    seed: dw.sales_wide
+    check: ok
+    rows: 4
+    columns: [quarter, total_revenue_usd]
+    preview:
+    - ['1', '4135028.7687']
+    - ['2', '4343818.6852']
+    - ['3', '4508686.3434']
+    - ['4', '6140499.4340']
+- id: d07
+  status: draft
+  question: Which 5 departments had the highest total gross pay across all payroll lines on record? List
+    each department identifier with its total gross pay and number of payroll lines, largest total gross
+    pay first; break ties by the lower department identifier.
+  expect: answer
+  objects: [hr.employment_spells, hr.payroll_lines]
+  identify_by: [department_id]
+  rank_by: total_gross_pay
+  order_matters: true
+  notes: Department comes from the employment spell; gross pay is summed over every payroll line on record,
+    with no date filter because payroll lines have no payroll date column.
+  sql: |
+    WITH dept_pay AS (
+      SELECT es.department_id,
+             SUM(pl.gross) AS total_gross_pay,
+             COUNT(*) AS payroll_lines
+      FROM hr.payroll_lines pl
+      JOIN hr.employment_spells es ON es.spell_id = pl.spell_id
+      GROUP BY es.department_id
+    )
+    SELECT TOP (5) department_id, total_gross_pay, payroll_lines
+    FROM dept_pay
+    ORDER BY total_gross_pay DESC, department_id ASC;
+  draft:
+    kind: ranking
+    seed: hr.employment_spells
+    check: ok
+    rows: 5
+    columns: [department_id, total_gross_pay, payroll_lines]
+    preview:
+    - ['1', '276025857.94', '81874']
+    - ['3', '20040481.60', '11641']
+    - ['2', '18929295.11', '4686']
+    - ['7', '18598104.04', '7881']
+    - ['5', '18487221.95', '3366']
+- id: d08
+  status: draft
+  question: For each calendar month of 2015, what were the total hours worked across all staff shifts
+    that started in that month, after deducting the recorded break time? Give hours rounded to 2 decimals,
+    in calendar order from January to December.
+  expect: answer
+  objects: [hr.staff_shifts]
+  identify_by: [month_label]
+  order_matters: true
+  notes: Hours are elapsed shift minutes minus break_minutes, grouped by the month in which the shift
+    started; shifts starting in 2015 only.
+  sql: |
+    SELECT CONVERT(char(7), s.shift_start, 120) AS month_label,
+           CAST(ROUND(SUM(DATEDIFF(MINUTE, s.shift_start, s.shift_end) - s.break_minutes) / 60.0, 2) AS decimal(12,2)) AS hours_worked
+    FROM hr.staff_shifts s
+    WHERE s.shift_start >= '2015-01-01' AND s.shift_start < '2016-01-01'
+    GROUP BY CONVERT(char(7), s.shift_start, 120)
+    ORDER BY month_label;
+  draft:
+    kind: period
+    seed: hr.employment_spells
+    check: ok
+    rows: 12
+    columns: [month_label, hours_worked]
+    preview:
+    - [2015-01, '25427.50']
+    - [2015-02, '23158.25']
+    - [2015-03, '24856.00']
+    - [2015-04, '23625.50']
+    - [2015-05, '23870.75']
+- id: d09
+  status: draft
+  question: What percentage of sales transactions that occurred in 2015 were linked to at least one trade-in
+    on record, regardless of the trade-in date? Give the percentage as a number rounded to 2 decimals,
+    counting each 2015 sales transaction once.
+  expect: answer
+  objects: [dbo.trade_ins, dbo.transactions]
+  notes: Denominator is every 2015 transaction header; trade-ins with no linked transaction are excluded
+    from the numerator, and multiple trade-ins for one sale count once.
+  sql: |
+    WITH sales_2015 AS (
+      SELECT t.transaction_id
+      FROM dbo.transactions t
+      WHERE t.occurred_at >= '2015-01-01' AND t.occurred_at < '2016-01-01'
+    ),
+    linked AS (
+      SELECT DISTINCT ti.transaction_id
+      FROM dbo.trade_ins ti
+      WHERE ti.transaction_id IS NOT NULL
+    )
+    SELECT CAST(ROUND(100.0 * COUNT(l.transaction_id) / COUNT(*), 2) AS decimal(5,2)) AS percentage_linked
+    FROM sales_2015 s
+    LEFT JOIN linked l ON l.transaction_id = s.transaction_id;
+  draft:
+    kind: ratio
+    seed: hr.employment_spells
+    check: ok
+    rows: 1
+    columns: [percentage_linked]
+    preview:
+    - ['9.99']
+- id: d10
+  status: draft
+  question: For web accounts opened during 2015, how many days on average passed between the customer's
+    signup and the opening of the web account (account creation minus signup)? Round the average to 2
+    decimals and count every web account created in 2015 that has a matching customer record.
+  expect: answer
+  objects: [dbo.customers, web.accounts]
+  notes: Both timestamps are machine-inferred; accounts whose creation date falls before the customer
+    signup would yield negative days and are still included.
+  sql: |
+    SELECT CAST(AVG(CAST(DATEDIFF(day, c.signed_up_at, a.created_at) AS decimal(18,2))) AS decimal(18,2)) AS avg_days FROM web.accounts a JOIN dbo.customers c ON c.customer_id = a.customer_id WHERE a.created_at >= '2015-01-01' AND a.created_at < '2016-01-01'
+  draft:
+    kind: period
+    seed: web.accounts
+    check: ok
+    rows: 1
+    columns: [avg_days]
+    preview:
+    - ['592.91']
+- id: d11
+  status: draft
+  question: Which 5 countries generated the most page views in 2015? List the country code and the number
+    of page views, largest first, breaking ties alphabetically by country code.
+  expect: answer
+  objects: [web.page_views]
+  identify_by: [client_country]
+  rank_by: page_views
+  order_matters: true
+  notes: Page views with an unknown or null country would form their own group; client_country is a two-letter
+    country code.
+  sql: |
+    SELECT TOP (5) pv.client_country, COUNT(*) AS page_views FROM web.page_views pv WHERE pv.occurred_at >= '2015-01-01' AND pv.occurred_at < '2016-01-01' GROUP BY pv.client_country ORDER BY COUNT(*) DESC, pv.client_country ASC
+  draft:
+    kind: ranking
+    seed: web.accounts
+    check: ok
+    rows: 5
+    columns: [client_country, page_views]
+    preview:
+    - [US, '93764']
+    - [GB, '18688']
+    - [CA, '13783']
+    - [AU, '11852']
+    - [DE, '10698']
+- id: d12
+  status: draft
+  question: What percentage of all web page views in 2015 were made through a web account whose customer
+    is currently active? Give the percentage as a number rounded to 2 decimals; page views with no linked
+    account, or whose account has no customer record, count in the total but not in the active part.
+  expect: answer
+  objects: [dbo.customers, web.accounts, web.page_views]
+  notes: Customer status is a current-state flag, not the status at the time of the page view; unlinked
+    page views are kept in the denominator by the outer joins.
+  sql: |
+    SELECT CAST(100.0 * SUM(CASE WHEN c.status = 'active' THEN 1 ELSE 0 END) / COUNT(*) AS decimal(10,2)) AS percentage FROM web.page_views pv LEFT JOIN web.accounts a ON a.account_id = pv.account_id LEFT JOIN dbo.customers c ON c.customer_id = a.customer_id WHERE pv.occurred_at >= '2015-01-01' AND pv.occurred_at < '2016-01-01'
+  draft:
+    kind: ratio
+    seed: web.accounts
+    check: ok
+    rows: 1
+    columns: [percentage]
+    preview:
+    - ['1.36']
+- id: d13
+  status: draft
+  question: For each calendar month of 2015, what were the total revenue and the net income in US dollars,
+    listed in calendar order from January to December?
+  expect: answer
+  objects: [finance.monthly_summary]
+  identify_by: [year_month]
+  order_matters: true
+  notes: Assumes the month key is stored as text 'YYYY-MM', so a plain string range selects the calendar
+    year.
+  sql: |
+    SELECT ms.year_month, ms.revenue_usd AS revenue_usd, ms.net_income_usd AS net_income_usd FROM finance.monthly_summary ms WHERE ms.year_month >= '2015-01' AND ms.year_month < '2016-01' ORDER BY ms.year_month
+  draft:
+    kind: period
+    seed: finance.monthly_summary
+    check: ok
+    rows: 12
+    columns: [year_month, revenue_usd, net_income_usd]
+    preview:
+    - [2015-01, '1313466.57', '-3388376.22']
+    - [2015-02, '1281265.02', '-1062388.68']
+    - [2015-03, '1540297.18', '-1116310.94']
+    - [2015-04, '1392159.05', '-955514.09']
+    - [2015-05, '1473723.35', '-1145643.55']
+- id: d14
+  status: draft
+  question: Which 5 months had the highest net income across the whole monthly summary? List the month
+    and its net income in US dollars, highest first, breaking ties by the earlier month.
+  expect: answer
+  objects: [finance.monthly_summary]
+  identify_by: [year_month]
+  rank_by: net_income_usd
+  order_matters: true
+  notes: Net income is a machine-inferred measure; the checker should confirm it is already net of the
+    cost lines rather than needing to be recomputed.
+  sql: |
+    SELECT TOP (5) ms.year_month, ms.net_income_usd AS net_income_usd FROM finance.monthly_summary ms ORDER BY ms.net_income_usd DESC, ms.year_month ASC
+  draft:
+    kind: ranking
+    seed: finance.monthly_summary
+    check: ok
+    rows: 5
+    columns: [year_month, net_income_usd]
+    preview:
+    - [2010-12, '1652871.74']
+    - [2008-12, '1386953.14']
+    - [2007-12, '1349033.79']
+    - [2006-12, '1240105.28']
+    - [2009-12, '1240059.66']
+- id: d15
+  status: draft
+  question: In 2015, what percentage of total revenue was kept as net income? Give the percentage as a
+    number rounded to 2 decimals, using the summed annual revenue and net income.
+  expect: answer
+  objects: [finance.monthly_summary]
+  notes: Ratio of two machine-inferred measures summed over the twelve months of 2015; the checker should
+    confirm both are stored in USD.
+  sql: |
+    SELECT CAST(ROUND(100.0 * SUM(ms.net_income_usd) / SUM(ms.revenue_usd), 2) AS decimal(10,2)) AS net_income_percentage FROM finance.monthly_summary ms WHERE ms.year_month >= '2015-01' AND ms.year_month < '2016-01'
+  draft:
+    kind: ratio
+    seed: finance.monthly_summary
+    check: ok
+    rows: 1
+    columns: [net_income_percentage]
+    preview:
+    - ['-72.37']
+- id: d16
+  status: draft
+  question: Which 5 game titles sold the most units in 2015, each title pooled across all of its platforms?
+    List the title and its total quantity sold, largest first, breaking ties alphabetically by title.
+    Count every sales line of the year as recorded, including return lines with negative quantities.
+  expect: answer
+  objects: [dw.dim_product, dw.fact_sales]
+  identify_by: [title]
+  rank_by: total_quantity
+  order_matters: true
+  notes: Returns carry negative quantity, so the sum gives net units; product_kind = 'game' is read from
+    the values shown, and a title selling on several platforms is counted once.
+  sql: |
+    SELECT TOP (5) p.title, SUM(f.quantity) AS total_quantity
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p ON p.product_key = f.product_key
+    WHERE f.date_key BETWEEN 20150101 AND 20151231
+      AND p.product_kind = 'game'
+    GROUP BY p.title
+    ORDER BY total_quantity DESC, p.title ASC
+  draft:
+    kind: ranking
+    seed: dw.fact_sales
+    check: ok
+    rows: 5
+    columns: [title, total_quantity]
+    preview:
+    - [Grand Theft Auto V, '4417']
+    - ['Call of Duty: Advanced Warfare', '1783']
+    - ['The Witcher 3: Wild Hunt', '1343']
+    - [The Last of Us Remastered, '1327']
+    - ['Minecraft: PlayStation 4 Edition', '1247']
+- id: d17
+  status: draft
+  question: For game sales that occurred in 2015, what was the average number of days between the game's
+    first release date and the sale date, rounded to 2 decimals? Count only sales of games whose first
+    release date is on or before the sale date, so no negative gaps are included.
+  expect: answer
+  objects: [dw.dim_product, dw.fact_sales]
+  notes: first_release_date runs beyond 2015 (up to 2027), so sales preceding the release date are excluded;
+    the sale date is taken from the integer date key, not the timestamp.
+  sql: |
+    SELECT ROUND(AVG(CAST(DATEDIFF(day, p.first_release_date, CONVERT(date, CONVERT(char(8), f.date_key), 112)) AS decimal(18,4))), 2) AS avg_days_since_release
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p ON p.product_key = f.product_key
+    WHERE f.date_key BETWEEN 20150101 AND 20151231
+      AND p.product_kind = 'game'
+      AND p.first_release_date <= CONVERT(date, CONVERT(char(8), f.date_key), 112)
+  draft:
+    kind: period
+    seed: dw.fact_sales
+    check: ok
+    rows: 1
+    columns: [avg_days_since_release]
+    preview:
+    - ['1011.030000']
+- id: d18
+  status: draft
+  question: In 2015, what percentage of the total quantity sold was made up of hardware items rather than
+    games? Give the percentage as a number rounded to 2 decimals, counting every sales line of the year
+    as recorded, including return lines with negative quantities in both the hardware part and the total.
+  expect: answer
+  objects: [dw.dim_product, dw.fact_sales]
+  notes: The share is of net units (returns subtract); product_kind values 'game'/'hardware' come from
+    the values listed, and lines whose product has no kind fall in the total but not in the hardware part.
+  sql: |
+    SELECT ROUND(100.0 * SUM(CASE WHEN p.product_kind = 'hardware' THEN f.quantity ELSE 0 END) / NULLIF(SUM(f.quantity), 0), 2) AS hardware_unit_percentage
+    FROM dw.fact_sales f
+    JOIN dw.dim_product p ON p.product_key = f.product_key
+    WHERE f.date_key BETWEEN 20150101 AND 20151231
+  draft:
+    kind: ratio
+    seed: dw.fact_sales
+    check: ok
+    rows: 1
+    columns: [hardware_unit_percentage]
+    preview:
+    - ['32.600000000000']
+- id: d19
+  status: draft
+  question: Which 5 game releases received the most customer reviews posted during 2015? List each release's
+    title and identifier with its number of reviews, largest first, breaking ties alphabetically by title;
+    reviews that are not linked to a catalogued release do not count.
+  expect: answer
+  objects: [dbo.releases, web.reviews]
+  identify_by: [title, release_id]
+  rank_by: reviews
+  order_matters: true
+  notes: The catalogue holds one row per platform release, so the same title on two platforms counts as
+    two releases; reviews with release_id 0 or no matching release are dropped by the join.
+  sql: |
+    SELECT TOP (5) r.title, r.release_id, COUNT(*) AS reviews FROM web.reviews rv JOIN dbo.releases r ON r.release_id = rv.release_id WHERE rv.posted_at >= '2015-01-01' AND rv.posted_at < '2016-01-01' GROUP BY r.release_id, r.title ORDER BY COUNT(*) DESC, r.title ASC
+  draft:
+    kind: ranking
+    seed: web.reviews
+    check: ok
+    rows: 5
+    columns: [title, release_id, reviews]
+    preview:
+    - [Grand Theft Auto V, '51765', '51']
+    - [Grand Theft Auto V, '51764', '44']
+    - [The Last of Us Remastered, '51213', '37']
+    - ['Minecraft: PlayStation 4 Edition', '51364', '36']
+    - [Dead Rising 3, '50380', '30']
+- id: d20
+  status: draft
+  question: What percentage of the reviews posted during 2015 received at least one helpful vote at any
+    time? Give the percentage as a number rounded to 2 decimals, counting each review of 2015 once in
+    the total and once in the helpful part if it has ever been marked helpful.
+  expect: answer
+  objects: [web.review_votes, web.reviews]
+  notes: '''helpful'' is read from the reaction type values; the vote date is not restricted, so a later
+    helpful vote still counts, and a review with several helpful votes is counted once.'
+  sql: |
+    WITH review_flags AS (SELECT rv.review_id, CASE WHEN EXISTS (SELECT 1 FROM web.review_votes v WHERE v.review_id = rv.review_id AND v.vote_type = 'helpful') THEN 1 ELSE 0 END AS has_helpful FROM web.reviews rv WHERE rv.posted_at >= '2015-01-01' AND rv.posted_at < '2016-01-01') SELECT CAST(100.0 * SUM(has_helpful) / COUNT(*) AS decimal(10,2)) AS percentage FROM review_flags
+  draft:
+    kind: ratio
+    seed: web.reviews
+    check: ok
+    rows: 1
+    columns: [percentage]
+    preview:
+    - ['68.40']
+- id: d21
+  status: draft
+  question: For each review language, how many comments were posted during 2015 on reviews written in
+    that language? List the language code and the comment count, largest count first, breaking ties alphabetically
+    by language code.
+  expect: answer
+  objects: [web.review_comments, web.reviews]
+  identify_by: [language_code]
+  rank_by: comments
+  order_matters: true
+  notes: Assumes the language code is always populated on a review; the comment date, not the review date,
+    decides the year.
+  sql: |
+    SELECT rv.language_code, COUNT(*) AS comments FROM web.review_comments c JOIN web.reviews rv ON rv.review_id = c.review_id WHERE c.posted_at >= '2015-01-01' AND c.posted_at < '2016-01-01' GROUP BY rv.language_code ORDER BY COUNT(*) DESC, rv.language_code ASC
+  draft:
+    kind: join
+    seed: web.reviews
+    check: ok
+    rows: 10
+    columns: [language_code, comments]
+    preview:
+    - [en, '15213']
+    - [it, '893']
+    - [pt, '724']
+    - [es, '630']
+    - [fr, '580']
+- id: d22
+  status: draft
+  question: What percentage of the people in the person master live in a GDPR-governed country? Give the
+    percentage as a number rounded to 2 decimals, counting every person once, with people whose country
+    of residence has no matching country record included in the total but not in the GDPR part.
+  expect: answer
+  objects: [dbo.countries, hr.persons]
+  notes: Governing regime 'gdpr' is read from the country reference values; unmatched country records
+    count in the total but not the numerator.
+  sql: |
+    SELECT CAST(100.0 * SUM(CASE WHEN c.governing_regime = 'gdpr' THEN 1 ELSE 0 END) / COUNT(*) AS decimal(10,2)) AS gdpr_percentage
+    FROM hr.persons p
+    LEFT JOIN dbo.countries c ON p.country_of_residence = c.country_code
+  draft:
+    kind: ratio
+    seed: hr.persons
+    check: ok
+    rows: 1
+    columns: [gdpr_percentage]
+    preview:
+    - ['18.10']
+- id: d23
+  status: draft
+  question: For employment spells that ended in 2015, what was the average length of employment in days
+    (end date minus start date), rounded to 2 decimals? Count only spells whose end date falls in 2015,
+    whatever the termination reason.
+  expect: answer
+  objects: [hr.employment_spells]
+  notes: Only spells with an end date in 2015 are counted; termination reason is not filtered.
+  sql: |
+    SELECT CAST(AVG(CAST(DATEDIFF(day, started_at, ended_at) AS decimal(10,2))) AS decimal(10,2)) AS avg_employment_days
+    FROM hr.employment_spells
+    WHERE ended_at >= '2015-01-01' AND ended_at < '2016-01-01'
+  draft:
+    kind: period
+    seed: hr.persons
+    check: ok
+    rows: 1
+    columns: [avg_employment_days]
+    preview:
+    - ['3242.91']
+- id: d24
+  status: draft
+  question: For each wage currency, what was the average annual wage across compensation history records
+    that were effective at any point during 2015 (start on or before 31 December 2015 and end on or after
+    1 January 2015)? Round the average to 2 decimals, list only currencies with at least 20 such records,
+    highest average first, breaking ties alphabetically by currency code.
+  expect: answer
+  objects: [hr.compensation_history]
+  identify_by: [currency_code]
+  rank_by: average_annual_wage
+  order_matters: true
+  notes: A record counts if its compensation period overlaps 2015; annual_wage is machine-inferred and
+    averages are taken within currency.
+  sql: |
+    SELECT ch.currency_code, CAST(AVG(ch.annual_wage) AS decimal(12,2)) AS average_annual_wage
+    FROM hr.compensation_history ch
+    WHERE ch.effective_from <= '2015-12-31' AND ch.effective_to >= '2015-01-01'
+    GROUP BY ch.currency_code
+    HAVING COUNT(*) >= 20
+    ORDER BY average_annual_wage DESC, ch.currency_code ASC
+  draft:
+    kind: ranking
+    seed: hr.persons
+    check: ok
+    rows: 2
+    columns: [currency_code, average_annual_wage]
+    preview:
+    - [USD, '52886.10']
+    - [EUR, '21607.67']
+- id: d25
+  status: draft
+  question: For each calendar month of 2015, what was the total net pay across all payslips in payroll
+    runs paid in that month, excluding voided runs? List the months in calendar order from January to
+    December.
+  expect: answer
+  objects: [hr.payroll_lines, hr.payroll_runs]
+  order_matters: true
+  notes: void is read from the status values as voided; net is read as net pay, though its meaning is
+    machine-inferred.
+  sql: |
+    SELECT DATEFROMPARTS(YEAR(r.paid_at), MONTH(r.paid_at), 1) AS month_start, SUM(pl.net) AS total_net FROM hr.payroll_runs r JOIN hr.payroll_lines pl ON pl.payroll_run_id = r.payroll_run_id WHERE r.paid_at >= '2015-01-01' AND r.paid_at < '2016-01-01' AND r.status <> 'void' GROUP BY DATEFROMPARTS(YEAR(r.paid_at), MONTH(r.paid_at), 1) ORDER BY month_start
+  draft:
+    kind: period
+    seed: hr.payroll_runs
+    check: ok
+    rows: 12
+    columns: [month_start, total_net]
+    preview:
+    - ['2015-01-01', '1705536.08']
+    - ['2015-02-01', '1745301.30']
+    - ['2015-03-01', '1757740.64']
+    - ['2015-04-01', '1591410.54']
+    - ['2015-05-01', '1535132.76']
+- id: d26
+  status: draft
+  question: Which 3 countries had the highest total gross pay in 2015, considering payslips of payroll
+    runs paid during 2015 and excluding voided runs? List each country's code and name with its total
+    gross pay, largest first, breaking ties alphabetically by country name.
+  expect: answer
+  objects: [dbo.countries, hr.payroll_lines, hr.payroll_runs]
+  identify_by: [country_code, country_name]
+  rank_by: total_gross
+  order_matters: true
+  notes: void is read as voided; gross is read as gross pay, though its meaning is machine-inferred.
+  sql: |
+    SELECT TOP (3) c.country_code, c.name AS country_name, SUM(pl.gross) AS total_gross FROM hr.payroll_runs r JOIN hr.payroll_lines pl ON pl.payroll_run_id = r.payroll_run_id JOIN dbo.countries c ON c.country_code = r.country_code WHERE r.paid_at >= '2015-01-01' AND r.paid_at < '2016-01-01' AND r.status <> 'void' GROUP BY c.country_code, c.name ORDER BY total_gross DESC, c.name ASC
+  draft:
+    kind: ranking
+    seed: hr.payroll_runs
+    check: ok
+    rows: 3
+    columns: [country_code, country_name, total_gross]
+    preview:
+    - [JP, Japan, '12645516.59']
+    - [US, United States, '7557236.60']
+    - ['NO', Norway, '1493621.66']
+- id: d27
+  status: draft
+  question: Of the payroll runs paid during 2015 that are not voided, what percentage used a payroll currency
+    different from the country's default currency? Give the percentage as a number rounded to 2 decimals,
+    counting each run once; runs whose country has no matching country record count in the total but not
+    in the differing part.
+  expect: answer
+  objects: [dbo.countries, hr.payroll_runs]
+  notes: void is read as voided; the percentage compares each run's payroll currency with its country's
+    default currency, and missing country records are assumed rare but handled in the denominator.
+  sql: |
+    SELECT ROUND(100.0 * SUM(CASE WHEN c.default_currency IS NOT NULL AND r.currency_code <> c.default_currency THEN 1 ELSE 0 END) / COUNT(*), 2) AS percentage FROM hr.payroll_runs r LEFT JOIN dbo.countries c ON c.country_code = r.country_code WHERE r.paid_at >= '2015-01-01' AND r.paid_at < '2016-01-01' AND r.status <> 'void'
+  draft:
+    kind: ratio
+    seed: hr.payroll_runs
+    check: ok
+    rows: 1
+    columns: [percentage]
+    preview:
+    - [0E-12]
+- id: d28
+  status: draft
+  question: For 2015, what was the total sales revenue in USD for each geographic region, based on the
+    shop's country? Include all sales lines of the year, including returns with negative quantities. List
+    regions with their total revenue, largest first.
+  expect: answer
+  objects: [dw.dim_geography, dw.sales_wide]
+  identify_by: [region]
+  order_matters: true
+  notes: Regions come from the geography dimension; sales whose shop country has no matching geography
+    record are excluded.
+  sql: |
+    SELECT g.region, SUM(s.line_total_usd) AS total_revenue FROM dw.sales_wide s JOIN dw.dim_geography g ON s.shop_country = g.country_code WHERE s.date_key BETWEEN 20150101 AND 20151231 GROUP BY g.region ORDER BY total_revenue DESC
+  draft:
+    kind: join
+    seed: dw.dim_geography
+    check: ok
+    rows: 4
+    columns: [region, total_revenue]
+    preview:
+    - [North America, '11955704.3700']
+    - [Europe, '6407884.6434']
+    - [Latin America, '510354.7932']
+    - [Asia, '254089.4247']
+- id: d29
+  status: draft
+  question: In 2015, what was the average number of bytes sent per non-bot page view for each country,
+    based on the client's country? Round the average to 2 decimals, and list only countries with at least
+    1,000 such page views, ordered by average bytes sent descending. Return the country code and name.
+  expect: answer
+  objects: [dw.dim_geography, dw.fact_web_activity]
+  identify_by: [country_code, country_name]
+  order_matters: true
+  notes: Non-bot page views only; countries with at least 1,000 page views.
+  sql: |
+    SELECT g.country_code, g.country_name, ROUND(AVG(CAST(w.bytes_sent AS decimal(18,2))), 2) AS avg_bytes_sent FROM dw.fact_web_activity w JOIN dw.dim_geography g ON w.client_country = g.country_code WHERE w.date_key BETWEEN 20150101 AND 20151231 AND w.is_bot = 0 GROUP BY g.country_code, g.country_name HAVING COUNT(*) >= 1000 ORDER BY avg_bytes_sent DESC
+  draft:
+    kind: join
+    seed: dw.dim_geography
+    check: ok
+    rows: 12
+    columns: [country_code, country_name, avg_bytes_sent]
+    preview:
+    - [AU, Australia, '25365.120000']
+    - [IT, Italy, '25327.060000']
+    - [DE, Germany, '24981.780000']
+    - [JP, Japan, '24844.140000']
+    - [FR, France, '24833.010000']
+- id: d30
+  status: draft
+  question: Of the customers who signed up in 2015, what percentage are in countries whose governing privacy
+    regime is 'gdpr'? Give the percentage as a number rounded to 2 decimals, counting each customer once.
+    Customers whose country has no matching geography record count in the total but not in the GDPR part.
+  expect: answer
+  objects: [dw.dim_customer, dw.dim_geography]
+  notes: GDPR defined as governing_regime = 'gdpr'; customers with no geography match are in the denominator
+    but not in the numerator.
+  sql: |
+    SELECT ROUND(100.0 * SUM(CASE WHEN g.governing_regime = 'gdpr' THEN 1 ELSE 0 END) / COUNT(*), 2) AS percentage_gdpr FROM dw.dim_customer c LEFT JOIN dw.dim_geography g ON c.country_code = g.country_code WHERE c.signup_date >= '2015-01-01' AND c.signup_date < '2016-01-01'
+  draft:
+    kind: ratio
+    seed: dw.dim_geography
+    check: ok
+    rows: 1
+    columns: [percentage_gdpr]
+    preview:
+    - ['21.330000000000']

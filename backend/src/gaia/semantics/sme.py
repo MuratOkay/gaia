@@ -57,6 +57,7 @@ from gaia.db.models.semantics import (
     TableSemantic,
 )
 from gaia.semantics.evidence import PERSONAL_TYPES, shape
+from gaia.semantics.sampling import SAMPLE, ensure_drawn, sample_status
 from gaia.semantics.schemas import ROLES
 
 __all__ = ["ACTIONS", "ReviewError", "ReviewNotFound", "ReviewService"]
@@ -127,12 +128,14 @@ class ReviewService:
 
     # -- what the SME sees -----------------------------------------------------------------
     async def sources(self, data_source_ids: set[str]) -> list[dict[str, Any]]:
-        """The data sources this SME reviews, with the size of their queues."""
+        """The data sources this SME reviews, with the size of their queues — and, first,
+        the week's calibration sample drawn where it is not yet (7A, P7-2)."""
+        ids = [uuid.UUID(i) for i in data_source_ids]
+        await ensure_drawn(self.factory, ids, cfg=self.settings.calibration, now=self.now())
         async with self.factory() as s:
             out = []
             for ds in (await s.scalars(select(DataSource).where(DataSource.id.in_(
-                    [uuid.UUID(i) for i in data_source_ids] or [uuid.UUID(int=0)]))
-                    .order_by(DataSource.name))).all():
+                    ids or [uuid.UUID(int=0)])).order_by(DataSource.name))).all():
                 open_ = await s.scalar(select(func.count()).select_from(ReviewItem).where(
                     ReviewItem.data_source_id == ds.id, ReviewItem.status == "open"))
                 reviewed = await s.scalar(select(func.count()).select_from(ColumnSemantic).join(
@@ -142,8 +145,11 @@ class ReviewService:
                     ColumnSemantic.status.in_(("sme_reviewed", "sme_rejected"))))
                 stale = await s.scalar(select(func.count()).select_from(
                     _stale_decisions(ds.id).subquery()))
+                sample = await sample_status(s, ds.id, now=self.now())
                 out.append({"name": ds.name, "id": str(ds.id), "dialect": ds.dialect,
-                            "open": open_, "reviewed": reviewed, "stale": stale})
+                            "open": open_, "reviewed": reviewed, "stale": stale,
+                            "sample": {"this_week": sample["this_week"]["drawn"],
+                                       "open": sample["open"]}})
             return out
 
     async def queue(self, data_source: str, *, status: str = "open", reason: str | None = None,
@@ -173,15 +179,20 @@ class ReviewService:
                     .where(ReviewItem.data_source_id == ds.id, ReviewItem.status.in_(wanted)))
             if reason:
                 base = base.where(ReviewItem.reasons.contains([reason]))
-                if self.blind_share > 0:  # a filter on why would tell a blind item's certainty
-                    base = base.where(~and_(_blind_sql(self.blind_share),
-                                            ColumnSemantic.reviewed_by.is_(None)))
+                if reason != SAMPLE:  # a filter on why would tell a blind item's certainty
+                    base = base.where(~ReviewItem.reasons.contains([SAMPLE]))
+                    if self.blind_share > 0:
+                        base = base.where(~and_(_blind_sql(self.blind_share),
+                                                ColumnSemantic.reviewed_by.is_(None)))
             if table:
                 base = base.where(func.lower(TableRecord.schema_name + "."
                                              + TableRecord.object_name) == table.lower())
             total = await s.scalar(select(func.count()).select_from(base.subquery()))
-            order = (ReviewItem.priority.desc(), ReviewItem.id) if status == "open" else \
-                (ReviewItem.resolved_at.desc(),)
+            # the week's sample first (7A): few, and worth most — in an order that says
+            # nothing about Gaia's certainty (the item's id)
+            order = (ReviewItem.reasons.contains([SAMPLE]).desc(), sa.case(
+                (ReviewItem.reasons.contains([SAMPLE]), 0.0), else_=ReviewItem.priority).desc(),
+                ReviewItem.id) if status == "open" else (ReviewItem.resolved_at.desc(),)
             rows = (await s.execute(base.order_by(*order).limit(limit).offset(offset))).all()
             return {"total": total, "items": [_item(i, t, c, sem, self.blind_share)
                                               for i, t, c, sem in rows]}
@@ -236,7 +247,8 @@ class ReviewService:
                 .limit(1))
             questions = await self._questions(s, ds, table, col.column_name)
             meaning = _meaning(sem) if sem else None
-            blind = _blind(col, sem, self.blind_share)
+            blind = _blind(col, sem, self.blind_share,
+                           item if item is not None and item.status == "open" else None)
             if blind and meaning is not None:  # P6-5: Gaia's certainty is not shown
                 meaning.update(score=None, raw_score=None, band=None, self_confidence=None,
                                critique=None, calibrated_lower=None)
@@ -262,8 +274,9 @@ class ReviewService:
                 "versions": versions, "questions": questions,
                 "review": None if item is None else {
                     "id": str(item.id), "status": item.status,
-                    "reasons": ["blind"] if blind else list(item.reasons),
-                    "priority": round(item.priority, 4), "importance": item.importance,
+                    "reasons": _shown_reasons(item, blind),
+                    "priority": None if blind else round(item.priority, 4),
+                    "importance": None if blind else item.importance,
                     "coverage": item.coverage, "assignee": item.assignee},
                 "reviewable": meaning is not None and not meaning["inherited_from"],
                 "roles": list(ROLES),
@@ -328,15 +341,17 @@ class ReviewService:
                              "business_name": sem.business_name if sem else None,
                              "role": sem.role if sem else None,
                              "score": round(sem.calibrated_score, 3)
-                             if sem and not _blind(c, sem, share) else None,
-                             "band": sem.band if sem and not _blind(c, sem, share) else None,
+                             if sem and not _blind(c, sem, share, open_items.get(c.id))
+                             else None,
+                             "band": sem.band if sem and not _blind(
+                                 c, sem, share, open_items.get(c.id)) else None,
                              "status": sem.status if sem else None,
                              "inherited": bool(sem and (sem.score_breakdown or {}).get(
                                  "inherited_from")),
                              "queued": c.id in open_items,
-                             "blind": _blind(c, sem, share),
-                             "reasons": (["blind"] if _blind(c, sem, share) else
-                                         list(open_items[c.id].reasons))
+                             "blind": _blind(c, sem, share, open_items.get(c.id)),
+                             "reasons": _shown_reasons(
+                                 open_items[c.id], _blind(c, sem, share, open_items.get(c.id)))
                              if c.id in open_items else []} for c, sem in cols],
             }
 
@@ -399,6 +414,9 @@ class ReviewService:
             if base:
                 raise ReviewError(f"this view column shows {base} as it is: review that column, "
                                   "and the decision comes here by itself")
+            sampled = bool(await s.scalar(select(func.count()).select_from(ReviewItem).where(
+                ReviewItem.column_id == column_id, ReviewItem.status == "open",
+                ReviewItem.reasons.contains([SAMPLE]))))
             row = _copy(cur, ColumnSemantic)
             row.update(status="sme_reviewed", band="accepted", raw_score=1.0,
                        calibrated_score=1.0, coverage="sme", reviewed_by=who.login,
@@ -417,9 +435,11 @@ class ReviewService:
             row["score_breakdown"] = {
                 "sme": {"action": action, "reviewer": who.login, "at": now.isoformat(),
                         "note": note,
-                        # decided without Gaia's certainty on screen (P6-5)
-                        "blind": bool(not cur.reviewed_by
-                                      and is_blind(column_id, self.blind_share))},
+                        # decided without Gaia's certainty on screen (P6-5), and drawn at
+                        # random for it (the calibration sample, 7A)
+                        "blind": bool(not cur.reviewed_by and (
+                            sampled or is_blind(column_id, self.blind_share))),
+                        "sampled": bool(not cur.reviewed_by and sampled)},
                 "previous": {"version": cur.version, "status": cur.status, "band": cur.band,
                              "raw_score": cur.raw_score,
                              "calibrated_score": cur.calibrated_score},
@@ -774,16 +794,34 @@ def _blind_sql(share: float):
                    ).bindparams(share=share)
 
 
-def _blind(c: ColumnRecord | None, sem: ColumnSemantic | None, share: float) -> bool:
-    return bool(c is not None and sem is not None and not sem.reviewed_by
-                and is_blind(c.id, share))
+def _blind(c: ColumnRecord | None, sem: ColumnSemantic | None, share: float,
+           item: ReviewItem | None = None) -> bool:
+    """Gaia's certainty hidden: a fixed share of columns (P6-5), and every item of the
+    calibration sample (7A) while it waits."""
+    return bool(c is not None and sem is not None and not sem.reviewed_by and (
+        is_blind(c.id, share) or (item is not None and item.status == "open"
+                                  and SAMPLE in (item.reasons or []))))
+
+
+def _shown_reasons(item: ReviewItem, blind: bool) -> list[str]:
+    """Why an item waits, as the SME may see it: a blind item's reasons would tell its
+    certainty, so it says only that it is blind — or that it was drawn for the sample."""
+    if not blind:
+        return list(item.reasons)
+    return [SAMPLE] if SAMPLE in (item.reasons or []) else ["blind"]
 
 
 def _item(item: ReviewItem | None, t: TableRecord, c: ColumnRecord | None,
           sem: ColumnSemantic | None, share: float = 0.0) -> dict[str, Any]:
-    if _blind(c, sem, share):  # P6-5: no score, band or "Gaia is not sure"
-        return {**_item(item, t, c, sem), "score": None, "band": None, "reasons": ["blind"],
-                "blind": True}
+    if _blind(c, sem, share, item):  # P6-5, 7A: no score, band, priority or "not sure"
+        sample = item is not None and SAMPLE in (item.reasons or [])
+        return {**_plain_item(item, t, c, sem), "score": None, "band": None, "priority": None,
+                "reasons": [SAMPLE] if sample else ["blind"], "blind": True}
+    return _plain_item(item, t, c, sem)
+
+
+def _plain_item(item: ReviewItem | None, t: TableRecord, c: ColumnRecord | None,
+                sem: ColumnSemantic | None) -> dict[str, Any]:
     return {
         "id": str(item.id) if item else None,
         "table_id": str(t.id), "table": f"{t.schema_name}.{t.object_name}",

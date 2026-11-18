@@ -275,7 +275,7 @@ retrieve: ## 4B: the schema context for one question (TARGET=...; ARGS="--questi
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.retrieve ask $(TARGET_ARG) $(ARGS)
 
 .PHONY: retrieval-eval
-retrieval-eval: ## 4B: recall of a question set (TARGET=...; ARGS="--file F [--k 5] [--no-vectors]")
+retrieval-eval: ## 4B: recall of a question set (TARGET=...; ARGS="--file F | --golden F [--k 5] [--no-vectors]")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.retrieve eval $(TARGET_ARG) $(ARGS)
 
 .PHONY: ask
@@ -285,6 +285,10 @@ ask: ## 4C: ask a business question (TARGET=...; ARGS="--question '...' [--clari
 .PHONY: golden
 golden: ## 4D: run a golden set (TARGET=...; ARGS="--file F --out DIR [--only ids] [--replay DIR]")
 	@cd $(ROOT)/backend && $(PY) -m gaia.tools.golden $(TARGET_ARG) $(ARGS)
+
+.PHONY: golden-draft
+golden-draft: ## 7B: draft a golden set for a person to correct (TARGET=...; ARGS="--out F --as-of YYYY-MM-DD")
+	@cd $(ROOT)/backend && $(PY) -m gaia.tools.golden_draft $(TARGET_ARG) $(ARGS)
 
 .PHONY: golden-net-accept
 golden-net-accept: ## 6E: accept the replayed golden net after an intended change (rewrites tests/fixtures/golden_net, or $$GAIA_GOLDEN_NET)

@@ -99,6 +99,7 @@ llm:
     repair: false
     classification: false
     answer: false
+    drafting: true          # Phase 7B: `make golden-draft` (a person corrects every draft)
   retry:
     max_attempts: 3
     max_attempts_rate_limit: 8    # 429 = concurrency ceiling; clears on its own
@@ -248,6 +249,14 @@ calibration:
   # 6D (P6-2): an answer is "high" when P(right) >= 0.95, "medium" from 0.75
   answer_high: 0.95
   answer_medium: 0.75
+  # P7-2 (7A): the calibration sample. Each week, per data source, this many meanings are
+  # drawn at random — evenly over the bands these edges make on the raw score, accepted ones
+  # included — and put first in the SME's queue without Gaia's certainty. The queue alone
+  # labels only what Gaia doubted; these labels are not chosen by Gaia. 0 turns it off.
+  sample_per_week: 10
+  sample_bands: [0.45, 0.60, 0.80, 0.90]
+  # 7A: the forecast of P6-1 reads the rate of new labels over this many days (at least 7)
+  forecast_days: 28
   # P6-9 (2026-11-18): a provider's renames — labels under an earlier name count for the
   # model as it is called now. Only a rename: a different model is never an alias.
   model_aliases:

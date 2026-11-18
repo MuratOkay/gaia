@@ -225,9 +225,21 @@ class Selection:
     history: list[RunView] = field(default_factory=list)  # D93: ordinary runs before the candidate
 
 
+def _as_matches(run_as: str | None, wanted: str | None) -> bool:
+    if not wanted:
+        return not run_as
+    if not run_as:
+        return False
+    w, r = wanted.lower(), run_as.lower()
+    if "/" in w and "/" in r:  # both say the directory: it must be the same
+        return r == w
+    return r.split("/")[-1] == w.split("/")[-1]  # a run records the login (``finn``)
+
+
 def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: str | None = None,
                 last: int = 3, baseline_ids: Sequence[str] = (),
-                candidate_ids: Sequence[str] = (), compare_builds: bool = False) -> Selection:
+                candidate_ids: Sequence[str] = (), compare_builds: bool = False,
+                as_login: str | None = None) -> Selection:
     """Which runs a report reads: one question set (the newest run's unless given); the last
     ``last`` measured runs, or the runs named; for a comparison, the baseline and candidate
     named — or, with ``compare_builds``, the newest build's runs against the build before.
@@ -235,11 +247,17 @@ def select_runs(runs: Sequence[RunView], *, ids: Sequence[str] = (), set_key: st
     A deliberate regression (``make golden --regress``, 6E part 2) measures the net, not a build:
     it is left out of the last runs and of a comparison of builds — except when the newest runs
     are one, and then ``compare_builds`` compares them with the build they were made of (the
-    net's acceptance test). Named runs are always read as named (D89)."""
+    net's acceptance test). Named runs are always read as named (D89).
+
+    Runs made **as a person** (``make golden --as``) answer under that person's rights, so
+    their numbers are theirs (D97, 7B): without ``as_login`` only the operator's runs are
+    read; with it, only that person's (``acme/finn``, or ``finn`` for any directory)."""
     def named(prefixes: Sequence[str]) -> list[RunView]:
         return [r for r in runs if any(r.id.startswith(p.lower()) for p in prefixes)]
 
     pool = named(ids) if ids else list(runs)
+    if not ids:
+        pool = [r for r in pool if _as_matches(r.as_login, as_login)]
     key = set_key or (pool[-1].set_key if pool else "")
     pool = [r for r in pool if r.set_key == key]
     measured = [r for r in pool if r.measured]

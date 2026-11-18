@@ -545,3 +545,43 @@ class ReviewItem(Base):
         sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
     )
     resolved_at: Mapped[datetime | None] = mapped_column(sa.DateTime(timezone=True))
+
+
+class ReviewSample(Base):
+    """The calibration sample (Phase 7A, P7-2; D96): meanings drawn at random each week,
+    per data source, across the bands of the raw score — **accepted ones included**, which
+    the queue never offers — and put before the SME blind (no score, band or doubt).
+
+    The queue labels only what Gaia doubted; these are the labels that are not chosen by
+    Gaia's own certainty. One row per column drawn; a column is drawn at most once, ever.
+    The row keeps the machine version drawn and its stratum, so the report can say per band
+    how often Gaia was right — and which drawn items lapsed (re-reasoned before a decision).
+    """
+
+    __tablename__ = "review_sample"
+    __table_args__ = (
+        sa.UniqueConstraint("data_source_id", "column_id", name="uq_review_sample_column"),
+        sa.Index("ix_review_sample_period", "data_source_id", "period"),
+        {"schema": "semantics"},
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(sa.Uuid, primary_key=True, default=new_uuid)
+    data_source_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.data_sources.id", ondelete="CASCADE"), nullable=False
+    )
+    period: Mapped[datetime] = mapped_column(sa.Date, nullable=False)  # the ISO week's Monday
+    column_id: Mapped[uuid.UUID] = mapped_column(
+        sa.ForeignKey("catalog.columns.id", ondelete="CASCADE"), nullable=False
+    )
+    column_semantic_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("semantics.column_semantic.id", ondelete="SET NULL")
+    )
+    review_item_id: Mapped[uuid.UUID | None] = mapped_column(
+        sa.ForeignKey("semantics.review_item.id", ondelete="SET NULL")
+    )
+    band_from: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    band_to: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    raw_score: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    drawn_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), nullable=False, server_default=sa.func.now()
+    )

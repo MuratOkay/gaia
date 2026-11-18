@@ -334,6 +334,7 @@
     "openCount": "{{count}} item(s) waiting for you",
     "reviewedCount": "{{count}} meaning(s) decided by an SME",
     "staleCount": "{{count}} decision(s) to look at again: the column changed since",
+    "sampleCount": "{{count}} of this week's random checks waiting — they come first in the queue",
     "nav": "Review",
     "sources": "My data sources",
     "queue": "Queue of {{ds}}",
@@ -377,7 +378,8 @@
       "test_not_run": "a test could not run",
       "input_reviewed": "an input was reviewed",
       "stale_decision": "the column changed",
-      "blind": "a check without Gaia's certainty"
+      "blind": "a check without Gaia's certainty",
+      "calibration_sample": "drawn at random to measure Gaia"
     },
     "reasonHelp": {
       "abstain": "The certainty is too low to use the meaning as a fact.",
@@ -387,7 +389,8 @@
       "test_not_run": "A test of Gaia's claim could not run (time or budget).",
       "input_reviewed": "A column this view column is computed from was reviewed: check whether the computation changes its meaning.",
       "stale_decision": "An SME decided this column, and it changed in the database since.",
-      "blind": "For a few columns Gaia does not show how sure it is, so that decisions made with and without its certainty can be compared (it tells whether people follow Gaia too readily). Decide from what you see."
+      "blind": "For a few columns Gaia does not show how sure it is, so that decisions made with and without its certainty can be compared (it tells whether people follow Gaia too readily). Decide from what you see.",
+      "calibration_sample": "Each week a few of Gaia's meanings are drawn at random — including ones Gaia is sure of, which never come here otherwise — to measure how often it is right. How sure Gaia is stays hidden. Decide from what you see: accept it if it is right."
     },
     "bands": {
       "accepted": "sure",

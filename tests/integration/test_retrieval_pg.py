@@ -107,8 +107,11 @@ async def test_retrieval_on_demo_pg(pg_session_factory, fake_llm, fake_embedder)
 
     items = _load_questions(QUESTIONS)
     assert len(items) >= 20
-    contexts = [retrieve(index, q) for q, _e in items]
-    report = evaluate(contexts, [e for _q, e in items], 5)
+    # a clarified question is searched with its answer (7B, D91)
+    from gaia.tools.retrieve import searched
+
+    contexts = [retrieve(index, searched(q, c)) for q, _e, c in items]
+    report = evaluate(contexts, [e for _q, e, _c in items], 5)
     assert report["questions"] == len(items) and 0 <= report["mrr"] <= 1
     print(f"\nnames-only baseline (fake meanings, no vectors): covered {report['covered']:.0%}, "
           f"connected {report['connected']:.0%}, recall@5 {report['recall_at_k']:.0%}, "

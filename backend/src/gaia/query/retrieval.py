@@ -64,6 +64,7 @@ __all__ = [
     "RetrievalSettings",
     "SchemaContext",
     "VectorHit",
+    "context_of",
     "retrieve",
     "tokens",
 ]
@@ -517,6 +518,32 @@ def retrieve(index: RetrievalIndex, question: str, *, vector_hits: list[VectorHi
 
     ctx = SchemaContext(question, index.data_source, index.dialect, list(picked.values()),
                         joins, ranking, notes, index.snapshot_id, definitions)
+    _fit_budget(ctx, s)
+    return ctx
+
+
+def context_of(index: RetrievalIndex, keys: list[str], *,
+               settings: RetrievalSettings | None = None, note: str = "") -> SchemaContext:
+    """A context of chosen objects, not found by a question (golden drafting, Phase 7B): each
+    object with its columns as retrieval would choose them, the declared joins among them
+    only (no bridges), trimmed to the token budget."""
+    s = settings or RetrievalSettings()
+    picked: dict[str, RetrievedObject] = {}
+    for i, key in enumerate(keys, start=1):
+        obj = index.obj(key)
+        if obj is not None and obj.key not in picked:
+            picked[obj.key] = RetrievedObject(obj, 1.0 / i, i, matches=[Match("chosen", note)])
+    joins, _bridges, _apart = _connect(index.catalog, list(picked), s)
+    keys_l = {k.lower() for k in picked}
+    joins = [e for e in joins if e.from_table.lower() in keys_l and e.to_table.lower() in keys_l]
+    join_cols: dict[str, set[str]] = defaultdict(set)
+    for e in joins:
+        join_cols[e.from_table.lower()].add(e.from_column.lower())
+        join_cols[e.to_table.lower()].add(e.to_column.lower())
+    for r in picked.values():
+        r.columns = _choose_columns(r, join_cols.get(r.obj.key.lower(), set()), s)
+    ctx = SchemaContext(note, index.data_source, index.dialect, list(picked.values()), joins,
+                        [], [], index.snapshot_id, [])
     _fit_budget(ctx, s)
     return ctx
 

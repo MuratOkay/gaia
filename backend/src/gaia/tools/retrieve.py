@@ -6,6 +6,7 @@
            --file infra/pg-target/retrieval_questions.csv
     make retrieve        TARGET=demo_pg ARGS="--question '…'"
     make retrieval-eval  TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv"
+    make retrieval-eval  TARGET=demo_pg ARGS="--golden infra/pg-target/golden.yaml"   # 7B
 
 Read-only. The question is embedded with the configured embedding model
 (``embeddings.*``, Ollama ``bge-m3``) and compared with the stored meanings; when
@@ -21,6 +22,12 @@ whether all are among the first ``--k`` ranked (*recall@k*), the reciprocal rank
 the first expected object (*MRR*), and how many objects a context holds (the price
 of coverage). It is the Phase 2 "retrieval smoke test" made a
 tool: "10 business questions return the expected tables in the top 5".
+
+Clarified questions (Phase 7B, D97; D91): a ``clarified`` column holds the user's answer to a
+clarification; the question is then searched as Gaia searches it after that answer — the
+question and the answer together, by words and by vectors alike (``search_text``). ``--golden
+FILE`` reads a golden set instead: every question with its ``objects`` as the one expected set,
+and a clarify question's ``clarified`` answer — so the golden questions measure retrieval too.
 """
 
 from __future__ import annotations
@@ -36,6 +43,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from gaia.core.config import Settings, get_settings
 from gaia.db.engine import dispose_engine, get_engine
+from gaia.query.ask import search_text
 from gaia.query.retrieval import RetrievalIndex, SchemaContext, VectorHit, retrieve
 from gaia.query.retrieval_store import load_retrieval_index, vector_search
 
@@ -134,14 +142,30 @@ def cmd_ask(settings: Settings, args: argparse.Namespace) -> int:
     return 0
 
 
-def _load_questions(path: Path) -> list[tuple[str, list[list[str]]]]:
+def _load_questions(path: Path) -> list[tuple[str, list[list[str]], str | None]]:
+    """(question, expected alternatives, the clarification's answer or None)."""
     with open(path, newline="", encoding="utf-8") as handle:
         rows = [r for r in csv.DictReader(handle) if (r.get("question") or "").strip()
                 and not r["question"].lstrip().startswith("#")]
     return [(r["question"].strip(),
              [[e.strip() for e in alt.split("|") if e.strip()]
-              for alt in r["expected"].split(";") if alt.strip()])
+              for alt in r["expected"].split(";") if alt.strip()],
+             (r.get("clarified") or "").strip() or None)
             for r in rows]
+
+
+def _golden_questions(path: Path) -> list[tuple[str, list[list[str]], str | None]]:
+    """A golden set's questions with their objects (7B): those without objects — a question
+    the data cannot answer — say nothing about retrieval and are left out."""
+    from gaia.query.golden import load_golden
+
+    return [(q.question, [list(q.objects)], q.clarified)
+            for q in load_golden(path).questions if q.objects]
+
+
+def searched(question: str, clarified: str | None) -> str:
+    """What retrieval reads for a question — with its clarification's answer (D91)."""
+    return search_text(question, [("", clarified)]) if clarified else question
 
 
 def _connected(ctx: SchemaContext, objects: list[str]) -> bool:
@@ -199,16 +223,25 @@ def evaluate(contexts: list[SchemaContext], expected: list[list[list[str]]], k: 
 
 def cmd_eval(settings: Settings, args: argparse.Namespace) -> int:
     target = args.target or settings.app.default_target
-    items = _load_questions(_path(args.file))
-    contexts = asyncio.run(_contexts(settings, target, [q for q, _e in items],
+    if bool(args.file) == bool(args.golden):
+        print("give --file (a CSV) or --golden (a golden set)", file=sys.stderr)
+        return 2
+    items = (_golden_questions(_path(args.golden)) if args.golden
+             else _load_questions(_path(args.file)))
+    contexts = asyncio.run(_contexts(settings, target, [searched(q, c) for q, _e, c in items],
                                      not args.no_vectors))
-    report = evaluate(contexts, [e for _q, e in items], args.k)
-    lines = [f"retrieval evaluation: {target}, {report['questions']} question(s), "
-             f"vectors {'off' if args.no_vectors else 'on'}"]
+    report = evaluate(contexts, [e for _q, e, _c in items], args.k)
+    for p, (q, _e, c) in zip(report["per_question"], items, strict=True):
+        p["question"], p["clarified"] = q, c
+    clarified = sum(1 for _q, _e, c in items if c)
+    lines = [f"retrieval evaluation: {target}, {report['questions']} question(s)"
+             + (f" ({clarified} searched with their clarification)" if clarified else "")
+             + f", vectors {'off' if args.no_vectors else 'on'}"]
     for p in report["per_question"]:
         marks = " ".join(f"{e}@{r if r else '-'}" for e, r in p["ranks"].items())
         flag = "ok  " if p["connected"] else ("part" if p["covered"] else "MISS")
-        lines.append(f"  {flag} {p['question'][:60]:<60} {marks}")
+        lines.append(f"  {flag} {('(c) ' if p['clarified'] else '') + p['question']:<60.60} "
+                     f"{marks}")
         if not p["covered"]:
             lines.append(f"       context: {', '.join(p['context'])}")
     vec_notes = {n for p in report["per_question"] for n in p["notes"] if "embedding" in n}
@@ -238,7 +271,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--json", action="store_true")
     p = sub.add_parser("eval", help="recall over a question set")
     p.add_argument("--target")
-    p.add_argument("--file", required=True)
+    p.add_argument("--file", help="a CSV: question, expected[, notes, clarified]")
+    p.add_argument("--golden", help="a golden set: its questions and objects (7B)")
     p.add_argument("--k", type=int, default=5)
     p.add_argument("--no-vectors", action="store_true")
     p.add_argument("--out", help="write the full report (JSON)")

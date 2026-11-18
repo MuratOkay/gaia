@@ -14,6 +14,9 @@ P6-4).
   them.
 * Withdrawn before a decision (changed to "right"), the item closes; changed after one, the
   decision stands — it was about the answer, which has not changed.
+* **Set aside** (D96): a verdict given or decided while testing is not evidence. An
+  administrator sets it aside (``make feedback ARGS="void ID --note …"``, audited): it stays,
+  marked, in ``make feedback``, and counts nowhere — no label, no count, no SME item.
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, select
+from sqlalchemy import Text, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from gaia.db.models.catalog import DataSource
@@ -36,7 +39,7 @@ from gaia.db.models.chat import (
 )
 
 __all__ = ["FeedbackError", "FeedbackNotFound", "all_feedback", "decide", "feedback_dict",
-           "give", "open_counts", "review_items", "reviewers"]
+           "give", "open_counts", "review_items", "reviewers", "void"]
 
 NOTE_MAX = 2000
 KEEP = object()  # D94: a verdict sent without a note keeps the note given before
@@ -161,7 +164,9 @@ async def all_feedback(session: AsyncSession, *, limit: int = 50) -> list[dict[s
     for f, m, ds_name, ds_id in rows:
         if ds_id not in who:
             who[ds_id] = await reviewers(session, ds_id)
-        out.append({"updated_at": f.updated_at, "data_source": ds_name, "given_by": f.given_by,
+        out.append({"id": str(f.id), "voided_at": f.voided_at, "voided_by": f.voided_by,
+                    "void_note": f.void_note,
+                    "updated_at": f.updated_at, "data_source": ds_name, "given_by": f.given_by,
                     "verdict": f.verdict, "note": f.note, "status": f.status,
                     "decision": f.decision, "decided_by": f.decided_by,
                     "question": (m.payload or {}).get("question"), "reviewers": who[ds_id]})
@@ -175,7 +180,8 @@ async def open_counts(session: AsyncSession, data_source_ids: list[uuid.UUID]
         return {}
     rows = (await session.execute(
         select(Feedback.data_source_id, func.count()).where(
-            Feedback.data_source_id.in_(data_source_ids), Feedback.status == "open")
+            Feedback.data_source_id.in_(data_source_ids), Feedback.status == "open",
+            Feedback.voided_at.is_(None))
         .group_by(Feedback.data_source_id))).all()
     return {str(ds): n for ds, n in rows}
 
@@ -210,7 +216,8 @@ async def review_items(session: AsyncSession, data_source: str, *, status: str =
     base = (select(Feedback, Message, QueryRun)
             .join(Message, Message.id == Feedback.message_id)
             .outerjoin(QueryRun, QueryRun.id == Message.query_run_id)
-            .where(Feedback.data_source_id == ds.id, Feedback.status == status))
+            .where(Feedback.data_source_id == ds.id, Feedback.status == status,
+                   Feedback.voided_at.is_(None)))
     total = await session.scalar(select(func.count()).select_from(base.subquery()))
     order = Feedback.created_at.asc() if status == "open" else Feedback.decided_at.desc()
     rows = (await session.execute(base.order_by(order).limit(limit).offset(offset))).all()
@@ -234,6 +241,8 @@ async def decide(session: AsyncSession, data_source: str, feedback_id: uuid.UUID
     if row is None or row[3] != data_source:
         raise FeedbackNotFound("no such item on this data source")
     f, m, run, _ds = row
+    if f.voided_at is not None:
+        raise FeedbackNotFound("no such item on this data source (it was set aside)")
     if f.status == "none":
         raise FeedbackError("the person said it was right: there is nothing to decide")
     now = datetime.now(UTC)
@@ -243,3 +252,29 @@ async def decide(session: AsyncSession, data_source: str, feedback_id: uuid.UUID
     f.decided_by, f.decided_at, f.updated_at = reviewer, now, now
     await session.flush()
     return _item(f, m, run, sql=True)
+
+
+async def void(session: AsyncSession, ref: str, *, actor: str, note: str | None,
+               undo: bool = False) -> Feedback:
+    """Set a "Was this right?" aside — or back (``undo``). ``ref``: its id, or the first
+    characters of it as ``make feedback`` prints them (unique, at least 6)."""
+    ref = (ref or "").strip().lower()
+    if len(ref) < 6:
+        raise FeedbackError("give the id, or at least its first 6 characters")
+    rows = (await session.scalars(select(Feedback).where(
+        cast(Feedback.id, Text).like(f"{ref}%")))).all()
+    if not rows:
+        raise FeedbackNotFound(f"no feedback {ref!r}")
+    if len(rows) > 1:
+        raise FeedbackError(f"{ref!r} is more than one: give more of the id")
+    f = rows[0]
+    if undo:
+        f.voided_at = f.voided_by = f.void_note = None
+    else:
+        if not (note or "").strip():
+            raise FeedbackError("say why it is set aside (--note)")
+        f.voided_at, f.voided_by = datetime.now(UTC), actor
+        f.void_note = note.strip()[:NOTE_MAX]
+    await session.flush()
+    return f
+

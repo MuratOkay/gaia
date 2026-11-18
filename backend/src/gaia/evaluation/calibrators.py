@@ -47,7 +47,8 @@ def meaning_points(labels: Sequence[HumanLabel], aliases: dict[str, str] | None 
     for x in labels:
         if x.production and x.model and x.scoring:
             out[(_name(x.model, aliases), x.scoring)].append(
-                Point(x.raw_score, VALUE[x.verdict], f"{x.data_source}:{x.column}"))
+                Point(x.raw_score, VALUE[x.verdict], f"{x.data_source}:{x.column}",
+                      at=x.decided_at, ongoing=x.source == "sme"))
     return dict(out)
 
 
@@ -59,31 +60,34 @@ async def answer_points(session: AsyncSession, aliases: dict[str, str] | None = 
     out: dict[tuple[str, str], list[Point]] = defaultdict(list)
     rows = (await session.execute(
         select(EvaluationItem, EvaluationRun.model, EvaluationRun.data_source,
-               EvaluationRun.build)
+               EvaluationRun.build, EvaluationRun.started_at)
         .join(EvaluationRun, EvaluationRun.id == EvaluationItem.run_id)
         .where(EvaluationRun.mode != "replay", EvaluationItem.correct.is_not(None),
                EvaluationItem.final_status == "answered"))).all()
-    for item, model, ds, build in rows:
+    for item, model, ds, build, started in rows:
         if is_regression(build):
             continue
         conf = (item.detail or {}).get("confidence") or {}
         if conf.get("score") is None or not model:
             continue
         out[(_name(model, aliases), ANSWER_SCORING)].append(Point(
-            float(conf["score"]), 1.0 if item.correct else 0.0, f"{ds}:{item.item_key}"))
+            float(conf["score"]), 1.0 if item.correct else 0.0, f"{ds}:{item.item_key}",
+            at=started))
     from gaia.db.models.chat import Feedback, Message, QueryRun
 
     decided = (await session.execute(
         select(Feedback, Message.payload, QueryRun.model)
         .join(Message, Message.id == Feedback.message_id)
         .outerjoin(QueryRun, QueryRun.id == Message.query_run_id)
-        .where(Feedback.status == "decided", Feedback.decision.is_not(None)))).all()
+        .where(Feedback.status == "decided", Feedback.decision.is_not(None),
+               Feedback.voided_at.is_(None)))).all()
     for fb, payload, model in decided:
         conf = (payload or {}).get("confidence") or {}
         if conf.get("score") is None or not model:
             continue
         out[(_name(model, aliases), ANSWER_SCORING)].append(Point(
-            float(conf["score"]), VALUE[fb.decision], f"feedback:{fb.message_id}"))
+            float(conf["score"]), VALUE[fb.decision], f"feedback:{fb.message_id}",
+            at=fb.decided_at, ongoing=True))
     return dict(out)
 
 

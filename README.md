@@ -9,18 +9,18 @@ Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
 
-> Status (2026-11-18): **Phases 0–6 complete** (3C accepted, P6-0; Phase 5 ticked by the owner;
-> Phase 6 by P6-10); build **D95**. Phase 6 — evaluation and calibration: one evaluation store and
-> report (`make quality`, the *Evaluation* page), labels from people with the LLM judge measured
-> against them (κ 0.65), calibrators used only when they beat the identity (`make calibrate`), "Was
-> this right?" decided by the data source's SME — **verified on the host end to end** (A1; `make
-> feedback` shows every doubt and who reviews it) — two regression nets (replayed in every `make
-> test`; fresh over three runs, with deliberate regressions of known damage), category proposals
-> measured. On the host the golden set runs 94 % correct (90–97 %). **Phase 7 — ready to be run
-> by others — is planned and waits for the owner's decisions (PHASES, P7-0 … P7-10).**
+> Status (2026-11-18): **Phases 0–6 complete; Phase 7 — ready to be run by others — in progress**
+> (approved 2026-11-18, every decision as recommended); build **D97**. Phase 6 gave one evaluation store
+> and report (`make quality`, the *Evaluation* page), labels from people, calibrators used only when they
+> beat the identity, "Was this right?" decided by the data source's SME (verified on the host end to end),
+> two regression nets and category proposals measured; the golden set ran 94 % correct (90–97 %) on the
+> host. Phase 7 so far: **7A** — a weekly blind sample of meanings across the score bands (the labels the
+> queue cannot give) and a forecast of when calibration becomes possible; **7B** — 66 golden questions for
+> `demo_pg` (34 harder ones), `make golden-draft` for a database without a golden set, golden runs as a
+> person (need-to-know measured), retrieval with clarifications. Next: **7C**, runs that run themselves.
 > Send verification outputs only through `make share`. PostgreSQL is the main dialect (D52); SQL
 > Server is verified asynchronously (D56). What to run on your machine:
-> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§35d: two commands on D95).
+> **[OWNER_VERIFICATION.md](OWNER_VERIFICATION.md)** (§36d).
 > See [PHASES.md](PHASES.md).
 ---
 
@@ -314,13 +314,15 @@ Key decisions already fixed:
 | `make access` | 5C: data categories — `from-schemas`, `propose`, `objects [--why]` (each proposal's basis and reasons, D77), `place OBJ CAT`, `suggestions`, `policy LOGIN`, `accuracy` (6G: proposals against what people confirmed) (`TARGET=...`); grant one with `make auth ARGS="grant category --role DIR/ROLE --category NAME"` |
 | `make query` / `make query-check` | Phase 4A: one SQL statement through the SQL guard, run read-only and recorded / validated only (`TARGET=...`, `ARGS="--sql '…'"` or `--file`) |
 | `make dev-api` | the API on 127.0.0.1:8000: sign-in (`/api/auth`), chat (`/api/conversations`, server-sent events; within the asker's data categories since 5C), review (`/api/review`), administration (`/api/admin`), audit (`/api/audit`), the SQL of answers and runs (`/api/queries`, `/api/runs`) — a session is needed since 5A |
-| `make quality` | 6A: the quality report over golden runs — pooled, with intervals, flaky questions, a comparison question by question (`--last N`, `--compare-builds`, `--baseline … --candidate …`, `--list`, `--import 'evaluations/golden_*'`) |
+| `make quality` | 6A: the quality report over golden runs — pooled, with intervals, flaky questions, a comparison question by question (`--last N`, `--compare-builds`, `--baseline … --candidate …`, `--list`, `--import 'evaluations/golden_*'`, `--as LOGIN` for runs made as a person) |
 | `make labels` | 6B: people's labels on Gaia's meanings — right, partly, wrong — with the score each meaning had: SME decisions, and the owner's 3C audit with the judge's verdict (`TARGET=...`, `--csv F`, `--import-3c DIR`) |
 | `make calibrate` | 6C/6D: fit calibrators per model on people's labels and judge them on held-out ones against the identity (`--kind meaning\|answer --model M --apply \| --reset`, `--list`); after applying a meaning calibrator, `make rescore` |
 | `make golden-net-accept` | 6E: accept the replayed golden net after an intended change (the net runs in `make test`) |
 | `make share` | verification outputs safe to send: accounts, tenants, user names, ids and codes replaced consistently; send `verification/share/` only |
 | `make export` | a clean copy to hand over, zipped beside the project: git-tracked files plus `verification/share/` only, no `.env`/`gaia-env`/caches, personal data replaced and the copy scanned (`ARGS="--also 'A Name' --force"`) |
 | `make golden` / `make clarifications` | Phase 4D: run a golden question set, scored by result / clarifications and Gaia's agreement with users (D61) |
+| `make golden-draft` | 7B: draft a golden set for a database that has none — every reference checked and run, every question `status: draft` until a person corrects it |
+| `make feedback` | 6D/7A: every "Was this right?" across data sources and who reviews it; `void ID --note …` sets a test verdict aside |
 | `make ask` | Phase 4C: ask a business question — a table and a narrative, or a clarifying question (`TARGET=...`, `ARGS="--question '…'"`) |
 | `make retrieve` / `make retrieval-eval` | Phase 4B: the schema context for a question / recall over a question set (`TARGET=...`, `ARGS=...`) |
 | `make evaluate*` | Phase 3C evaluation (plan, labels, run, judge, audit, report, cost); `make evaluate-freeze` freezes a run's inputs (`<out>/inputs.json`; the first run does it too) |

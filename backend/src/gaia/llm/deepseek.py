@@ -107,7 +107,7 @@ class DeepSeekClient:
         return LLMResponse(
             content=message.get("content") or "",
             # Official DeepSeek uses ``reasoning_content``; OpenAI-compatible
-            # gateways (including the Evren proxy) use ``reasoning``. Accept both.
+            # gateways (including the <name-3> proxy) use ``reasoning``. Accept both.
             reasoning=message.get("reasoning_content") or message.get("reasoning"),
             model=payload.get("model", self.config.model),
             finish_reason=choices[0].get("finish_reason"),

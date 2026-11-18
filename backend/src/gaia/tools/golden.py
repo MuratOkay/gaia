@@ -25,6 +25,13 @@ of the build itself (``make quality ARGS="--compare-builds"``) are the fresh net
 test: does it catch a worse prompt? ``--regress drop:<schema.object>`` (P6-8, D90) answers
 without one object instead — the questions that need it (the golden set's ``objects``) are
 known before the run, so the comparison can say how many of them it named as broken.
+
+``--as LOGIN`` (5C; scored since 7B, D97) answers as the chat would answer that person: a
+question whose objects they may not read — or that needs personal data they may only see
+masked (``personal: true``) — is *withheld*, and right only when no number comes back; every
+answer is searched for the names of what they may not read. The references always run with
+the operator's rights. ``make quality ARGS="--as LOGIN"`` reports such runs; they never mix
+with the operator's.
 """
 
 from __future__ import annotations
@@ -53,7 +60,7 @@ from gaia.evaluation.store import (
     run_mode,
 )
 from gaia.query.golden import load_golden
-from gaia.query.golden_run import report_markdown, run_golden, summarise
+from gaia.query.golden_run import report_markdown, run_golden, summarise, withheld_from
 from gaia.query.retrieval_store import load_retrieval_index
 from gaia.tools.ask import answer_calibrator_for, ask_settings, llm_client
 
@@ -69,6 +76,9 @@ async def _run(args: argparse.Namespace) -> int:
     settings = get_settings()
     label = args.target or settings.app.default_target
     golden = load_golden(_path(args.file))
+    if golden.drafts:
+        print(f"note: {golden.drafts} question(s) still marked `status: draft` are left out — "
+              "a draft is measured once a person has corrected it")
     if golden.data_source != label and not args.force:
         print(f"{args.file} is written for {golden.data_source!r}, not {label!r} "
               "(--force to run it anyway)", file=sys.stderr)
@@ -171,6 +181,13 @@ async def _run(args: argparse.Namespace) -> int:
             reference_guard = (build_access_guard(settings, label, undropped,
                                                   full_index.catalog, policy)
                                if dropped else None)
+            if args.as_login:  # the truth does not depend on who asks (7B)
+                reference_guard = build_access_guard(settings, label, full_index,
+                                                     full_index.catalog, OPERATOR)
+                held = [q.id for q in golden.questions if (not only or q.id in only)
+                        and withheld_from(q, policy)]
+                print(f"withheld from {policy.label} (right only without a number): "
+                      f"{', '.join(held) or 'none'}")
             calibrator = await answer_calibrator_for(session, settings)  # 6D: as the chat
 
             def progress(o) -> None:
@@ -184,7 +201,7 @@ async def _run(args: argparse.Namespace) -> int:
                 retrieval=settings.retrieval.to_settings(),
                 vectors=(lambda q: hits.get(q)) if hits else None, only=only,
                 workers=args.workers or settings.llm.concurrency, progress=progress,
-                reference_guard=reference_guard)
+                reference_guard=reference_guard, person=policy if args.as_login else None)
             if not args.no_record:
                 store = QueryStore(session)
                 for o in outcomes:

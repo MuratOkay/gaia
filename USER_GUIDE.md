@@ -653,6 +653,18 @@ in the queue), a missing business term (add it to the glossary), a wrong join, G
 question, the data itself, or a question that was unclear or outside the data. Only your decision
 counts as a verdict on the answer; the person sees it under the answer.
 
+**Random checks — the calibration sample** (Phase 7A). Each week a few of Gaia's meanings are drawn
+at random for each data source you review — ten by default, two from each band of Gaia's certainty,
+**including meanings Gaia is sure of**, which the queue never offers otherwise — and put **first** in
+your queue as *drawn at random to measure Gaia*. Like the checks without Gaia's certainty, they show
+no score, no band and no stated doubt: decide from what you see; accepting is the right decision when
+Gaia is right. *My data sources* says how many of the week's checks wait. Why: your ordinary decisions
+are on meanings Gaia already doubted, so they cannot say how often a *confident* meaning is right — and
+without that no calibrator can ever be fitted. About fifteen minutes a week
+(`calibration.sample_per_week`, `sample_bands`; 0 turns it off). The week's sample is drawn when an SME
+first opens *Review* that week, or with `make review TARGET=… ARGS="--sample"`; a column is drawn at most
+once; one re-reasoned before anyone decided it *lapses* (counted, not redrawn).
+
 **Scores.** Until Gaia has enough of your decisions to fit them (Phase 6C), a meaning's score is a
 ranking — shown with *(uncalibrated)* on the column's page. Once a calibrator is in use, the score
 is a probability — *right 87 % of the time (at least 80 %)* — and a meaning is accepted without
@@ -687,10 +699,48 @@ D80): a directory that holds recorded answers is refused, because a run into it 
 them — it would reproduce that run, not measure anything new; `--resume` continues an
 interrupted run there. The report says at its top how many answers were asked now.
 
+**The `demo_pg` set has 66 questions since D97** (Phase 7B): the first 32, and 34 harder ones
+(`h01`–`h29`, `c05`–`c09`) — sibling sums (the chasm trap), four-table joins, the cryptic legacy tables,
+codes whose meaning only the data gives, a category hierarchy, percentages, weekday and quarter
+arithmetic, populations that must be stated. Some are meant to be missed: a set that is always right
+measures nothing. A new set is a new baseline — its first three fresh runs are what later runs are
+compared with; the 30-question runs stay in the store under their own set.
+
+**As a person** (`--as LOGIN`, scored since 7B): every question is answered as the chat would answer that
+person. A question that needs an object they may not read — or personal data when they are not a PII
+processor (`personal: true` in the file) — is **withheld**: right only when *no number* comes back
+(refused, cannot answer, or a clarification that still gives none once answered); a number is wrong — it
+was computed from other data. Every answer is searched for the names of what they may not read; one found
+makes the answer wrong (*leaked*). The references always run with the operator's rights. The report's *As
+this person* section lists the withheld questions and any leak; `make quality ARGS="--as LOGIN"` reads
+such runs — without `--as`, `make quality` reads the operator's runs only.
+
 `--regress joins-rule` (Phase 6E) runs the set with the SQL prompt **without its JOINS rule** —
 a deliberately worse prompt, recorded under its own build label (`… + deliberate regression:
 joins-rule`). Three such runs against three of the build itself (`make quality ARGS=
 "--compare-builds"`) test whether the comparison catches a worse prompt. Never for anything else.
+
+### Drafting a golden set (`make golden-draft`, Phase 7B)
+
+```bash
+make golden-draft TARGET=demo_mssql ARGS="--out infra/sqlserver/golden.yaml --as-of 2016-12-31"
+make golden-draft TARGET=demo_mssql ARGS="… --seeds 12 --per-seed 3"
+```
+
+A data source without a golden set has no quality number. Gaia drafts one for you to correct: it picks
+small contexts — a well-connected table and its neighbours, one schema after another — asks the model
+for a few questions of different kinds in each (with the reference SQL, the objects it reads, how the
+answer is compared), **checks every reference through the guard and runs it** read-only, drops
+duplicates, and writes a golden file in which **every question is `status: draft`**. `make golden`
+skips drafts; they count for nothing until you have checked them.
+
+For each draft: read the question as a business user would; check its SQL and the `draft` block
+(what the guard saw it read, the number of rows, the first rows — personal data as shapes; `check:
+refused | failed | empty` when something is wrong); correct the wording, the SQL, `objects`,
+`identify_by`, `rank_by`; then delete the line `status: draft`. **Delete what you cannot vouch
+for** — a wrong reference poisons every later measurement. `--as-of` is the data's "today"
+(`nge_small` ends in 2016). About an hour for thirty questions. Nothing goes to the metadata store;
+the model's answers are kept beside the file (`<out>.llm/`).
 
 ### The quality report (`make quality`, Phase 6A)
 
@@ -700,6 +750,7 @@ make quality TARGET=demo_pg ARGS="--last 5 | --list"
 make quality TARGET=demo_pg ARGS="--compare-builds"      # the newest build's runs vs the build before
 make quality TARGET=demo_pg ARGS="--baseline ID,ID,ID --candidate ID,ID,ID"
 make quality ARGS="--import 'evaluations/golden_demo_pg*'"   # older runs' directories, once each
+make quality TARGET=demo_pg ARGS="--as acme/finn"       # the runs made as a person (7B)
 ```
 
 Every golden run is recorded in the metadata store (`evaluation.run`, one item per question)
@@ -726,7 +777,10 @@ until they stop flipping; a question wrong in every run has its SQL and *why* �
 context lacked an object) or reading (the model had it all). (4) *Candidate against baseline*:
 named breaks first, then the interval; *cannot tell* is not *passes*. (5) *The confidence Gaia
 showed*: per level with an interval — until a calibrator is in use, the levels are a rule of
-thumb. (6) *Calibration*: how many labels, on how many subjects, are still missing.
+thumb. (6) *The calibration sample*: what was drawn, decided, waiting or lapsed, and per band how
+often Gaia was right on the drawn meanings people decided — the only unbiased view (7A).
+(7) *Calibration*: how many labels, on how many subjects, are still missing — and the forecast of
+when they will be there.
 
 The *Evaluation* page (administrators; auditors under *Audit*) shows the same: the runs, with how
 their answers came about and the **meanings** they answered with, and the report. When a
@@ -741,7 +795,8 @@ answers were right, with an interval — "high" should be right at least 95 % of
 comparison also says what the change costs per run: repairs, model calls, tokens.
 
 The report ends with what is not a golden run: people's labels on Gaia's meanings (6B), the
-**calibration** of every model (6C, 6D; below), and people's feedback on answers (6D).
+calibration sample (7A), the **calibration** of every model with its forecast (6C, 6D, 7A; below),
+and people's feedback on answers (6D; verdicts set aside are counted apart).
 
 ### Labels from people (`make labels`, Phase 6B)
 
@@ -804,6 +859,22 @@ overrides — then note why in the decisions log). With a meaning calibrator in 
 (no model call) rewrites the scores as probabilities, each with a lower bound; a meaning is
 accepted without review only when P(right) ≥ 0.90 **and** its bound ≥ 0.80; the review queue
 re-ranks. The thresholds live in `calibration:` (`config/gaia.yaml`).
+
+**When will there be enough?** (Phase 7A) Each calibration line of `make quality` ends with a
+**forecast**: from the labels that keep coming — SME decisions (the weekly sample among them) and
+decided "Was this right?" — over the last four weeks (`calibration.forecast_days`), how many new
+subjects and new not-right ones arrive a week, and so when Platt's and isotonic's minimums will be met —
+*"Platt in ~14 week(s) (the not-right labels are the bottleneck)"*, or ***not at this rate***. One-off
+sources (the 3C audit, a golden set's questions) count in what exists, not in the rate.
+
+**A verdict given while testing** is not evidence. An administrator sets it aside — it stays listed,
+marked *SET ASIDE*, and counts nowhere (no label, no count, no SME item); audited:
+
+```bash
+make feedback                                              # every verdict, with its id
+make feedback ARGS="void 1a2b3c4d --note 'clicked while testing'"
+make feedback ARGS="unvoid 1a2b3c4d"
+```
 
 ### The replayed golden net (`make test`, Phase 6E)
 
@@ -897,6 +968,7 @@ next to it. `make export` is repeatable: `--force` replaces a copy of the same d
 make retrieve TARGET=demo_pg ARGS="--question 'revenue by store city last month'"
 make retrieve TARGET=demo_pg ARGS="--question '…' --context"        # + the text the generator sees
 make retrieval-eval TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv"
+make retrieval-eval TARGET=demo_pg ARGS="--golden infra/pg-target/golden.yaml"       # the golden questions (7B)
 ```
 
 `make retrieve` prints the ranking (the ten best objects, `*` = in the context), the
@@ -914,11 +986,14 @@ values (`values: 'web', 'store', …`, or `most frequent values (10 of ~40)`), d
 ranges and conversion hints (`integer date yyyymmdd: to_date(…)`) follow. Personal
 data never shows values. Only joins the SQL guard accepts are listed.
 
-`make retrieval-eval` reads a CSV `question,expected[,notes]` — `expected` lists the
+`make retrieval-eval` reads a CSV `question,expected[,notes,clarified]` — `expected` lists the
 objects a correct answer needs (`schema.object`, separated by `|`; alternative sets by
-`;`) — and prints per question `ok` (all expected objects in the context and joined),
-`part` (in the context, not joined) or `MISS`, then `covered`, `connected`, `recall@k`,
-`MRR` and the mean context size. `--out F` writes everything as JSON.
+`;`); `clarified`, the user's answer to a clarification, makes the question searched as Gaia
+searches it after that answer (words and vectors alike, D91; marked `(c)`) — and prints per question
+`ok` (all expected objects in the context and joined), `part` (in the context, not joined) or
+`MISS`, then `covered`, `connected`, `recall@k`, `MRR` and the mean context size. `--golden F`
+reads a golden set instead (every question with its `objects`, clarified where it says so — 62 of
+`demo_pg`'s 66). `--out F` writes everything as JSON.
 
 Settings: `retrieval.*` in `config/gaia.yaml` (objects per context, bridges, join hops,
 columns shown, token budget, nearest meanings from the embeddings).
@@ -958,7 +1033,9 @@ lists each one; that footprint is one of the things being measured.
 | `make psql` / `make redis-cli` | Shells into the containers |
 | `make test` | Full test suite (`ARGS="tests/... -k name"` for a subset) |
 | `make test-host` | The host's verification: the §9 exports required, any skip fails the run |
-| `make feedback` | Every "Was this right?" across data sources: who, where, verdict, note, status, who reviews it |
+| `make feedback` | Every "Was this right?" across data sources: who, where, verdict, note, status, who reviews it; `ARGS="void ID --note …"` sets one given while testing aside (7A) |
+| `make golden-draft` | Drafts a golden set for a person to correct — every question `status: draft` (7B) |
+| `make review ARGS="--sample"` | Draws the week's calibration sample now, if not drawn yet (7A) |
 | `make auth ARGS="refusals"` | The last sign-ins and refusals, with the reason the sign-in screen does not show |
 | `make test-db` | Create the disposable `gaia_test` database for the integration tests |
 | `make measure` | Profiling-cost measurements for Phase 3 budgets (`TARGET=`, `ARGS=`) |

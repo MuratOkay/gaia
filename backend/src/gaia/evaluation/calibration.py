@@ -32,10 +32,11 @@ import hashlib
 import math
 from collections.abc import Sequence
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any
 
-__all__ = ["Fit", "Point", "Trial", "choose_method", "cross_validated", "fit", "identity",
-           "labels_key", "metrics", "subjects", "trial", "wilson_lower"]
+__all__ = ["Fit", "Point", "Trial", "choose_method", "cross_validated", "fit", "forecast",
+           "identity", "labels_key", "metrics", "subjects", "trial", "wilson_lower"]
 
 Z = 1.959964
 
@@ -48,6 +49,10 @@ class Point:
     score: float
     y: float  # 1 right, 0.5 partly, 0 wrong
     subject: str
+    # 7A's forecast: when the label was given, and whether its source keeps giving labels
+    # (SME decisions, decided feedback) or gave them once (the 3C audit, a golden set)
+    at: datetime | None = field(default=None, compare=False)
+    ongoing: bool = field(default=False, compare=False)
 
 
 def wilson_lower(p: float, n: float) -> float:
@@ -308,3 +313,53 @@ def trial(points: Sequence[Point], cfg, method: str | None = None) -> Trial:
         model = fit(points, chosen)
     return Trial(chosen, why, len(points), not_right(points), labels_key(points), model,
                  before, held, subjects(points))
+
+
+def forecast(points: Sequence[Point], cfg, now: datetime) -> dict[str, Any]:
+    """When P6-1's minimums will be met at the rate labels arrive (Phase 7A, D96).
+
+    The rate counts **new subjects** — a column or question labelled for the first time, and
+    subjects labelled *not right* for the first time — brought by **ongoing** sources (SME
+    decisions, the calibration sample among them; decided "Was this right?") over the last
+    ``calibration.forecast_days`` days, or since the first ongoing label if that is more recent
+    (at least a week). One-off sources — the 3C audit, a golden set's questions — count in what
+    exists but not in the rate: they do not come again by themselves.
+
+    Returns the counts, the weekly rates and, per method, ``weeks`` (0: met; ``None``: not at
+    this rate — a needed rate is zero) and which minimum is the bottleneck."""
+    n, wrong = subjects(points)
+    first: dict[str, Point] = {}
+    first_wrong: dict[str, Point] = {}
+    for p in sorted(points, key=lambda p: (p.at is None, p.at or now)):
+        first.setdefault(p.subject, p)
+        if p.y < 1.0:
+            first_wrong.setdefault(p.subject, p)
+    ongoing = [p.at for p in points if p.ongoing and p.at is not None]
+    span = timedelta(days=max(7, cfg.forecast_days))
+    if ongoing:
+        span = min(span, max(timedelta(days=7), now - min(ongoing)))
+    since = now - span
+    weeks_span = span.total_seconds() / (7 * 86400)
+
+    def _new(d: dict[str, Point]) -> int:
+        return sum(1 for p in d.values() if p.ongoing and p.at is not None and p.at >= since)
+
+    rate_n, rate_w = _new(first) / weeks_span, _new(first_wrong) / weeks_span
+    out: dict[str, Any] = {"subjects": n, "not_right": wrong, "days": round(span.days),
+                           "per_week": round(rate_n, 2), "not_right_per_week": round(rate_w, 2),
+                           "methods": {}}
+    for method, need_n, need_w in (("platt", cfg.platt_min_labels, cfg.platt_min_wrong),
+                                   ("isotonic", cfg.isotonic_min_labels,
+                                    cfg.isotonic_min_wrong)):
+        gap_n, gap_w = max(0, need_n - n), max(0, need_w - wrong)
+        t_n = 0.0 if not gap_n else (gap_n / rate_n if rate_n else None)
+        t_w = 0.0 if not gap_w else (gap_w / rate_w if rate_w else None)
+        if t_n is None or t_w is None:
+            weeks, neck = None, "not_right" if t_w is None else "subjects"
+        else:
+            weeks = math.ceil(max(t_n, t_w))
+            neck = None if not weeks else ("not_right" if t_w >= t_n else "subjects")
+        out["methods"][method] = {"weeks": weeks, "bottleneck": neck, "gap": gap_n,
+                                  "gap_not_right": gap_w}
+    return out
+

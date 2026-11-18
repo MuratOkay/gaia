@@ -9,6 +9,11 @@ optionally with the user's answer to the clarification (``clarified``) and the
 reference for the clarified question (``sql``), which also judges Gaia's best guess
 (D61). ``identify_by`` and ``rank_by`` tell the comparison (``query.compare``) which
 columns are interchangeable identifiers and how a top-N list is ranked.
+
+Phase 7B (D97): ``personal: true`` marks a question that filters, groups or computes with
+personal data — asked as someone who is not a PII processor it must be refused (a golden run
+as a person, ``--as``); ``status: draft`` marks a question drafted by ``make golden-draft`` and
+not yet corrected by a person — it is skipped (never run, never counted) until the line goes.
 """
 
 from __future__ import annotations
@@ -35,6 +40,7 @@ class GoldenQuestion:
     clarified: str | None = None
     identify_by: list[str] = field(default_factory=list)
     rank_by: str | None = None
+    personal: bool = False  # needs personal data: refused for someone who is no PII processor
 
     @property
     def has_reference(self) -> bool:
@@ -46,12 +52,22 @@ class GoldenSet:
     data_source: str
     as_of: date
     questions: list[GoldenQuestion]
+    drafts: int = 0  # questions still marked ``status: draft`` (skipped)
 
 
-def load_golden(path: str | Path) -> GoldenSet:
+def load_golden(path: str | Path, *, include_drafts: bool = False) -> GoldenSet:
+    """The questions of a golden file; those still ``status: draft`` are left out unless
+    ``include_drafts`` (a draft is not a measurement until a person has corrected it)."""
     doc = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
     questions = []
+    drafts = 0
     for q in doc["questions"]:
+        status = str(q.get("status") or "").strip().lower()
+        if status not in ("", "draft", "accepted"):
+            raise ValueError(f"{q.get('id')}: status is 'draft' or nothing (or 'accepted')")
+        if status == "draft" and not include_drafts:
+            drafts += 1
+            continue
         if q["expect"] not in ("answer", "clarify"):
             raise ValueError(f"{q['id']}: expect must be 'answer' or 'clarify'")
         if q["expect"] == "answer" and not q.get("sql"):
@@ -64,10 +80,11 @@ def load_golden(path: str | Path) -> GoldenSet:
             sql=(q.get("sql") or "").strip() or None, objects=list(q.get("objects") or []),
             order_matters=bool(q.get("order_matters")), requires=list(q.get("requires") or []),
             notes=q.get("notes"), clarified=q.get("clarified"),
-            identify_by=list(q.get("identify_by") or []), rank_by=q.get("rank_by")))
+            identify_by=list(q.get("identify_by") or []), rank_by=q.get("rank_by"),
+            personal=bool(q.get("personal"))))
     ids = [q.id for q in questions]
     if len(set(ids)) != len(ids):
         raise ValueError("golden question ids must be unique")
     as_of = doc["as_of"]
     return GoldenSet(doc["data_source"], as_of if isinstance(as_of, date)
-                     else date.fromisoformat(str(as_of)), questions)
+                     else date.fromisoformat(str(as_of)), questions, drafts)

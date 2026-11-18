@@ -1,4 +1,4 @@
-question,expected,notes
+question,expected,notes,clarified
 Which store city had the highest revenue last month?,sales.orders|store.stores;rpt.v_daily_sales|store.stores,
 What were the ten best-selling products by quantity this year?,sales.order_lines|product.products,
 How many active customers do we have in each segment?,crm.customers,
@@ -21,3 +21,9 @@ How many order status changes happen per day?,sales.order_events,
 How many customers live in each city according to their billing address?,crm.addresses,
 What is the lifetime value of VIP customers?,rpt.v_customer_overview;sales.orders|crm.customers,
 Which sales representative sold the most?,sales.orders|hr.employees,no declared FK: needs a model hint
+# 7B (D97): questions searched with the answer to their clarification (D91),,,
+Top 5 most profitable products,sales.order_lines|sales.orders|product.products,o06 — the clarification brings sales.orders (D91),"profit realised on sales, line subtotal minus quantity times unit cost, over all orders that were not cancelled"
+Show me the sales for Ankara.,sales.orders|store.stores,c03,"the total order amount of the stores in Ankara in 2025, cancelled orders excluded"
+Who are our best customers?,sales.orders|crm.customers,c01,"the ten customers with the highest total order amount in 2025, cancelled orders excluded"
+What is our return rate?,sales.orders,c05,"the share of the orders placed in 2025, cancelled ones excluded, whose status is returned"
+Which city has the most customers?,crm.addresses,c07,"by the city of the customers' billing addresses (type B), each customer counted once"

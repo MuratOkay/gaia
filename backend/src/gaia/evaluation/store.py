@@ -94,7 +94,11 @@ def _item(run_id: uuid.UUID, key: str, values: dict[str, Any]) -> EvaluationItem
         row[f] = int(row[f] or 0)
     row["seconds"] = float(row["seconds"] or 0.0)
     row["reason"] = (row["reason"] or None) and str(row["reason"])[:2000]
-    row["detail"] = json.loads(json.dumps(row["detail"], default=str)) if row["detail"] else None
+    detail = dict(row["detail"] or {})
+    for f in ("withheld", "leaked"):  # as a person (7B, D97)
+        if values.get(f):
+            detail[f] = list(values[f])
+    row["detail"] = json.loads(json.dumps(detail, default=str)) if detail else None
     return EvaluationItem(run_id=run_id, item_key=key, **row)
 
 

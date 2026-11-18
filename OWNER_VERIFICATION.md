@@ -20,10 +20,11 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D95 (A1 triaged: make feedback, reviewers as sign-in counts them)`
-  — A1 **passed** on D94 (§35): finn's doubts reached akaya and her decisions are labels.
-  D95 adds the missing `make feedback` target and stops naming an administrator as a reviewer.
-  **The next run: §35d (two commands). Phase 7's plan waits for your decisions (§35e).***
+  there. *Latest build: `2026-11-18 · D97 (Phase 7A labels sought; 7B harder questions, drafts, persona runs)`
+  — Phase 7 approved (every decision as recommended) and started: 7A, a weekly blind sample of
+  meanings across the score bands and a forecast of when calibration becomes possible; 7B, 66
+  golden questions for `demo_pg`, `make golden-draft`, golden runs as a person, retrieval with
+  clarifications. Migration `0021`. **The next run: §36d.***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -32,8 +33,8 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   in §29; §29d was run on D88 up to step 4 — triaged in §30; §30e was run on D89 up to step 4 (sign-in
   failed) — triaged in §31; §31e was run on D90 — triaged in §32; §31f (D91) and §32e (D92) were
   run — **triaged in §33, which closes Phase 6**; its asynchronous item A1 was run once — **triaged in §34**,
-  §34c was run on D94 — **triaged in §35: A1 passed; §35d is the next run, and Phase 7's
-  plan waits for your decisions (§35e)**. **Send outputs only through `make share`.**
+  §34c was run on D94 — triaged in §35 (A1 passed); §35d was run on D95 — **triaged in §36, with
+  Phase 7's first two stages built; §36d is the next run**. **Send outputs only through `make share`.**
 
 ### Run plan — what depends on what (2026-11-16)
 
@@ -3995,6 +3996,145 @@ approval.
 
 ---
 
+## 36 · Triage of the D95 run; Phase 7 started — 7A and 7B (build D97), and the next run (2026-11-18)
+
+Your answer: every Phase 7 decision as recommended (P7-0 … P7-10, PHASES); everything committed
+(`4612e6f`); start Phase 7. The outputs: `35_feedback.out`, `35_tests.out` (build D95).
+
+### 36a · What the files prove
+
+| File | What it shows | Verdict |
+|---|---|---|
+| `35_tests.out` | `make test-host` **790 passed, 0 skipped**; web **64 passed** | ✅ D95. (I had written 792: I counted the tree you sent, which holds two tests more than your host's — your count is the one that holds: 788 on D94 + D95's 2) |
+| `35_feedback.out`, `make feedback` | seven verdicts. **The first attempt went to `demo_mssql`**: finn's *Yes*, *Partly* ("Product names are not shown.") and *No* at 09:53–09:55 — *NOBODY reviews this data source*; the second, on `demo_pg`, decided by akaya | ✅ `make feedback`; **§34a-1 confirmed**: the chat had opened on `demo_mssql` |
+| `35_feedback.out`, *People's feedback* | 2 yes, 1 partly, 1 no, 2 decided; *reviewed by: acme/akaya* — dyilmaz gone | ✅ D95's reviewer rule |
+
+### 36b · Findings
+
+1. **Two real doubts wait for no one.** finn's *Partly* with "Product names are not shown." and his *No*
+   on `demo_mssql` are open — nobody reviews `demo_mssql`. They are real feedback (the first names what
+   was missing), and `demo_mssql` will need a reviewer anyway: 7A draws a weekly sample there too, and the
+   `nge_small` SME pass is on it. Step 1 grants one.
+2. **Two test decisions are labels now.** akaya's decisions in A1 — *partly → wrong* with the note
+   "Test", *wrong → right* with "Did not like the result" — count as answer labels (6D). If they were
+   clicks to test the flow, they are not evidence; nothing could set them aside. **Built (D96):** `make
+   feedback ARGS="void ID --note …"` — kept, marked *SET ASIDE*, counted nowhere; audited; `unvoid` takes
+   it back. Your call in step 1: set aside, or keep if they were real judgments.
+3. **D61 (b) is decided (P7-1):** rejected for now — Gaia keeps asking, and recording its best guess.
+
+### 36c · Built (D96 = 7A, D97 = 7B; migration `0021`)
+
+* **7A — labels sought.** Each week, per data source, ten meanings drawn at random, two from each band of
+  Gaia's score — **accepted ones included** — go **first** in the SME's queue, blind (*drawn at random to
+  measure Gaia*); drawn when an SME opens *Review* (or `make review ARGS="--sample"`); a column at most once.
+  The report: *The calibration sample (7A)* — drawn, decided, waiting, lapsed, and per band how often Gaia
+  was right on them; every calibration line ends with a **forecast** — when Platt's and isotonic's
+  minimums will be met at the rate labels now arrive, or *not at this rate*. And setting feedback aside
+  (36b-2).
+* **7B — more and harder questions.** `demo_pg`'s golden set has **66 questions** (34 new: sibling sums,
+  four-table joins, the legacy tables, codes only the data explains, a hierarchy, percentages, calendar
+  arithmetic, personal data, three ambiguous and two unanswerable) — a new question set: its first three
+  fresh runs are the new baseline. **`make golden-draft`**: Gaia drafts a set for a data source, every
+  reference checked and run, every question `status: draft` until you correct it. **Golden runs as a
+  person** are scored: what the person may not read or use must give no number, and no answer may name it;
+  `make quality ARGS="--as LOGIN"` reports them, apart from the operator's. **`retrieval-eval`** reads
+  clarified questions and `--golden` sets.
+
+Sandbox: **799 passed, 10 skipped** (+17 since D95: the sample and its forecast, setting aside, drafting, runs as a person, retrieval with clarifications; the 10 skips are SQL Server and Ollama); web **66**; migration `0021` down and up, DDL identical to `create_all`.
+
+### 36d · The run (build D97)
+
+**Step 0 — the migration and the tests.**
+
+```bash
+cd backend && ../gaia-env/bin/alembic upgrade head && cd ..      # 0020 -> 0021
+env | grep -c '^GAIA_TEST_'      # 3
+(make stamp; make test-host; make web-test; make web-build) > verification/36_tests.out 2>&1
+```
+
+- [ ] **807 passed, 0 skipped** (your 790 + 17; the suite now takes ~3 minutes longer — the
+      golden tests answer 66 questions); web **66 passed**, `✓ built`
+
+**Step 1 — A1's leftovers** (36b-1, 36b-2):
+
+```bash
+make auth ARGS="grant sme --user acme/akaya --data-source demo_mssql"   # or whoever reviews it
+make feedback                                        # the ids: first column
+make feedback ARGS="void <id of akaya's 'Test'> --note 'A1 test click'"          # if a test
+make feedback ARGS="void <id of 'Did not like the result'> --note 'A1 test click'"
+```
+
+Then, as akaya, *Review* → `demo_mssql` → *Answers people doubted*: finn's two — decide them for real.
+
+**Step 2 — S4 (7.0, safety):** §15c's one command on SQL Server.
+
+```bash
+(make stamp; for f in infra/sqlserver/queries/*.sql; do echo "== $f"; \
+   make query TARGET=demo_mssql ARGS="--file $f --rows 5"; done) > verification/36_s4.out 2>&1
+```
+
+- [ ] `90_`, `91_`: `REJECTED`, **nothing reached `execution :`**; `01_`, `02_` as §15c says
+
+**Step 3 — the week's samples (7A).** As akaya open *Review*: *My data sources* says *10 of this week's
+random checks waiting* for each data source she reviews; the queue begins with them (*drawn at random to
+measure Gaia*, no certainty shown). Decide them as any item — accept when Gaia is right. About fifteen
+minutes each. Then:
+
+```bash
+(make stamp; make review TARGET=demo_pg ARGS="--sample --limit 12"; make review TARGET=demo_mssql ARGS="--sample --limit 12") > verification/36_sample.out 2>&1
+```
+
+- [ ] `drawn before: 10 item(s)` per data source (fewer only where a band holds fewer meanings — the
+      line says which), and how many are still waiting
+
+**Step 4 — the new baseline: three fresh runs of the 66 questions (7B).** ~10 minutes each.
+
+```bash
+for r in a b c; do (make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d97_$r") > verification/36_golden_$r.out 2>&1; done
+(make stamp; make quality TARGET=demo_pg ARGS="--last 3") > verification/36_quality.out 2>&1
+```
+
+- [ ] each run: `66 question(s), 62 with a reference`; `fresh`
+- [ ] the report: the pooled share with its interval on 62 questions — expect it **below** the 30-question
+      set's 94 %: that is the point; which new questions are wrong in every run, and why (retrieval or
+      reading); *The calibration sample* and the **forecast** lines; *People's feedback* with *set
+      aside: 2* if you set them aside
+
+**Step 5 — as a person (7B).** finn reads Finance's categories and is no PII processor:
+
+```bash
+(make stamp; make golden TARGET=demo_pg ARGS="--file infra/pg-target/golden.yaml --out evaluations/golden_demo_pg_d97_as_finn --as finn --directory acme"; \
+ make quality TARGET=demo_pg ARGS="--as finn --last 1") > verification/36_as_finn.out 2>&1
+```
+
+- [ ] its first lines: `as finn: N object(s) readable, personal data masked` and `withheld from finn …:`
+      the questions needing what finn may not read (h29 among them: personal data)
+- [ ] *As this person*: every withheld question `→ refused`, `cannot_answer` or `clarify` — a `—
+      **wrong**` is a number computed from other data: send it; **forbidden names in any answer: none**
+
+**Step 6 — retrieval with the host's meanings and vectors (7B).**
+
+```bash
+(make stamp; make retrieval-eval TARGET=demo_pg ARGS="--golden infra/pg-target/golden.yaml"; \
+ make retrieval-eval TARGET=demo_pg ARGS="--file infra/pg-target/retrieval_questions.csv") > verification/36_retrieval.out 2>&1
+```
+
+- [ ] `vectors on` (no *embeddings unavailable* note); the `(c)` questions `ok`
+
+**Step 7 — `nge_small`'s draft (7B; P6-6).** About 10 model calls.
+
+```bash
+(make stamp; make golden-draft TARGET=demo_mssql ARGS="--out infra/sqlserver/golden.yaml --as-of 2016-12-31") > verification/36_draft.out 2>&1
+```
+
+- [ ] ~30 drafts, most `ok`; the file's head says how many ran, returned nothing, or were refused
+- [ ] then, **whenever you have the hour**: correct the drafts as the file's head says and delete each
+      `status: draft` you vouch for — the next run makes its first three T-SQL golden runs (S8)
+
+Then `make share`. Nothing here blocks 7C, which I build meanwhile.
+
+---
+
 ## Troubleshooting
 
 | Symptom | Likely cause | Fix |
@@ -4040,3 +4180,7 @@ approval.
 | Questions about some tables are never answered | those objects have no category (readable by nobody), or a category the person does not hold | *Data categories* (the warning lists them), or `make access TARGET=… ARGS="objects"`; `propose`, or place them by hand |
 | A grant changed but the chat has not noticed | sessions re-read privileges every `auth.recheck_minutes` (15) | wait, sign out and in again, or export `GAIA_AUTH_RECHECK_MINUTES=1` before `make dev-api` for tests |
 | e-mail addresses show as dots | the person is not a PII processor (D69, D74) | `make auth ARGS="grant pii_processor --user DIR/LOGIN"` if they should see them |
+| The review queue starts with items *drawn at random to measure Gaia* | 7A's weekly calibration sample (D96): ten a week per data source, accepted meanings included, shown without Gaia's certainty | decide them as any item; `calibration.sample_per_week: 0` turns it off |
+| `make golden`: `note: N question(s) still marked status: draft are left out` | a drafted golden file (`make golden-draft`, D97) not yet corrected | correct each draft and delete its `status: draft` line |
+| `make quality` shows none of the runs made with `--as` | since D97 the operator's report reads the operator's runs only | `make quality ARGS="--as LOGIN"` |
+| An answer label you know was a test click | a "Was this right?" decided while testing | `make feedback ARGS="void ID --note …"` (D96) |

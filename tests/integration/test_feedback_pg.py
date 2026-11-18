@@ -133,6 +133,11 @@ async def test_a_doubt_nobody_reviews_says_so(api, monkeypatch, capsys):  # noqa
         cid = (await deniz.post("/api/conversations", json={"data_source": "demo_pg"},
                                 headers=hd)).json()["id"]
         first, second = await _answer(factory, cid, 2), await _answer(factory, cid, 4)
+        # D95 (OWNER_VERIFICATION §35): on the host dyilmaz — an administrator through
+        # GAIA-Admins — also held an SME grant for demo_pg (the conflict of §25, on purpose) and
+        # was listed as a reviewer; an administrator's SME grant is not applied (D68)
+        await auth.grant("sme", actor="setup", account=("acme", "dyilmaz"),
+                         data_source="demo_pg")
         async with factory() as s:
             ds = await s.scalar(sa.select(DataSource.id).where(DataSource.name == "demo_pg"))
             assert await reviewers(s, ds) == ["acme/akaya"]
@@ -148,6 +153,14 @@ async def test_a_doubt_nobody_reviews_says_so(api, monkeypatch, capsys):  # noqa
             await s.execute(sa.update(Grant).where(Grant.privilege == "sme").values(
                 revoked_at=sa.func.now()))
             await s.commit()
+            assert await reviewers(s, ds) == []
+        # the administrator's SME grant alone: still nobody (it was "reviewed by: dyilmaz")
+        await auth.grant("sme", actor="setup", account=("acme", "dyilmaz"),
+                         data_source="demo_pg")
+        # nor a directory role whose members who signed in are all administrators
+        await auth.grant("sme", actor="setup", role=("acme", "GAIA-Admins"),
+                         data_source="demo_pg")
+        async with factory() as s:
             assert await reviewers(s, ds) == []
         r = await deniz.put(f"/api/messages/{second}/feedback", json={"verdict": "wrong"},
                             headers=hd)
@@ -175,3 +188,72 @@ async def test_a_doubt_nobody_reviews_says_so(api, monkeypatch, capsys):  # noqa
     out = capsys.readouterr().out
     assert "demo_pg" in out and "wrong" in out and "NOBODY reviews this data source" in out
     assert "“only half the stores”" in out
+
+
+@pytest.mark.asyncio
+async def test_a_verdict_given_while_testing_is_set_aside(api, monkeypatch, capsys):  # noqa: F811
+    """D96 (OWNER_VERIFICATION §36): akaya's two decisions in A1 were a test ("Test", "Did not
+    like the result") — and labels. An administrator sets such a verdict aside: it stays, marked,
+    and counts nowhere — no label, no count, no SME item; audited; and can be taken back."""
+    import argparse
+    import os
+
+    from gaia.db.engine import dispose_engine
+    from gaia.evaluation.sections import extra_sections
+    from gaia.tools import feedback as feedback_tool
+
+    app, auth, factory = api
+    async with await _client(app) as deniz, await _client(app) as ayse:
+        await _login(deniz, "dyilmaz", PASSWORDS["dyilmaz"])
+        await _login(ayse, "akaya", PASSWORDS["akaya"])
+        hd = {"X-CSRF-Token": deniz.cookies.get("gaia_csrf")}
+        ha = {"X-CSRF-Token": ayse.cookies.get("gaia_csrf")}
+        cid = (await deniz.post("/api/conversations", json={"data_source": "demo_pg"},
+                                headers=hd)).json()["id"]
+        decided, waiting = await _answer(factory, cid, 2), await _answer(factory, cid, 4)
+        await deniz.put(f"/api/messages/{decided}/feedback",
+                        json={"verdict": "wrong", "note": "Test"}, headers=hd)
+        await deniz.put(f"/api/messages/{waiting}/feedback", json={"verdict": "partly"},
+                        headers=hd)
+        items = (await ayse.get("/api/review/demo_pg/feedback")).json()["items"]
+        first = next(i for i in items if i["message_id"] == decided)
+        await ayse.post(f"/api/review/demo_pg/feedback/{first['id']}/decision",
+                        json={"decision": "right"}, headers=ha)
+        async with factory() as s:
+            assert len((await answer_points(s))[("deepseek-test", ANSWER_SCORING)]) == 1
+
+        monkeypatch.setenv("GAIA_METADATA_URL", os.environ["GAIA_TEST_DATABASE_URL"])
+        await dispose_engine()
+        ns = argparse.Namespace
+        assert await feedback_tool._run(ns(command="void", id=first["id"][:4], note="x")) == 1
+        assert "at least its first 6" in capsys.readouterr().err
+        assert await feedback_tool._run(ns(command="void", id=first["id"][:8],
+                                           note="clicked while testing A1")) == 0
+        second = next(i for i in items if i["message_id"] == waiting)
+        assert await feedback_tool._run(ns(command="void", id=second["id"],
+                                           note="a test")) == 0
+        capsys.readouterr()
+
+        # no label, no SME item, nothing to decide, nothing counted
+        async with factory() as s:
+            assert (await answer_points(s)).get(("deepseek-test", ANSWER_SCORING)) is None
+            text, doc = await extra_sections(s, "demo_pg", auth.settings)
+        assert doc["feedback"]["open"] == 0 and doc["feedback"]["decided"] == 0
+        assert "set aside: 2 (not counted, no label)" in text
+        assert (await ayse.get("/api/review/demo_pg/feedback")).json()["total"] == 0
+        assert (await ayse.get("/api/review")).json()[0]["feedback_open"] == 0
+        r = await ayse.post(f"/api/review/demo_pg/feedback/{second['id']}/decision",
+                            json={"decision": "right"}, headers=ha)
+        assert r.status_code == 404
+
+        # still listed, marked; audited; and taken back
+        assert await feedback_tool._run(ns(last=10)) == 0
+        out = capsys.readouterr().out
+        assert out.count("SET ASIDE") == 2 and "clicked while testing A1" in out
+        assert await feedback_tool._run(ns(command="unvoid", id=second["id"][:8],
+                                           note=None)) == 0
+        assert (await ayse.get("/api/review/demo_pg/feedback")).json()["total"] == 1
+    async with factory() as s:
+        events = (await s.scalars(sa.select(AuthEvent.action).where(
+            AuthEvent.action.like("feedback_%void%")).order_by(AuthEvent.seq))).all()
+    assert events == ["feedback_voided", "feedback_voided", "feedback_unvoided"]

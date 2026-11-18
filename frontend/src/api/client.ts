@@ -252,6 +252,8 @@ export interface ReviewSource {
   stale: number;
   /** answers people said were partly or wrong, waiting (6D) */
   feedback_open?: number;
+  /** 7A: the calibration sample — drawn this week, and waiting in all */
+  sample?: { this_week: number; open: number };
 }
 
 export interface QueueItem {

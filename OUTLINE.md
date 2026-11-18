@@ -10,7 +10,8 @@
 > chat (§38–§41); **Phase 6 complete** (P6-10, 2026-11-18) — the evaluation store and quality report, labels
 > from people, calibrators judged on held-out labels, "Was this right?", two regression nets and
 > category proposals measured (§42–§45); what waits for labels from real use goes to Phase 7.
-> **Phase 7 planned** (2026-11-18, awaiting the owner's decisions): ready to be run by others (§46).
+> **Phase 7 in progress** (approved 2026-11-18): ready to be run by others (§46) — 7A (labels sought)
+> and 7B (harder questions, drafts, need-to-know measured) built (§47).
 > Delivery state, gates and
 > decisions live in [PHASES.md](PHASES.md), which takes precedence over this file
 > where they differ (D12′: config > decisions log > PHASES > OUTLINE).
@@ -2061,7 +2062,7 @@ deliberate regressions of known damage; category proposals measured against peop
 for labels that only use brings — fitted answer levels ("high" right ≥ 95 %), the first real
 calibrator, fitted category weights — and `nge_small`'s golden set (6F) go to Phase 7 (P6-10).
 
-## 46. Phase 7 — why "ready to be run by others" (proposed 2026-11-18)
+## 46. Phase 7 — why "ready to be run by others" (approved 2026-11-18)
 
 Phase 6 made Gaia measurable, and the measurements say where the next gains are — none of them in
 the answering itself, which runs at 94 % on `demo_pg`:
@@ -2091,4 +2092,30 @@ the answering itself, which runs at 94 % on `demo_pg`:
 
 What does not serve that goal — further dialects, multi-tenancy, row-level need-to-know,
 workload evidence, known-product recognition — waits under *Later* in PHASES.
+
+## 47. Labels sought, questions that teach (D96–D97, build D97, 2026-11-18)
+
+* **An unbiased label has to be drawn, not waited for.** The queue is ordered by Gaia's doubt, so its
+  decisions say how often a *doubted* meaning is right — never how often a confident one is. Each week a
+  few meanings are drawn at random across the bands of the score, accepted ones included, shown without
+  Gaia's certainty, and put first: they are the only labels not chosen by Gaia itself, and per band they
+  read directly as a calibration check. Deterministic per data source and week, a column at most once —
+  every draw a new subject, because subjects, not labels, are what P6-1 counts.
+* **"Too few" must say how long.** Each calibration line now forecasts when its minimum will be met at the
+  rate labels keep arriving — from sources that keep giving (SME decisions, decided feedback), not from
+  one-off imports — and names the bottleneck. On today's numbers the bottleneck is not-right labels: a
+  forecast that says *not at this rate* is an instruction to review where Gaia errs, not a date to wait for.
+* **A test click is not evidence.** A verdict given while testing a flow is set aside — kept, marked,
+  counted nowhere — rather than deleted or silently trusted.
+* **A yardstick must be able to fail.** Twenty-seven of thirty questions were right in every run; the
+  set could not resolve a regression below 3.3 points nor produce the wrong answers calibration needs.
+  Thirty-four harder questions, each aimed at a failure Phase 6 saw or could foresee, make a new question
+  set — a new baseline, by design not comparable with the old.
+* **A draft is not a measurement.** Gaia drafts golden questions for a database nobody has written them for
+  — small contexts of connected tables, every reference checked and run before a person sees it — but
+  every draft stays `status: draft`, skipped by every run, until a person vouches for it.
+* **Need-to-know is measured like correctness.** Run as a person, a question needing what they may not read
+  is right only if no number comes back; a number computed from other data is a wrong answer that looks
+  right, and a forbidden name in any reply is a leak. The truth (the references) does not depend on who
+  asks; the person's runs are theirs and never pool with the operator's.
 

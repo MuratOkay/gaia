@@ -16,6 +16,13 @@
 #              needs one of them, and every other reference column.
 # requires: join paths that exist only as tested model hints (D48); without them the
 #           question cannot be answered — the owner's store has them (OWNER_VERIFICATION §11e).
+# personal: true — the question filters, groups or computes with personal data; asked as
+#           someone who is not a PII processor (make golden --as), it must be refused (7B).
+# status: draft — drafted by `make golden-draft` and not yet corrected: never run, never
+#         counted, until the owner removes the line (7B, D97).
+#
+# 2026-11-18 (D97, Phase 7B): 34 questions added (h01-h29, c05-c09) — harder ones, aimed at
+# what Phase 6 found; the set is a new question set (its runs form a new baseline).
 #
 # as_of fixes "today": relative periods ("last month") are relative to it, and the data
 # ends on 2025-12-31.
@@ -390,3 +397,384 @@ questions:
         AND o.status <> 'cancelled'
       GROUP BY s.name, s.supplier_id ORDER BY sales_amount DESC LIMIT 1
 
+  # -- Phase 7B (D97, 2026-11-18): harder questions, aimed at what Phase 6 found -------------
+  # Sibling aggregates (the chasm trap, D90), multi-hop joins, the cryptic legacy schema,
+  # codes whose meaning only the data (or an SME) gives, hierarchies, ratios, periods that
+  # must be computed, populations that must be stated. Some are meant to be missed: a set that
+  # is always right measures nothing (27 of the first 30 were right in every run). Each
+  # reference was run against the seed (scale 1, seed 42) through the guard.
+  # personal: true — the question filters, groups or computes with personal data: someone who
+  # is not a PII processor must be refused (golden runs as a person, 7B).
+
+  - id: h01
+    question: For each sales channel, what was the total order amount and the total of approved payments for orders placed in 2025, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders, sales.payments]
+    notes: sibling aggregates — payments per order are summed first; approved is payment status A (D declined, R refunded), known from the data only
+    sql: |
+      WITH paid AS (
+        SELECT order_id, sum(amount) AS paid_amount
+        FROM sales.payments WHERE status = 'A' GROUP BY order_id)
+      SELECT o.channel, sum(o.total_amount) AS order_amount,
+             sum(coalesce(p.paid_amount, 0)) AS approved_payments
+      FROM sales.orders o LEFT JOIN paid p ON p.order_id = o.order_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY o.channel
+
+  - id: h02
+    question: For each store, how many units were sold and how many payments were recorded for its orders placed in 2025?
+    expect: answer
+    objects: [sales.orders, sales.order_lines, sales.payments, store.stores]
+    identify_by: [store_code, name, store_id]
+    notes: the chasm trap — order lines and payments are both children of an order; each is aggregated on its own
+    sql: |
+      WITH o AS (
+        SELECT order_id, store_id FROM sales.orders
+        WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+          AND store_id IS NOT NULL),
+      u AS (
+        SELECT o.store_id, sum(l.quantity) AS units
+        FROM sales.order_lines l JOIN o ON o.order_id = l.order_id GROUP BY o.store_id),
+      p AS (
+        SELECT o.store_id, count(*) AS payments
+        FROM sales.payments p JOIN o ON o.order_id = p.order_id GROUP BY o.store_id)
+      SELECT s.store_code, s.name, s.store_id, u.units, p.payments
+      FROM store.stores s JOIN u ON u.store_id = s.store_id JOIN p ON p.store_id = s.store_id
+
+  - id: h03
+    question: Which supplier's products had the most units returned in 2025?
+    expect: answer
+    objects: [sales.returns, sales.order_lines, product.products, product.suppliers]
+    identify_by: [name, supplier_id]
+    rank_by: returned_units
+    notes: four tables; the returns' foreign key is not trusted (some returns point at no order line)
+    sql: |
+      SELECT s.name, s.supplier_id, sum(r.qty) AS returned_units
+      FROM sales.returns r
+      JOIN sales.order_lines l ON l.order_line_id = r.order_line_id
+      JOIN product.products p ON p.product_id = l.product_id
+      JOIN product.suppliers s ON s.supplier_id = p.supplier_id
+      WHERE r.returned_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
+        AND r.returned_at < TIMESTAMPTZ '2026-01-01 00:00:00+00'
+      GROUP BY s.name, s.supplier_id ORDER BY returned_units DESC LIMIT 1
+
+  - id: h04
+    question: What were the 2025 sales, as order line subtotals, of each top-level product category such as Electronics or Home, excluding cancelled orders?
+    expect: answer
+    objects: [sales.order_lines, sales.orders, product.products, product.categories]
+    notes: a hierarchy — products sit in subcategories; the top level is the parent category
+    sql: |
+      SELECT coalesce(parent.name, c.name) AS top_category, sum(l.line_subtotal) AS sales_amount
+      FROM sales.order_lines l
+      JOIN sales.orders o ON o.order_id = l.order_id
+      JOIN product.products p ON p.product_id = l.product_id
+      JOIN product.categories c ON c.category_id = p.category_id
+      LEFT JOIN product.categories parent ON parent.category_id = c.parent_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+        AND o.status <> 'cancelled'
+      GROUP BY coalesce(parent.name, c.name)
+
+  - id: h05
+    question: What was the total order amount of the stores in Istanbul in each month of 2025, excluding cancelled orders, by month number?
+    expect: answer
+    order_matters: true
+    objects: [sales.orders, store.stores]
+    sql: |
+      SELECT extract(month FROM o.order_date)::int AS month, sum(o.total_amount) AS total_amount
+      FROM sales.orders o JOIN store.stores s ON s.store_id = o.store_id
+      WHERE s.city = 'Istanbul' AND o.status <> 'cancelled'
+        AND o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+      GROUP BY 1 ORDER BY 1
+
+  - id: h06
+    question: How many legacy transactions were cancelled (status CN) in 2021?
+    expect: answer
+    objects: [legacy.tb_trx02]
+    notes: the legacy names say nothing; the date is an integer yyyymmdd
+    sql: |
+      SELECT count(*) AS cancelled
+      FROM legacy.tb_trx02 WHERE f8 = 'CN' AND f3 >= 20210101 AND f3 <= 20211231
+
+  - id: h07
+    question: What was the total amount of the completed legacy transactions, those with status OK, in each currency in 2022?
+    expect: answer
+    objects: [legacy.tb_trx02]
+    sql: |
+      SELECT f10 AS currency, sum(f7) AS amount
+      FROM legacy.tb_trx02 WHERE f8 = 'OK' AND f3 >= 20220101 AND f3 <= 20221231
+      GROUP BY f10
+
+  - id: h08
+    question: How many active customer records (flag Y) does the legacy customer master hold per city, leaving out records without a city?
+    expect: answer
+    objects: [legacy.tb_mst01]
+    sql: |
+      SELECT c04 AS city, count(*) AS customers
+      FROM legacy.tb_mst01 WHERE c03 = 'Y' AND c04 IS NOT NULL AND c04 <> ''
+      GROUP BY c04
+
+  - id: h09
+    question: What is the average credit limit of the active legacy customers in ANKARA, rounded to two decimals?
+    expect: answer
+    objects: [legacy.tb_mst01]
+    notes: the credit limit is a number stored as text, blank for some
+    sql: |
+      SELECT round(avg(nullif(trim(c07), '')::numeric), 2) AS average_credit_limit
+      FROM legacy.tb_mst01 WHERE c03 = 'Y' AND c04 = 'ANKARA'
+
+  - id: h10
+    question: How many invoices were voided, and what is their total amount?
+    expect: answer
+    objects: [finance.invoices]
+    notes: void is status code 9 — known to no catalog (as "overdue" is 2, g07)
+    sql: |
+      SELECT count(*) AS invoices, sum(amount) AS total_amount
+      FROM finance.invoices WHERE status = 9
+
+  - id: h11
+    question: What percentage of the card payment attempts made in 2025 were declined, with two decimals?
+    expect: answer
+    objects: [sales.payments]
+    notes: declined is payment status D
+    sql: |
+      SELECT round(100.0 * count(*) FILTER (WHERE status = 'D') / count(*), 2) AS declined_pct
+      FROM sales.payments
+      WHERE method = 'card' AND paid_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
+        AND paid_at < TIMESTAMPTZ '2026-01-01 00:00:00+00'
+
+  - id: h12
+    question: What is the average salary of the current employees, those without a termination date, in each department, rounded to two decimals?
+    expect: answer
+    objects: [hr.employees, hr.departments]
+    identify_by: [name, dept_code, dept_id]
+    sql: |
+      SELECT d.name, d.dept_code, d.dept_id, round(avg(e.salary), 2) AS average_salary
+      FROM hr.employees e JOIN hr.departments d ON d.dept_id = e.dept_id
+      WHERE e.termination_date IS NULL
+      GROUP BY d.name, d.dept_code, d.dept_id
+
+  - id: h13
+    question: Which manager has the most current direct reports, and how many?
+    expect: answer
+    objects: [hr.employees]
+    identify_by: [emp_no, employee_id]
+    rank_by: reports
+    notes: a self-join — an employee's manager is another employee
+    sql: |
+      SELECT m.emp_no, m.employee_id, count(*) AS reports
+      FROM hr.employees e JOIN hr.employees m ON m.employee_id = e.manager_id
+      WHERE e.termination_date IS NULL
+      GROUP BY m.emp_no, m.employee_id ORDER BY reports DESC LIMIT 1
+
+  - id: h14
+    question: How many employees were hired in each year?
+    expect: answer
+    order_matters: true
+    objects: [hr.employees]
+    sql: |
+      SELECT extract(year FROM hire_date)::int AS year, count(*) AS hired
+      FROM hr.employees GROUP BY 1 ORDER BY 1
+
+  - id: h15
+    question: What was the balance, debits minus credits, of each ledger account over the fiscal periods of 2025?
+    expect: answer
+    objects: [finance.gl_entries]
+    sql: |
+      SELECT account_no, sum(debit) - sum(credit) AS balance
+      FROM finance.gl_entries WHERE fiscal_period BETWEEN 202501 AND 202512
+      GROUP BY account_no
+
+  - id: h16
+    question: What was the payroll expense posted to the ledger in each fiscal period of 2025?
+    expect: answer
+    order_matters: true
+    objects: [finance.gl_entries]
+    notes: payroll is document type PR; its expense is the debit side — known from the data only
+    sql: |
+      SELECT fiscal_period, sum(debit) AS payroll_expense
+      FROM finance.gl_entries WHERE doc_type = 'PR' AND fiscal_period BETWEEN 202501 AND 202512
+      GROUP BY fiscal_period ORDER BY fiscal_period
+
+  - id: h17
+    question: How many orders were placed on Saturdays and Sundays together in 2025, cancelled ones included?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT count(*) AS weekend_orders FROM sales.orders
+      WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+        AND extract(isodow FROM order_date) IN (6, 7)
+
+  - id: h18
+    question: How many orders were placed in each quarter of 2024, excluding cancelled orders, with each quarter given by its number from 1 to 4?
+    expect: answer
+    order_matters: true
+    objects: [sales.orders]
+    sql: |
+      SELECT extract(quarter FROM order_date)::int AS quarter, count(*) AS orders
+      FROM sales.orders
+      WHERE order_date >= DATE '2024-01-01' AND order_date < DATE '2025-01-01'
+        AND status <> 'cancelled'
+      GROUP BY 1 ORDER BY 1
+
+  - id: h19
+    question: Of the web orders placed in 2025 that were delivered, what percentage arrived within 72 hours of being ordered, with two decimals?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT round(100.0 * count(*) FILTER (WHERE delivered_at - ordered_at <= INTERVAL '72 hours')
+                   / count(*), 2) AS delivered_within_72h_pct
+      FROM sales.orders
+      WHERE channel = 'web' AND delivered_at IS NOT NULL
+        AND order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+
+  - id: h20
+    question: How many customer records were created in each month of 2025, by month number?
+    expect: answer
+    order_matters: true
+    objects: [crm.customers]
+    sql: |
+      SELECT extract(month FROM created_at)::int AS month, count(*) AS customers
+      FROM crm.customers
+      WHERE created_at >= TIMESTAMPTZ '2025-01-01 00:00:00+00'
+        AND created_at < TIMESTAMPTZ '2026-01-01 00:00:00+00'
+      GROUP BY 1 ORDER BY 1
+
+  - id: h21
+    question: What percentage of all orders placed in 2025, cancelled ones included, used a coupon code, with two decimals?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT round(100.0 * count(coupon_code) / count(*), 2) AS coupon_pct
+      FROM sales.orders WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+
+  - id: h22
+    question: For each store city, which store had the highest total order amount in 2025, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders, store.stores]
+    identify_by: [store_code, name, store_id]
+    notes: the best of each group — a window or a correlated comparison
+    sql: |
+      WITH t AS (
+        SELECT s.city, s.store_code, s.name, s.store_id, sum(o.total_amount) AS total_amount,
+               rank() OVER (PARTITION BY s.city ORDER BY sum(o.total_amount) DESC) AS r
+        FROM sales.orders o JOIN store.stores s ON s.store_id = o.store_id
+        WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+          AND o.status <> 'cancelled'
+        GROUP BY s.city, s.store_code, s.name, s.store_id)
+      SELECT city, store_code, name, store_id, total_amount FROM t WHERE r = 1
+
+  - id: h23
+    question: What was the average discount percentage of the order lines of 2025 in each sales channel, with two decimals?
+    expect: answer
+    objects: [sales.order_lines, sales.orders]
+    sql: |
+      SELECT o.channel, round(avg(l.discount_pct), 2) AS average_discount_pct
+      FROM sales.order_lines l JOIN sales.orders o ON o.order_id = l.order_id
+      WHERE o.order_date >= DATE '2025-01-01' AND o.order_date < DATE '2026-01-01'
+      GROUP BY o.channel
+
+  - id: h24
+    question: For each sales channel, what percentage of all orders placed in 2025 have the status returned, with two decimals?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT channel, round(100.0 * count(*) FILTER (WHERE status = 'returned') / count(*), 2)
+             AS returned_pct
+      FROM sales.orders WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+      GROUP BY channel
+
+  - id: h25
+    question: What is the stock on hand valued at unit cost in each store city?
+    expect: answer
+    objects: [store.inventory, product.products, store.stores]
+    sql: |
+      SELECT s.city, sum(i.qty_on_hand * p.unit_cost) AS stock_value
+      FROM store.inventory i
+      JOIN product.products p ON p.product_id = i.product_id
+      JOIN store.stores s ON s.store_id = i.store_id
+      GROUP BY s.city
+
+  - id: h26
+    question: How many products have more than three price records in their price history?
+    expect: answer
+    objects: [product.price_history]
+    sql: |
+      SELECT count(*) AS products FROM (
+        SELECT product_id FROM product.price_history GROUP BY product_id HAVING count(*) > 3) x
+
+  - id: h27
+    question: How many active customers have never placed an order?
+    expect: answer
+    objects: [crm.customers, sales.orders]
+    sql: |
+      SELECT count(*) AS customers FROM crm.customers c
+      WHERE c.is_active AND NOT EXISTS (
+        SELECT 1 FROM sales.orders o WHERE o.customer_id = c.customer_id)
+
+  - id: h28
+    question: How many customers placed orders in both 2024 and 2025, excluding cancelled orders?
+    expect: answer
+    objects: [sales.orders]
+    sql: |
+      SELECT count(*) AS customers FROM (
+        SELECT customer_id FROM sales.orders
+        WHERE status <> 'cancelled' AND order_date >= DATE '2024-01-01'
+          AND order_date < DATE '2026-01-01'
+        GROUP BY customer_id
+        HAVING count(*) FILTER (WHERE order_date < DATE '2025-01-01') > 0
+           AND count(*) FILTER (WHERE order_date >= DATE '2025-01-01') > 0) x
+
+  - id: h29
+    question: How many customers have an e-mail address at example.com?
+    expect: answer
+    personal: true
+    objects: [crm.customers]
+    notes: filters on personal data — refused for someone who is not a PII processor
+    sql: |
+      SELECT count(*) AS customers FROM crm.customers WHERE email LIKE '%@example.com'
+
+  - id: c05
+    question: What is our return rate?
+    expect: clarify
+    notes: orders or units; which period; does a cancelled order count
+    clarified: the share of the orders placed in 2025, cancelled ones excluded, whose status is returned, as a percentage with two decimals
+    objects: [sales.orders]
+    sql: |
+      SELECT round(100.0 * count(*) FILTER (WHERE status = 'returned') / count(*), 2) AS returned_pct
+      FROM sales.orders
+      WHERE order_date >= DATE '2025-01-01' AND order_date < DATE '2026-01-01'
+        AND status <> 'cancelled'
+
+  - id: c06
+    question: How much did we sell last quarter?
+    expect: clarify
+    notes: amount or units; "last quarter" is the fourth quarter of 2025 (as_of 2026-01-15)
+    clarified: the total order amount of October to December 2025, cancelled orders excluded
+    objects: [sales.orders]
+    sql: |
+      SELECT sum(total_amount) AS total_amount FROM sales.orders
+      WHERE order_date >= DATE '2025-10-01' AND order_date < DATE '2026-01-01'
+        AND status <> 'cancelled'
+
+  - id: c07
+    question: Which city has the most customers?
+    expect: clarify
+    notes: the city of an address, of the preferred store, or of the legacy master?
+    clarified: by the city of the customers' billing addresses (type B), each customer counted once, the top city only
+    objects: [crm.addresses]
+    rank_by: customers
+    sql: |
+      SELECT city, count(DISTINCT customer_id) AS customers
+      FROM crm.addresses WHERE address_type = 'B'
+      GROUP BY city ORDER BY customers DESC LIMIT 1
+
+  - id: c08
+    question: What is the customer satisfaction score of each store?
+    expect: clarify
+    notes: no satisfaction data is stored — a clarification or "cannot answer"
+
+  - id: c09
+    question: How many people visited our website last month?
+    expect: clarify
+    notes: web visits are not stored (orders are) — a clarification or "cannot answer"

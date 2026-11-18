@@ -7,7 +7,7 @@
 > This document is the control surface. `OUTLINE.md` is the design rationale;
 > this file is the delivery contract.
 >
-> Last updated: 2026-11-18 (**A1 passed on the host (§34); build `2026-11-18 · D95 (A1 triaged: make feedback, reviewers as sign-in counts them)`; Phase 7 planned**) · Status: **Phases 0–6 complete** (Phase 5 ticked by the owner 2026-11-18; Phase 6 by P6-10 — "high ≥ 95 %" recorded as not met); "Was this right?" with the SME's decision verified on the host (A1) · **Next: the owner's decisions on Phase 7 (P7-0 … P7-10) and its approval** — one short D95 run (OWNER_VERIFICATION §35d)
+> Last updated: 2026-11-18 (**Phase 7 approved — P7-0 … P7-10 as recommended; 7A and 7B built: build `2026-11-18 · D97 (Phase 7A labels sought; 7B harder questions, drafts, persona runs)`**) · Status: **Phases 0–6 complete; Phase 7 in progress** — 7.0 (D95 verified on the host, §35), 7A (D96) and 7B (D97) built and verified in the sandbox; their host runs in OWNER_VERIFICATION §36 · **Next: the owner's §36 run (S4, the sample, the 66-question baseline, a persona run, the `nge_small` draft); meanwhile 7C**
 >
 > Precedence where documents disagree (D12′): `config/gaia.yaml` > decisions log > PHASES.md > OUTLINE.md.
 
@@ -42,7 +42,7 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | 4 | Retrieval, SQL generation (**PostgreSQL first**, then T-SQL — D52), guarded execution, data-source management | **DONE** — 4A–4F verified on the host; golden run: executable 100 %, correct 97 % (targets 80 / 70); retrieval 95 % / 95 % (trial 90 / 80) | ✅ approved 2026-11-16 · ✅ complete 2026-11-17 |
 | 5 | Sign-in through the company directory, four roles, need-to-know; SME review first, then chat; administration and audit (R1, scope revised 2026-11-17) | **DONE** — 5A (real AD), 5A.2 (real tenant), 5B (g07 right by an SME decision alone), 5C–5E in the browser (D77–D80 runs); fixes D76–D81 | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
 | 6 | Evaluation and calibration: one evaluation store and report, labels from people, calibrated column scores and answer confidence, regressions caught before shipping | **DONE** (2026-11-18, P6-10) — 6.0, 6A–6E, 6G's measurement built (D78–D93) and verified on the host; every acceptance criterion met but "high ≥ 95 %" (recorded as not met: it needs labels only real use brings); 6F, 6D part 2, the first real calibration, 6G's weights carried to Phase 7; "Was this right?" with the SME's decision **passed on the host** (A1, §34–§35) | ✅ approved 2026-11-17 · ✅ complete 2026-11-18 |
-| 7 | Ready to be run by others: labels sought rather than awaited, more and harder questions in both dialects, runs that run themselves, a change of model as a managed event, the data Gaia keeps; what Phase 6 carried over (P6-10) | **planned 2026-11-18 — awaiting the owner's decisions (P7-0 … P7-10) and approval** | ⬜ |
+| 7 | Ready to be run by others: labels sought rather than awaited, more and harder questions in both dialects, runs that run themselves, a change of model as a managed event, the data Gaia keeps; what Phase 6 carried over (P6-10) | **in progress** — approved 2026-11-18 (P7-0 … P7-10 as recommended); 7.0's D95 run passed (§35); 7A (D96) and 7B (D97) built, host runs in §36 | ✅ approved 2026-11-18 |
 | Later | Scale-out: further dialects, multi-tenant, row-level need-to-know, workload evidence, known products | backlog, not planned | — |
 
 ### Environment as it stands
@@ -61,10 +61,10 @@ it `CUT` with a reason rather than deleting it, so the reasoning survives.
 | Gateway limits | 4 concurrent requests per model, 1200 req + 2.5M tokens per window, 15M/day |
 | Embeddings | Ollama `bge-m3`, 1024 dims, verified |
 | Semantics captured | host, 2026-11-16: `nge_small` all 71 objects / 607 columns (231 accepted; queue 289); `demo_pg` all 28 objects / 213 columns (108 accepted) |
-| Tests | build D95: **782 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — **792 expected on the host, 0 skipped** (D94 on the host: 785 of D94's own passed, 0 skipped; 3 failures in the owner's `test_pii_scan.py`, §35b-3); the web UI: **64** (vitest); the replayed golden net is part of it (6E)
+| Tests | build D97: **799 passed, 10 skipped** in the sandbox with both PostgreSQL databases (skips: 8 SQL Server live, 2 Ollama live) — **807 passed expected on the host, 0 skipped** (D95 on the host: **790 passed, 0 skipped**, §36a); the web UI: **66** (vitest); the replayed golden net covers the 66 questions of `demo_pg` (6E, 7B)
 | Sandbox (2026-11-16, D52) | Reproduces the PostgreSQL side end to end: `demo_pg` on PostgreSQL 16.15 (seeded at scale 1: 2,973,244 rows, same as the host), metadata store on PostgreSQL 16.2 + pgvector (no `pg_trgm`: the trigram indexes are the only difference). No SQL Server, no LLM gateway, no Ollama |
 | Sandbox (2026-11-17, D76) | Also a **real LDAPS directory** with the Samba script's people and groups and a Samba-shaped certificate chain (`ldaptor`), a **headless Chromium** driving the web UI, and an OpenAI-compatible **scripted model** and embedding stub: sign-in, review, chat, refusals and the admin pages run through uvicorn and Vite as on the host. Still no SQL Server, no LLM gateway, no Docker
-| Migrations | `0001`–`0019` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store, `0019` = D81 a run's meanings and an item's SQL) |
+| Migrations | `0001`–`0021` (`0004` = 3B ledger and queue, `0005` = 3A profiling, `0006` = join-hint status `refuted`, `0007` = 4A `chat.query_run`, `0008` = D61 `chat.clarification`, `0009` = 4E `chat.conversation`, `chat.message`, `0010` = 4F data-source credentials, `audit.connection_change`, `0011` = D67 clarification option order, `0012` = 5A schema `auth` and `audit.auth_event`, `0013` = 5A.2 `auth.pending_login`, `0014` = 5B review signatures on `table_semantic` and `column_semantic`, `0015` = 5C categories and their grants, an SME's personal-data statement, 5D `query_run.asked_by` and the `refused` message, `0016` = D77 the basis of a category proposal, `0017` = D78 an account's identity, `0018` = D80 the evaluation store, `0019` = D81 a run's meanings and an item's SQL, `0020` = D84–D87 an item's detail, labels, calibrators, feedback, `0021` = D96 the calibration sample and feedback set aside) |
 | Web UI (Phase 5) | `frontend/`: Vite 8 + React 19 + TypeScript 5.9 + i18next, pnpm; `make web-install`, `make dev-web` (127.0.0.1:5173, proxies `/api`), `make web-test`, `make web-build` |
 
 ---
@@ -3378,7 +3378,7 @@ today's speed) per prompt change; calibration and the replayed net make none.
 
 ---
 
-## Phase 7 — Ready to be run by others · **planned 2026-11-18 — awaiting the owner's decisions (P7-0 … P7-10) and approval**
+## Phase 7 — Ready to be run by others · **approved 2026-11-18 (P7-0 … P7-10 as recommended) — 7.0's D95 run passed; 7A (D96) and 7B (D97) built; their host runs in OWNER_VERIFICATION §36**
 
 **Goal.** Gaia can be left running on a real database, by people who did not build it, for weeks:
 it refreshes itself inside its windows; a change of model is measured before it is made and can
@@ -3504,13 +3504,97 @@ Everything under *Later* stays out.
 
 | Step | What | Verifiable in the sandbox | Needs the host |
 |---|---|---|---|
-| 7.0 | D95's run; S4; D61 (b) decided; the categories' words | D95 fully | §35d; S4 on SQL Server |
-| 7A | the calibration sample (blind, across bands, accepted included); the forecast in the report and on the page | fully, with synthetic decisions | ~15 minutes a week of an SME per data source; the `nge_small` SME pass |
-| 7B | `golden-draft`; `demo_pg` to ~60 with references; persona runs with refusals; `retrieval-eval` with clarifications | drafting with the scripted model; the `demo_pg` questions against the seed | the owner's corrections (an hour); T-SQL golden runs ×3; fresh `demo_pg` runs ×3 |
+| 7.0 (D95 ✅, D61 (b) ✅) | D95's run; S4; D61 (b) decided; the categories' words | D95 fully | §35d; S4 on SQL Server |
+| 7A ✅ (built, D96) | the calibration sample (blind, across bands, accepted included); the forecast in the report and on the page | fully, with synthetic decisions | ~15 minutes a week of an SME per data source; the `nge_small` SME pass |
+| 7B ✅ (built, D97) | `golden-draft`; `demo_pg` to ~60 with references; persona runs with refusals; `retrieval-eval` with clarifications | drafting with the scripted model; the `demo_pg` questions against the seed | the owner's corrections (an hour); T-SQL golden runs ×3; fresh `demo_pg` runs ×3 |
 | 7C | job table and worker; the refresh chain; windows, budget, cancellation, resume; drift watch; *Runs* start, stop, schedule; alerts | fully (a schema change made with the seed tool; the scripted model) | a week of nightly runs on `demo_pg`; one on `nge_small` inside its window |
 | 7D | model registry and probe; trial with shadow re-reasoning; impact preview; switch, rollback, staged re-reasoning; embedding preview; *Models* page | fully, with two scripted models that differ on known questions and columns | a real second model (P7-8): trial, switch and rollback on `demo_pg` |
 | 7E | inventory; shapes and encryption at rest; retention sweep; the seeded-values proof; TLS and `make serve` | fully | the proof on the host's store; the proxy on the owner's machine |
 | 7F | calibrate, fit the levels, fit the weights | with synthetic labels (as in 6C) | when the labels exist |
+
+
+### The D95 host run, and 7.0 (2026-11-18)
+
+OWNER_VERIFICATION §36. **Confirmed:** `make test-host` **790 passed, 0 skipped**, web 64; `make
+feedback` exists and lists every verdict — **A1's first attempt was on `demo_mssql`**, where nobody
+reviews (§34a-1, the diagnosis confirmed): finn's *Partly* ("Product names are not shown.") and *No*
+there still wait for no one; *reviewed by: acme/akaya* — dyilmaz no longer (D95). **Found:** akaya's two
+decisions in A1 were a test ("Test", "Did not like the result") and are answer labels now — D96 lets an
+administrator set such verdicts aside. **P7-1 decided:** D61 (b), the soft clarification, is rejected for
+now (best guess = the user's answer 8 of 27, 30 %, 16–48 %); Gaia keeps asking and recording. 7.0's
+remaining line is S4 (§36c step 2).
+
+### 7A results (2026-11-18, sandbox; D96)
+
+**The calibration sample** (`gaia.semantics.sampling`; `semantics.review_sample`, migration `0021`).
+Each ISO week, per data source, `calibration.sample_per_week` (10) current machine meanings are drawn —
+evenly over the bands `calibration.sample_bands` makes on the raw score (below 0.45, 0.45–0.60,
+0.60–0.80, 0.80–0.90, 0.90 and above; what does not divide goes to the top bands), **accepted meanings
+included** — deterministically per data source and week, a column at most once ever (P6-1 counts
+subjects), never an SME-decided, unused or pass-through view column. The draw happens when an SME opens
+*Review* that week (idempotent; two screens at once: one draw wins) or with `make review ARGS="--sample"`;
+7C's scheduler will draw it on its own. A drawn column already in the queue keeps its item, marked;
+otherwise an item is opened. Sampled items come **first**, in an order that says nothing about certainty,
+and **blind** everywhere (no score, band, priority, stated doubt or reasons); a filter on another reason
+never lists one. The decision records `sampled` (and `blind`); the label carries it. An item re-reasoned
+before a decision *lapses* — counted, not redrawn. `make quality` and the *Evaluation* page: *The
+calibration sample (7A)* — drawn, decided, waiting, lapsed, this week's, and per band how often Gaia was
+right on the drawn meanings people decided. *My data sources* says how many of the week's checks wait.
+
+**The forecast** (`gaia.evaluation.calibration.forecast`). Each calibration line ends with when P6-1's
+minimums will be met at the rate of **ongoing** labels (SME decisions, decided feedback) over
+`calibration.forecast_days` (28; at least a week, or since the first such label): new subjects and new
+not-right subjects a week, weeks to Platt and to isotonic, the bottleneck — or *not at this rate*. One-off
+sources (the 3C audit, a golden set) count in what exists, not in the rate. On the host's numbers (13 SME
+labels within a week, 1 not right): Platt in ~14 weeks, isotonic ~29 — the not-right labels the
+bottleneck (a unit test reproduces it).
+
+**Feedback set aside.** `chat.feedback.voided_at`/`voided_by`/`void_note` (migration `0021`): `make feedback
+ARGS="void ID --note …"` (and `unvoid`), audited (`feedback_voided`); a verdict set aside is listed, marked,
+and counts nowhere — no answer label, no count, no SME item, no decision.
+
+Verified in the sandbox: on `demo_pg` reasoned by the scripted model — two a band where the band holds
+two, accepted meanings drawn, deterministic, drawn once per week, first and blind in the queue, the table
+and column pages, filters, a decision becoming a `sampled` label, a lapse, the next week's draw disjoint,
+the report and forecast, turned off by 0; setting aside over HTTP and the CLI; migration `0021` down and
+up, its DDL identical to `create_all`. Web: the random checks on *My data sources* and their reason.
+
+### 7B results (2026-11-18, sandbox; D97)
+
+**`demo_pg`'s golden set: 32 → 66 questions** (62 with a reference): `h01`–`h29` and `c05`–`c09`,
+aimed at what Phase 6 found — sibling sums (the chasm trap, h01, h02), four-table joins (h03), a
+category hierarchy (h04), the legacy tables' integer dates, text numbers and codes (h06–h09), codes
+whose meaning only the data gives (h10 void invoices, h11 declined payments, h16 payroll), a self-join
+(h13), weekday, quarter and month arithmetic, percentages, a best-per-group (h22), an anti-join (h27),
+a population across two years (h28), personal data (h29, `personal: true`), three ambiguous questions
+with their clarified reference and two with no data at all. Every reference ran through the guard
+against the seed. A new question set: its first three fresh runs are the new baseline. The replayed
+net grew by 34 entries — **no existing entry moved** — and the scripted runner's numbers were
+recomputed (61 of 62; best guess 10 of 11; `drop:store.stores` now expects 9 questions).
+
+**`make golden-draft`** (`gaia.evaluation.drafting`, prompt `draft_golden.v1`, `llm.thinking.drafting`):
+seeds — the most connected and largest tables, one schema after another, a table already shown not
+seeded again, a table with nothing to ask about skipped — each with its neighbours as a small context
+(`retrieval.context_of`); a few questions of different kinds per context; every reference through the
+guard and run read-only (refused, failed and empty ones kept and marked), the objects the guard saw it
+read, duplicates dropped, a preview with personal data as shapes; a YAML file in which **every question
+is `status: draft`** — `load_golden` skips drafts until a person deletes the line, `make golden` says how
+many it left out. Nothing is written to the metadata store; an existing file is never overwritten.
+
+**Golden runs as a person** (`run_golden(person=…)`, `make golden --as`): a question whose objects the
+person may not read — or that needs personal data they may only see masked — is *withheld*: right only
+when no number comes back; every answer of the run is searched for the names of what the person may not
+read (qualified names, and distinctive bare ones such as `tb_trx02`): a leak makes it wrong. References
+run with the operator's rights. The report's *As this person* section; `make quality` reads the
+operator's runs unless `--as LOGIN`. Verified with Berk (Sales, Store, Product, Crm; no PII): allowed
+questions right, withheld ones refused or asked back, an answer "from other data" wrong and said so, a
+clarification naming `finance.invoices` caught as a leak, a PII processor answered on the personal
+question.
+
+**`retrieval-eval`** reads a `clarified` column (searched as Gaia searches after that answer, D91) and
+`--golden FILE` (every golden question with its objects — 62 of 66). In the sandbox (words only, no
+meanings): the CSV's 27 questions covered 100 %, connected 85 %; the golden set covered 98 %, connected
+95 %; the host has the meanings and the vectors (§36).
 
 ### Deliverables
 
@@ -3564,7 +3648,13 @@ Everything under *Later* stays out.
 
 ### Decisions needed
 
-| # | Decision | Needed by | Options — and the recommendation |
+*All eleven decided by the owner on 2026-11-18: "All decisions will be your recommendations." — so
+P7-0 (a), P7-1 reject (b) for now, P7-2 ten a week, P7-3 as written, P7-4 (c), P7-5 30 days and staged,
+P7-6 (a), P7-7 as written, P7-8 the gateway's second model (**which one is still to be named**, by 7D),
+P7-9 shapes, 90 days for result rows, 30 for raw responses (KVKK's periods the owner may still change),
+P7-10 a reverse proxy.*
+
+| # | Decision | Needed by | Options — and the recommendation (= the decision) |
 |---|---|---|---|
 | P7-0 | **Phase 7's goal and cut line** | now | (a) **ready to be run by others** — the plan above; (b) scale-out first (dialects, multi-tenant, row-level need-to-know — *Later*); (c) measurement only (7A, 7B, 7F). **Recommended (a):** (c) alone leaves Gaia operable only by its builder, and (b) widens what is not yet measured. Label-dependent items (7F) are recorded, not gating, as P6-10 did |
 | P7-1 | D61 (b), the soft clarification | 7.0 | Measured: the best guess was the user's answer 8 of 27 times (30 %, 16–48 %); (a) asks for a lower bound above 90 % per kind of ambiguity, on users' clarifications. **Recommended: reject (b) for now** — keep asking, keep recording; reopen for a kind if (a) is ever met. Nothing to build |
@@ -3603,9 +3693,10 @@ week.
 ### Gate
 
 - [x] Phase 6 gate ticked *(2026-11-18, P6-10)*; A1 passed on D94 *(§35)*
-- [ ] P7-0 … P7-10 answered
-- [ ] **Approved to start Phase 7**
-- [ ] 7.0 done — D95's run (§35d) and S4 passed on SQL Server → 7A
+- [x] P7-0 … P7-10 answered *(owner, 2026-11-18: "All decisions will be your recommendations")*
+- [x] **Approved to start Phase 7** *(owner, 2026-11-18: "You can now start Phase 7"; 7A and 7B
+      built the same day, D96–D97)*
+- [ ] 7.0 done — D95's run (§35d ✅, §36a) and S4 passed on SQL Server → 7A
 - [ ] 7A's sample running on the host → 7B
 - [ ] 7B's question sets accepted and run in both dialects → 7C
 - [ ] 7C's week of scheduled runs → 7D
@@ -3760,6 +3851,8 @@ Decisions taken so far, for reference. Amend here rather than editing history.
 | D93 | new (2026-11-18, triage of §31f and §32e) | **Known flaky questions are not named.** A question right and wrong within one build, among the last twelve ordinary runs before the candidate, has its flip shown and not named (P6-8's rule otherwise unchanged). `refusals` shows a D78 identity change once, as *NOTICED* |
 | D94 | new (2026-11-18, A1's first run) | **A doubt nobody reviews says so.** `reviewers` / `all_feedback`, `make feedback`; *nobody reviews this data source* under the answer and in the report; a note saved when its box is left and kept across a change of verdict (a verdict alone keeps the note) |
 | D95 | new (2026-11-18, triage of the D94 run — A1 passed) | **Who reviews is counted as sign-in counts it.** An account is a reviewer only if its effective privileges review the data source (enabled; not an administrator by any route — an administrator's SME grant is not applied, D68); a directory role while one of its members reviews through it or nobody has signed in through it yet. The `feedback` target exists, and a test checks that every `make` target README and USER_GUIDE name exists |
+| D96 | new (2026-11-18, Phase 7A; P7-2, P6-1, P6-5) | **Labels are sought.** Each ISO week, per data source, `calibration.sample_per_week` (10) current machine meanings are drawn — evenly over the bands of the raw score (`calibration.sample_bands`), accepted meanings included — deterministically, a column at most once, and put first in the SME's queue, blind; the decision is a `sampled` label (`semantics.review_sample`, migration `0021`). Drawn when an SME opens *Review* or by `make review ARGS="--sample"` (7C will schedule it). Every calibration line forecasts when P6-1 is met at the rate of ongoing labels over `calibration.forecast_days`. A "Was this right?" given while testing is set aside by an administrator (`make feedback ARGS="void …"`, audited): kept, marked, counted nowhere |
+| D97 | new (2026-11-18, Phase 7B; P6-6, P7-3, D61) | **More and harder questions, drafts, and need-to-know measured.** `demo_pg`'s golden set: 66 questions (a new question set, a new baseline); `personal: true` and `status: draft` in the format (drafts never run or counted). `make golden-draft` drafts a set from small contexts of connected tables, every reference checked by the guard and run, for a person to correct. A golden run as a person withholds questions needing what they may not read or use (right only without a number), searches every answer for forbidden names (a leak is wrong), runs references with the operator's rights; `make quality` keeps such runs apart (`--as`). `retrieval-eval` reads clarified questions and golden sets. D61 (b) rejected for now (P7-1) |
 
 ## Definition of done (per phase)
 
@@ -3784,20 +3877,18 @@ D68); 5A.2 (D71); the D71 runs triaged, T6's prompt sentence withdrawn (D72); 5B
 *2026-11-17 (later): D75 run → §26, build D77; D77 run → §27, Phase 6 approved, build D80;
 D80 run → §28, build D83 (D81–D83).*
 
-*2026-11-18: Phase 6 closed (P6-10); A1 passed on D94 (§35); D95 built; Phase 7 planned.*
+*2026-11-18: Phase 6 closed (P6-10); A1 passed on D94 (§35); D95 built; Phase 7 planned, approved
+(P7-0 … P7-10 as recommended); D95 verified on the host (§36a); 7A (D96) and 7B (D97) built.*
 
-1. **Owner — Phase 7:** answer P7-0 … P7-10 (Phase 7, *Decisions needed*) and approve the start.
-   One word per decision is enough where the recommendation stands ("P7-0 … P7-10 as
-   recommended").
-2. **Owner, short:** D95's run (OWNER_VERIFICATION §35d) — `make feedback` and `make test-host`;
-   it closes 7.0's first line.
-3. **Owner, asynchronous — now part of Phase 7:** S4, the T-SQL guard live on `nge_small` (7.0,
-   safety); `make evaluate-cost` (§13d; it sets P7-7's budget); the `nge_small` SME pass (7A);
-   P4-1 / S8 become 7B. Optional: the categories' words on `demo_mssql` (§32b-4); the `demo_pg`
-   3C run.
-4. **Owner:** D61 (b) is now P7-1 (measured: the best guess was the user's answer 8 of 27 times,
-   30 %, 16–48 %). D61 (c), definitions from an SME through the glossary, is built with 5B:
-   §24d shows it at work on g07.
+1. **Owner — the §36 run (build D97):** the migration, `make test-host`; the two test verdicts set
+   aside (or kept — say which); an SME for `demo_mssql`; **S4** (7.0, safety); the week's samples
+   decided; three fresh runs of the 66-question set (the new baseline); a run as finn;
+   `retrieval-eval` with vectors; the `nge_small` draft — its correction (an hour) whenever ready.
+2. **Owner, when 7D comes:** P7-8 — name the second model the gateway offers.
+3. **Assistant — next: 7C** (the worker, the nightly refresh, the drift watch, *Runs* that start and
+   stop), built while §36 runs; then 7D.
+4. **Owner, asynchronous:** `make evaluate-cost` (§13d; it sets P7-7's default budget); the
+   `nge_small` SME pass (7A); the categories' words on `demo_mssql` (§32b-4); the `demo_pg` 3C run.
 5. **Owner:** P4-5/6 — built on the recommendations (D65); say if either should change.
 
 Resolved, kept for the record:
@@ -3822,3 +3913,6 @@ Resolved, kept for the record:
 | The Phase 5 gate | Ticked by the owner, 2026-11-18 |
 | A1 — "Was this right?" with the SME's decision on the host | Passed on D94 (§35: 2 yes, 1 partly, 1 no, 2 decided); D95 fixed `make feedback` and who counts as a reviewer |
 | Phase 7's plan | Written 2026-11-18 (Phase 7); the backlog not in it moved to *Later* |
+| P7-0 … P7-10 | Decided 2026-11-18: as recommended (P7-8's model still to be named) |
+| D61 (b), the soft clarification | Rejected for now (P7-1): best guess = the user's answer 30 % (16–48 %) |
+| Where A1's first attempt went | `demo_mssql`, where nobody reviews (§36a: `make feedback`) |

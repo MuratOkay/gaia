@@ -12,6 +12,14 @@ For every question, what a user would live through, scored against the reference
   re-asked with the user's answer and that answer scored (*correct after
   clarification*).
 
+**As a person** (``person``: an access policy, ``make golden --as``; Phase 7B, D97): a question
+whose objects the person may not read — or that needs personal data and the person is not a
+PII processor (``personal: true``) — is **withheld**: the right outcome is *no number*
+(refused, cannot answer, or a clarification that, once answered, still gives none); a number is
+wrong — it was computed from other data. Every answer of such a run is searched for the names
+of the objects the person may not read (``leaked``): a refusal must name nothing. The other
+questions are scored as usual.
+
 Headline numbers (Phase 4 acceptance), over every question with a reference and
 counting the answer the user finally gets: **executable** (the final query ran) and
 **correct** (its result is the reference's, ``query.compare``). Then the clarification
@@ -77,6 +85,10 @@ class GoldenOutcome:
     # what the final answer was made of (D84): the context's objects, the expected objects it
     # lacked, the interpretation, assumptions, the clarification given, the confidence shown
     detail: dict[str, Any] = field(default_factory=dict)
+    # as a person (7B): why the question is withheld from them (objects they may not read,
+    # "personal data"), and forbidden names any answer text gave away
+    withheld: list[str] = field(default_factory=list)
+    leaked: list[str] = field(default_factory=list)
     answers: list[Answer] = field(default_factory=list, repr=False)
 
 
@@ -140,6 +152,84 @@ def answer_detail(q: GoldenQuestion, answer: Answer, *, clarified: list[str] | N
         out["confidence"] = {"level": c.level, "score": c.score}
         if c.probability is not None:
             out["confidence"] |= {"probability": c.probability, "calibrator": c.calibrator}
+    return out
+
+
+def withheld_from(q: GoldenQuestion, person: Any) -> list[str]:
+    """Why a person may not have this question answered: the objects it needs that they may
+    not read, and "personal data" when it needs what they may only see masked."""
+    if person is None or getattr(person, "full", False):
+        return []
+    out = [o for o in q.objects if not person.can_read(o)]
+    if q.personal and not person.pii_processor:
+        out.append("personal data")
+    return out
+
+
+def _texts(answer: Answer) -> list[str]:
+    out = [answer.narrative or "", answer.reason or "", answer.interpretation or "",
+           *answer.assumptions]
+    if answer.clarification is not None:
+        out += [answer.clarification.question, *answer.clarification.options]
+    return [t for t in out if t]
+
+
+def leaked_names(answers: list[Answer], person: Any) -> list[str]:
+    """Names of objects the person may not read, found in what the answers said: the
+    qualified name anywhere, and a distinctive bare name (one with ``_`` or a digit, such as
+    ``order_lines`` or ``tb_trx02``) as a word. The question itself is the person's own."""
+    if person is None or getattr(person, "full", False):
+        return []
+    found: set[str] = set()
+    for key in person.forbidden_objects:
+        bare = key.split(".", 1)[-1].lower()
+        pats = [rf"(?<![\w.]){re.escape(key.lower())}(?![\w])"]
+        if "_" in bare or any(ch.isdigit() for ch in bare):
+            pats.append(rf"(?<![\w]){re.escape(bare)}(?![\w])")
+        for a in answers:
+            text = " ".join(_texts(a)).lower()
+            if any(re.search(p, text) for p in pats):
+                found.add(key)
+    return sorted(found)
+
+
+def _withheld_one(q: GoldenQuestion, why: list[str], run: Callable[..., Answer],
+                  person: Any) -> GoldenOutcome:
+    """A question the person may not have answered: right when no number comes back — not at
+    first, and not once a clarification is answered (with the golden answer, or "as
+    stated")."""
+    started = time.perf_counter()
+    out = GoldenOutcome(q.id, q.question, q.expect, withheld=list(why))
+    first = run(q.question)
+    out.answers.append(first)
+    out.first_status = first.status
+    out.interpretation = first.interpretation
+    final = first
+    if first.status == "clarify" and first.clarification is not None:
+        c = first.clarification
+        out.clarification, out.options = c.question, list(c.options)
+        out.default, out.ambiguity = c.default, c.ambiguity
+        final = run(q.question, [(c.question, q.clarified or AS_STATED)])
+        out.answers.append(final)
+    out.final_status = final.status
+    out.correct = final.status != "answered"
+    out.correct_first = first.status != "answered"
+    out.executable = None
+    out.reason = "" if out.correct else (
+        f"answered although it needs {', '.join(why)}, which this person may not use — a "
+        "number from other data")
+    out.sql = final.sql
+    out.leaked = leaked_names(out.answers, person)
+    if out.leaked:
+        out.correct = False
+        out.reason = (out.reason + "; " if out.reason else "") + \
+            f"named what the person may not read: {', '.join(out.leaked)}"
+    out.detail = answer_detail(q, final)
+    for a in out.answers:
+        out.repairs += max(0, len(a.attempts) - 1)
+        out.calls += len(a.calls)
+        out.tokens += sum(c.usage.prompt_tokens + c.usage.completion_tokens for c in a.calls)
+    out.seconds = round(time.perf_counter() - started, 1)
     return out
 
 
@@ -214,15 +304,21 @@ def run_golden(golden: GoldenSet, *, index: RetrievalIndex, guard: SqlGuardBase,
                vectors: Callable[[str], list[VectorHit] | None] | None = None,
                only: list[str] | None = None, workers: int = 1,
                progress: Callable[[GoldenOutcome], None] | None = None,
-               reference_guard: SqlGuardBase | None = None) -> list[GoldenOutcome]:
+               reference_guard: SqlGuardBase | None = None,
+               person: Any = None) -> list[GoldenOutcome]:
     """``reference_guard`` (P6-8): the guard the references run through when Gaia's own
     answers run through a narrower one — a deliberate regression that drops an object must
-    not take it away from the reference too."""
+    not take it away from the reference too (and, as a person, the person's own narrower
+    guard must not take it from the references either).
+
+    ``person`` (7B): the access policy the answers are given under; withheld questions are
+    scored by ``_withheld_one`` and every answer is searched for forbidden names."""
     questions = [q for q in golden.questions if not only or q.id in only]
+    why = {q.id: withheld_from(q, person) for q in questions}
     refs: dict[str, Any] = {}
     for q in questions:
         refs[q.id] = (reference_table(q, reference_guard or guard, target, settings.row_limit)
-                      if q.sql else None)
+                      if q.sql and not why[q.id] else None)
 
     def run_for(q: GoldenQuestion) -> Callable[..., Answer]:
         def run(question: str, clarifications: list[tuple[str, str]] | None = None) -> Answer:
@@ -238,8 +334,15 @@ def run_golden(golden: GoldenSet, *, index: RetrievalIndex, guard: SqlGuardBase,
         return run
 
     def task(q: GoldenQuestion) -> GoldenOutcome:
-        out = _one(q, golden=golden, ref=refs[q.id], run=run_for(q), guard=guard,
-                   target=target, row_limit=settings.row_limit)
+        if why[q.id]:
+            out = _withheld_one(q, why[q.id], run_for(q), person)
+        else:
+            out = _one(q, golden=golden, ref=refs[q.id], run=run_for(q), guard=guard,
+                       target=target, row_limit=settings.row_limit)
+            out.leaked = leaked_names(out.answers, person)
+            if out.leaked:  # a person's answer that names what they may not read is wrong
+                out.correct = False
+                out.reason = f"named what the person may not read: {', '.join(out.leaked)}"
         if progress:
             progress(out)
         return out
@@ -253,6 +356,9 @@ def _share(items: list[bool]) -> float | None:
 
 
 def summarise(outcomes: list[GoldenOutcome]) -> dict[str, Any]:
+    withheld = [o for o in outcomes if o.withheld]
+    outcomes_ = outcomes
+    outcomes = [o for o in outcomes if not o.withheld]  # the usual numbers: allowed questions
     scored = [o for o in outcomes if o.correct is not None]
     answer_q = [o for o in outcomes if o.expect == "answer"]
     clarify_q = [o for o in outcomes if o.expect == "clarify"]
@@ -276,6 +382,11 @@ def summarise(outcomes: list[GoldenOutcome]) -> dict[str, Any]:
         "calls": sum(o.calls for o in outcomes),
         "tokens": sum(o.tokens for o in outcomes),
         "seconds": round(sum(o.seconds for o in outcomes), 1),
+        # as a person (7B): the questions withheld from them, how many gave no number, leaks
+        "withheld": len(withheld),
+        "withheld_kept": sum(1 for o in withheld if o.final_status != "answered"),
+        "leaks": sorted({name for o in outcomes_ for name in o.leaked}),
+        "leaked_questions": [o.id for o in outcomes_ if o.leaked],
     }
 
 
@@ -313,6 +424,18 @@ def report_markdown(golden: GoldenSet, outcomes: list[GoldenOutcome], summary: d
         lines.append(f"| {o.id} | {o.expect} | {o.first_status} | {o.final_status} | {mark} | "
                      f"{o.best_guess if o.expect == 'clarify' else ''} | {o.repairs} | "
                      f"{o.calls} | {o.seconds} | {why} |")
+    if s.get("withheld") or s.get("leaks"):
+        lines += ["", "## As this person (need-to-know, 7B)", "",
+                  f"* withheld (objects they may not read, or personal data): {s['withheld']} "
+                  f"question(s); no number given for {s['withheld_kept']} of them — only "
+                  "those are right",
+                  "* forbidden names in any answer: " + (
+                      ", ".join(s["leaks"]) + f" (in {', '.join(s['leaked_questions'])})"
+                      if s["leaks"] else "none")]
+        for o in outcomes:
+            if o.withheld:
+                lines.append(f"  * {o.id}: withheld for {', '.join(o.withheld)} → "
+                             f"{o.final_status}" + ("" if o.correct else " — **wrong**"))
     asked = [o for o in outcomes if o.clarification]
     if asked:
         lines += ["", "## What Gaia asked", ""]
