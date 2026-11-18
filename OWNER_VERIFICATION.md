@@ -20,12 +20,9 @@ the outputs, and I triage them when they arrive, before new work goes on top.
   start every output file with `make stamp` — it prints the build, the sqlglot
   version and the git commit — so each result is read against the code that
   produced it. A finding is fixed in a later build and the item is run again
-  there. *Latest build: `2026-11-18 · D98 (Phase 7C: jobs, schedules, the worker, the drift watch)`
-  — S4 passed (the last safety item; 7.0 done), the 66-question baseline read (§37): h19 reworded,
-  comparisons across an edited set. 7C: `make worker` runs jobs — a refresh of what changed within
-  its window and token budget, the weekly drift watch of the golden set, the calibration sample —
-  queued by people or schedules (`make jobs`, the *Runs* page), with alerts. Migration `0022`.
-  **The next run: §37d.***
+  there. *Latest build: `2026-11-18 · D99 (onboarding workflow documented; a golden run of nothing refused)`
+  — D98 (7C: `make worker`, jobs, schedules, the drift watch; migration `0022`) plus the answers to
+  your three questions (§37e, USER_GUIDE §11). **The next run: §37d** (on D98 or D99).***
 * Sections 1–13 are history (done, or superseded where §14/§15 say so).
 * **2026-11-17: the D65 outputs are triaged — §21** (with your answers, §21f). Phase 4 is
   complete; Phase 5 is approved. §22 and §23 (5A, 5A.2) are run except their real-directory
@@ -4061,8 +4058,8 @@ env | grep -c '^GAIA_TEST_'      # 3
 ```bash
 make auth ARGS="grant sme --user acme/akaya --data-source demo_mssql"   # or whoever reviews it
 make feedback                                        # the ids: first column
-make feedback ARGS="void 50ee9cbd --note 'A1 test click'"          # if a test
-make feedback ARGS="void de11b6c0 --note 'A1 test click'"
+make feedback ARGS="void <id of akaya's 'Test'> --note 'A1 test click'"          # if a test
+make feedback ARGS="void <id of 'Did not like the result'> --note 'A1 test click'"
 ```
 
 Then, as akaya, *Review* → `demo_mssql` → *Answers people doubted*: finn's two — decide them for real.
@@ -4293,6 +4290,58 @@ Then `make share`. Stop the worker (Ctrl-C) whenever you like; with schedules on
 
 **Whenever you have the time:** akaya's random checks (10 a week per data source), the `nge_small`
 draft's correction (`infra/sqlserver/golden.yaml` — the file's head says how), and P7-11.
+
+### 37e · Your questions (2026-11-18) — and build D99
+
+**"Document a new database addition workflow."** USER_GUIDE **§11**: every step marked manual,
+automatic, or automatic once set up; its command and its API endpoint; what follows by itself; how to
+undo and roll forward; and — checked against the code — **what is not automatic yet** (§11.4). In
+short: **no job is queued by itself when a data source is added or first verified** — the first
+refresh and the schedules are started by a person; once the schedules are set, the worker queues
+the nightly refresh, the weekly drift watch and the weekly sample by itself. Every onboarding step but
+the master key, drafting a golden set and running the worker can be done over the API. The five gaps (first refresh and
+schedules after the first probe, automatic re-probing, an alert for new objects without a
+category, schedules left on after a removal, a job for an unverified source failing instead of being
+refused) are **P7-12** in PHASES, for your decision.
+
+**"Is the metadata refresh only incremental?"** Both, by design (USER_GUIDE §11.5): the **catalog is
+read in full every time** — catalog queries only, seconds, and the only way to notice a table that
+disappeared — then compared by hashes, and only what changed is written; **everything that costs is
+incremental**: profiles only where the structure changed, the row count moved over 20 % or the profile
+is 30 days old; meanings only where the structure, the model-visible evidence, the model or the
+prompt changed; embeddings and claim tests only where missing. Your §37d step 2 shows it: 0 tokens.
+
+**"The command when golden.yaml is complete."** First, two checks:
+
+```bash
+grep -c '^  status: draft' infra/sqlserver/golden.yaml   # 0 once every question is checked (or deleted)
+grep -c '^- id:' infra/sqlserver/golden.yaml            # the questions you kept
+```
+
+(A question still marked `status: draft` is skipped, and the run says how many; since D99 a file with
+none left to run is refused instead of recorded as an empty run. The `draft:` blocks may stay — they
+are ignored.) Then `nge_small`'s first three T-SQL runs — S8, its baseline:
+
+```bash
+for r in a b c; do (make stamp; make golden TARGET=demo_mssql ARGS="--file infra/sqlserver/golden.yaml --out evaluations/golden_mssql_$r") > verification/38_golden_mssql_$r.out 2>&1; done
+(make stamp; make quality TARGET=demo_mssql ARGS="--last 3"; \
+ make retrieval-eval TARGET=demo_mssql ARGS="--golden infra/sqlserver/golden.yaml"; \
+ make calibrate) > verification/38_quality_mssql.out 2>&1
+make jobs TARGET=demo_mssql ARGS="schedule defaults"    # its weekly drift watch (jobs.golden_files names the file)
+```
+
+- [ ] each run: `N question(s), M with a reference`, `fresh`. If a corrected reference no longer
+      passes the guard or fails on the database, the run stops at once naming it (`dNN: the
+      reference is refused by the guard: …`): fix that question, run again with a new `--out`
+- [ ] `make calibrate`: the **answers** line counts `demo_pg`'s and `nge_small`'s questions together —
+      once they reach 75 subjects with 15 not always right it fits and judges the first answer
+      calibrator (7F); it changes nothing without `--apply`
+
+Optionally, as a person: `make golden TARGET=demo_mssql ARGS="--file infra/sqlserver/golden.yaml --out evaluations/golden_mssql_as_finn --as finn --directory acme"`.
+
+**Build D99** adds only two refusals — a file with nothing to run, and a reference that no longer
+passes (one line instead of a traceback) — and the documentation: §37d runs the same on D98 or D99 (on D99
+expect **825 passed**, two tests more).
 
 ---
 

@@ -106,6 +106,15 @@ async def execute_golden(settings: Settings, factory, args: GoldenOptions, *,
     if golden.data_source != label and not args.force:
         raise GoldenRefused(f"{args.file} is written for {golden.data_source!r}, not {label!r} "
                             "(--force to run it anyway)", 1)
+    wanted = {x.strip() for x in args.only.split(",")} if args.only else None
+    if not [q for q in golden.questions if wanted is None or q.id in wanted]:
+        # D99: a run of nothing would be recorded as a measurement of nothing
+        raise GoldenRefused(
+            f"{args.file}: no question to run — "
+            + (f"all {golden.drafts} are still marked `status: draft` (delete that line in "
+               "each question you have checked)" if golden.drafts and not golden.questions
+               else f"--only {args.only} names none of its questions" if wanted
+               else "it holds no question"), 1)
     out = _path(args.out)
     recorded = list((out / "llm").glob("*.json")) if (out / "llm").is_dir() else []
     if recorded and not (args.resume or args.replay):
@@ -215,13 +224,21 @@ async def execute_golden(settings: Settings, factory, args: GoldenOptions, *,
             echo(f"  {mark}{o.id:<4} {o.first_status:<13} -> {o.final_status:<13} "
                   f"{o.calls} call(s) {o.seconds:>6} s  {o.reason[:70]}", flush=True)
 
-        outcomes = await asyncio.to_thread(
-            run_golden, golden, index=index, guard=guard, target=settings.target(label),
-            llm=model_client, settings=ask_settings(settings, label, calibrator),
-            retrieval=settings.retrieval.to_settings(),
-            vectors=(lambda q: hits.get(q)) if hits else None, only=only,
-            workers=args.workers or settings.llm.concurrency, progress=progress,
-            reference_guard=reference_guard, person=policy if args.as_login else None)
+        try:
+            outcomes = await asyncio.to_thread(
+                run_golden, golden, index=index, guard=guard, target=settings.target(label),
+                llm=model_client, settings=ask_settings(settings, label, calibrator),
+                retrieval=settings.retrieval.to_settings(),
+                vectors=(lambda q: hits.get(q)) if hits else None, only=only,
+                workers=args.workers or settings.llm.concurrency, progress=progress,
+                reference_guard=reference_guard, person=policy if args.as_login else None)
+        except ValueError as exc:
+            if ": the reference " not in str(exc):
+                raise
+            # D99: a corrected reference that no longer passes the guard or fails on the
+            # database stops the run before any question is asked — one line, nothing recorded
+            raise GoldenRefused(f"{exc} — fix that question in {args.file} and run again",
+                                1) from None
         if not args.no_record:
             store = QueryStore(session)
             for o in outcomes:

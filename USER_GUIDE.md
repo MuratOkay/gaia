@@ -23,6 +23,7 @@ the Compose service itself is verified on first use on the real host.
 8. [Configuration you are likely to change](#8-configuration-you-are-likely-to-change)
 9. [Troubleshooting](#9-troubleshooting)
 10. [Known limits](#10-known-limits)
+11. [Adding a database — the workflow, and who starts each step](#11-adding-a-database--the-workflow-and-who-starts-each-step)
 
 ---
 
@@ -1586,3 +1587,94 @@ Correct, useful, and correctly *not* trusted — each scores in the
 `deep_profile` band, because the catalog alone cannot prove them. That is the
 system working: it knows what it does not know, and says so with a number.
 
+---
+
+## 11. Adding a database — the workflow, and who starts each step
+
+*Written 2026-11-18 (D99) against build D98: every step checked against the code — what starts it,
+whether the API can do it, what runs by itself afterwards, and how to undo it.*
+
+**Triggered:** **M** = a person starts it; **A** = it happens by itself; **A\*** = by itself once a
+person has set it up (a schedule, a running worker). **API** = the step can be done over HTTP
+(and so from the web UI or a script); *CLI only* = a `make` command on the Gaia host.
+
+### 11.1 Before you start (once per database)
+
+| # | Step | Triggered | How | API |
+|---|---|---|---|---|
+| 0a | A **read-only login** on the database | M (the database's administrator) | SQL Server: `infra/sqlserver/001_readonly_login.sql`; PostgreSQL: `infra/pg-target/readonly_role.sql` (the role, `default_transaction_read_only`, `SELECT` on the schemas, default privileges) | — (outside Gaia) |
+| 0b | `GAIA_MASTER_KEY` in `.env` (encrypts stored passwords) | M, once per installation | `make master-key` | — |
+| 0c | The **worker** runs | M, once (then it keeps running) | `make worker` — as a service on the host | — (there is nothing to start a worker over HTTP) |
+
+### 11.2 The steps
+
+| # | Step | Triggered | CLI | API (web) | What happens — and what runs by itself next |
+|---|---|---|---|---|---|
+| 1 | **Register** the data source | M | `make datasource ARGS="add --name sales_pg --dialect postgres --host … --port … --database … --user gaia_ro"` (password prompted) | `POST /api/admin/data-sources` (*Data sources* → add) | stored with its password encrypted, status **unverified** — unusable by every command, job and the chat. *Nothing is queued.* |
+| 2 | **Prove read-only** (the probe: 9 checks, a write that must fail) | M | `make datasource ARGS="probe sales_pg"` | `POST /api/admin/data-sources/{name}/probe` (*Test connection*) | **verified** (usable) or **failed** (with each check's reason). *Nothing is queued* — the first refresh is yours to start (step 3). |
+| 3 | **First refresh** — catalog, profiles, meanings, embeddings, claim tests | M | `make jobs TARGET=sales_pg ARGS="start refresh"` (the worker runs it) | `POST /api/jobs {"kind":"refresh","data_source":"sales_pg"}` (*Runs* → *Start now*) | the whole database is read and reasoned: this is the expensive night. Watch `make jobs`, the *Runs* log. If the token budget stops it (*stopped early*), start it again, or let the nightly schedule continue it (step 4). |
+| 4 | **Schedules**: nightly refresh, weekly drift watch, weekly calibration sample | M (once) → A\* | `make jobs TARGET=sales_pg ARGS="schedule defaults"` | `PUT /api/jobs/schedules` ×3 (*Runs* → *Schedule*) | from now on the worker queues them by itself (**A\***). The drift watch needs a golden set (step 9) — until then it ends *could not start*. |
+| 5 | **Categories** for the new objects | M | `make access TARGET=sales_pg ARGS="from-schemas"` then `ARGS="propose"`; corrections `ARGS="place schema.table Category"` | `POST /api/admin/data-sources/{ds}/categories/from-schemas`, `…/categories/propose`, `PUT …/objects/{id}/category` (*Data categories*) | until an object has a category **nobody can read it** (deny by default) — the chat will not offer the data source at all. Gaia's proposals are **in force** once made (readable by whoever holds that category), which is why Gaia never proposes by itself. |
+| 6 | **Who may read**: category grants (and PII processors) | M | `make auth ARGS="grant category --role DIR/GROUP --category Sales"` | `POST /api/admin/grants` (*Grants*) | takes effect at each person's next privilege re-check (`auth.recheck_minutes`, 15). |
+| 7 | **Who reviews**: an SME for the data source | M | `make auth ARGS="grant sme --user DIR/LOGIN --data-source sales_pg"` | `POST /api/admin/grants` (*Grants*) | without one, "Was this right?" doubts on this data source wait for no one — the chat says so. |
+| 8 | **The SME's review** | M (the SME) | — | `/api/review/…` (*Review*) | the week's **random checks** are drawn **A** when the SME first opens *Review* that week, or **A\*** by the `sample` schedule (step 4). |
+| 9 | **A golden set** (drafted, then corrected) | M | `make golden-draft TARGET=sales_pg ARGS="--out infra/sales_pg/golden.yaml --as-of YYYY-MM-DD"`, then correct the file (an hour) | *CLI only* (drafting is a model run writing a file a person edits) | every question is `status: draft` until corrected — nothing is measured before that. |
+| 10 | **Its first three runs** (the baseline) | M | `make golden TARGET=sales_pg ARGS="--file … --out …"` ×3, then `make quality TARGET=sales_pg ARGS="--last 3"` | the three runs: `POST /api/jobs {"kind":"drift_watch","data_source":"sales_pg","params":{"file":"infra/sales_pg/golden.yaml"}}` (its first watch *is* three fresh runs — "no baseline" yet); the report: *Evaluation* | from then on the weekly drift watch (**A\***) compares with them — give it the file in the schedule's parameters (`--param file=…` or `params` in `PUT /api/jobs/schedules`), or for a configured data source in `jobs.golden_files` (`config/gaia.yaml`; restart the worker). |
+| 11 | **Re-prove read-only** every `datasources.reprobe_days` (30) | M | `make datasource ARGS="probe sales_pg"` | `POST /api/admin/data-sources/{name}/probe` | **not automatic yet**: after 30 days without a probe the data source becomes unusable — refreshes fail, the chat refuses it — until someone probes again (11.4, gap 2). Targets of `config/gaia.yaml` are not re-probed: their read-only proof is `make check-target`. |
+
+**A database in `config/gaia.yaml` instead** (the bootstrap path, for the first targets): the target
+and its secrets in `config/gaia.yaml` and `.env`; `make check-target TARGET=…` instead of steps 1–2;
+**restart the API and the worker** (the configuration is read once at start); steps 3–11 as above.
+
+### 11.3 If something goes wrong — undo and roll forward
+
+| Problem | Undo (roll back) | Roll forward |
+|---|---|---|
+| Wrong host, port, database or user | `PATCH /api/admin/data-sources/{name}` / `make datasource ARGS="update … --host …"` — it returns to **unverified** at once (nothing uses it) | probe again (step 2) |
+| The probe fails | nothing to undo: a failed data source is used by nothing | read each failed check: usually a grant too many (a login that can write must not be used) or a network path; fix on the database, probe again |
+| Added by mistake, or to be dropped | `DELETE /api/admin/data-sources/{name}` / `make datasource ARGS="remove name"`: **tombstoned** — the secret wiped, the name freed, its catalog, meanings, reviews and runs **kept** for the audit. Also: turn its schedules off (`make jobs TARGET=… ARGS="schedule off refresh"` etc. — not yet done by the removal, 11.4 gap 4) | add it again under the same name: a new data source (its history stays with the old one) |
+| Pause it (a migration on the database, a doubt) | `POST …/disable` / `make datasource ARGS="disable name"` — the chat and every job refuse it at once; schedules then end *failed* each night until turned off or the source is enabled | `enable` returns it to **unverified**: probe again |
+| A refresh misbehaves (load on the target, cost) | `make jobs ARGS="cancel ID"` / *Cancel*: stops at the next table, what is done is kept. `schedule off refresh` to stop the nights | lower `--param budget=…` or set a run window (`PATCH …` `profiling_window`), then start it again — it continues where it stopped |
+| The model's meanings are poor | meanings are **versioned**, never overwritten: an SME **rejects** or **corrects** the worst (they then stay through every re-reasoning while the column is unchanged); the data source can be disabled for the chat meanwhile | after a prompt or model change, `make reason TARGET=… ARGS="--force"` re-reads everything (cost!) |
+| People can read too much | revoke the grant (`DELETE /api/admin/grants/{id}`), or place the object in another category — effective at the next re-check (15 min; a sign-out makes it immediate) | — |
+| A golden question turns out wrong | fix the question or its reference in the file: comparisons read only questions both sides share with the same wording (D98), so one edit costs only that question's history | the next runs measure the corrected question |
+
+### 11.4 What is not automatic yet — checked against the code (D98)
+
+| # | Gap | Today | Proposed (P7-12, PHASES) |
+|---|---|---|---|
+| 1 | No job is queued when a data source is added or first verified | a person starts the first refresh and sets the schedules (steps 3–4) | on the **first successful probe**: queue a refresh and set the default schedules (an administrator can turn them off) |
+| 2 | No automatic re-probe | the data source becomes unusable after `reprobe_days`; the nightly refresh then fails with the reason | the nightly refresh re-probes when the proof is older than `reprobe_days − 1`; a failed probe ends the job *could not start* with an alert |
+| 3 | New objects found by a refresh get no category — nobody can read them — and nobody is told | the *Data categories* page lists them if someone looks | an **alert**: "N new objects in sales_pg wait for a category"; proposing stays the administrator's click (a proposal is in force, P5-6) |
+| 4 | Removing or disabling a data source leaves its schedules on | disabled: each night's job is queued and **fails** (the data source is unusable); removed: the worker no longer queues it but notes it every night | turn its schedules off and cancel its queued jobs in the same step |
+| 5 | A job for an unverified data source | it starts and **fails** with the resolver's reason | refuse it at once (*could not start*) with the command that fixes it |
+| 6 | The drift watch's golden set for a data source added at runtime | only in the schedule's `params` (or `jobs.golden_files`, which needs a restart) | — (the `params` route works; documented in step 10) |
+
+### 11.5 What a refresh reads, and what it redoes
+
+A refresh is **full where it is cheap and incremental where it costs**:
+
+* **The catalog is read in full, every time** — every schema, table, view, column, key, constraint,
+  index, comment and the statistics (row counts, modification counters). These are catalog queries,
+  no table data, seconds even for `nge_small`; reading all of it is what lets Gaia see a table that
+  *disappeared* or was renamed, which no "changed since" query reports. Each object then gets two
+  hashes — **structure** (names, types, nullability, defaults, comments, keys, constraints, foreign
+  keys, indexes) and **data** (row count, statistics) — compared with the stored ones. Only objects
+  whose hashes moved are written; unchanged ones are only marked "seen". Each refresh also keeps a
+  snapshot document of the whole catalog (about 18 kB for `demo_pg`), so what the database looked like
+  on any night can be read back.
+* **Profiles** (reading data) — only for a table whose **structure** changed, whose **row count moved
+  more than 20 %** (`profiling.row_count_delta_ratio`), whose profile is **older than 30 days**
+  (`profiling.profile_max_age_days`), or that has none or failed last time. Everything else is reused
+  without a single query on its data.
+* **Meanings** (the model) — only for a table that is **new**, changed in **structure**, whose
+  model-visible **evidence changed** (a new profile can do that — 30-day re-profiles included), whose
+  configured **model** or **prompt** changed, whose critique failed, or that has columns without an
+  answer. A table whose *data* alone moved is **not** re-reasoned. Stored answers whose score inputs
+  changed are **re-scored without a model call**.
+* **Embeddings** — only for meanings that have none yet for the configured embedding model.
+* **Claim tests** — only those that have not run yet for the current claims.
+
+On an unchanged night a refresh therefore reads the catalog, reuses every profile and calls the model
+zero times (§37d step 2 checks exactly that). **Caveat:** a change of the configured model id re-reasons
+*everything* — a provider's rename included — which is what 7D's managed model change is for.

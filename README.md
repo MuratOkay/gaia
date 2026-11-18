@@ -8,9 +8,10 @@ generating, validating and executing SQL.
 Design and rationale: **[OUTLINE.md](OUTLINE.md)**.
 Delivery plan, gates and decisions: **[PHASES.md](PHASES.md)**.
 Step-by-step operator guide: **[USER_GUIDE.md](USER_GUIDE.md)**.
+Adding a new database — every step, who starts it, its API, how to undo it: **[USER_GUIDE §11](USER_GUIDE.md#11-adding-a-database--the-workflow-and-who-starts-each-step)**.
 
 > Status (2026-11-18): **Phases 0–6 complete; Phase 7 — ready to be run by others — in progress**
-> (approved 2026-11-18, every decision as recommended); build **D98**. Phase 6 gave one evaluation store
+> (approved 2026-11-18, every decision as recommended); build **D99**. Phase 6 gave one evaluation store
 > and report, labels from people, calibrators used only when they beat the identity, "Was this right?"
 > decided by the data source's SME, two regression nets and category proposals measured. Phase 7 so
 > far: **7A** — a weekly blind sample of meanings across the score bands and a forecast of when
