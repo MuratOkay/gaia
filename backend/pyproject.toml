@@ -1,11 +1,13 @@
 [build-system]
-requires = ["setuptools>=69", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "gaia"
 version = "0.1.0"
 description = "Metadata-driven semantic agent: introspect, reason, score, and answer business questions in SQL"
+license = "MIT"
+authors = [{ name = "Murat Okay", email = "murat.okay@superonline.com" }]
 requires-python = ">=3.12"
 dependencies = [
     # API

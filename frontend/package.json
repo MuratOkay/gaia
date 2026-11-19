@@ -2,6 +2,7 @@
   "name": "gaia-web",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
   "type": "module",
   "description": "Gaia's web UI (Phase 5): sign-in, chat, SME review, need-to-know, administration, audit",
   "scripts": {

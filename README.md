@@ -365,3 +365,7 @@ runs (4D, done), the API (4E, done) and data-source management (4F). The 99 colu
 review (built) → 5C need-to-know (built) (data categories granted to directory roles, enforced in retrieval
 and the SQL guard) → 5D the chat screen (built) → 5E a read-only runs view (built); scheduling runs and
 switching models from the admin screen are proposed for later (PHASES, Phase 5).
+
+## License
+
+MIT — see [LICENSE](LICENSE). © 2026 Murat Okay.
