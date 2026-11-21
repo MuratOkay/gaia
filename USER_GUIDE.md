@@ -1057,11 +1057,15 @@ make export ARGS="--out /tmp/gaia --no-zip"   # the copy only, somewhere else
 * **Only what git tracks**, at its working-tree state, plus `verification/share/` and its
   contents — the one exception. `.env`, `gaia-env/`, `.git/`, `evaluations/`, the other
   verification outputs, `__pycache__`, `node_modules`, `dist` and the caches never enter it.
-* **Personal data replaced** in every document and recorded output (`make share`'s rules
-  for what is personal there: real addresses, tenants, home paths, the OS user), so the
-  copy still reads — a run id, a private address or a masked shape in a doc stays.
+* **Personal data replaced** in every document and recorded output: real addresses,
+  tenants, home paths, the OS user, directory-scoped ids, routable hosts and
+  credentials (a password or token assignment, a URI password, a bearer token, a
+  private key, a known key — each becomes `<secret-N>`) — so the copy still reads:
+  a run id, a private address or a masked shape in a doc stays.
   Source, lock files and fixtures lose only the words listed in
-  `scripts/export_also.txt` (a company, an internal host name) and in `--also`: a
+  `scripts/export_also.txt` (a company, an internal host name, a person's full name —
+  the file ships with the owner's name and e-mail, so the `authors` in
+  `backend/pyproject.toml` become `<name-1>`/`<name-2>`) and in `--also`: a
   replacement anywhere else would change what the copy builds or what its tests measure.
   The mapping is written beside the copy as `gaia-clean-<date>-key.json` and is never
   part of it.

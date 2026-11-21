@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from gaia.tools.redact import Redactor, main
+from gaia.tools.redact import Redactor, main, redact_tree
 
 OUTPUT = """cd /home/jdoe/g120s/gaia && /home/jdoe/g120s/gaia/gaia-env/bin/pytest -q
   corp/gaia-test1@contoso123.onmicrosoft.com admin
@@ -85,6 +85,81 @@ def test_the_tree_mode_redacts_documents_and_leaves_code_alone(tmp_path):
     assert cache.read_bytes() == b"\x00jane@real.example.net"
     assert "jane@initech-mail.com" in key.read_text(encoding="utf-8")  # owner's key
     assert not (root / "key.json").exists()  # never inside the copy
+
+
+def test_the_os_user_is_replaced_in_any_case(tmp_path):
+    """``make export``: ``Mira`` in a document is the login ``mira`` the scan flags."""
+    root = tmp_path / "copy"
+    root.mkdir()
+    page = root / "README.md"
+    page.write_text("Copyright (c) 2026 Mira Chen.\n", encoding="utf-8")
+
+    read, changed = redact_tree(root, Redactor(os_user="mira"))
+
+    assert (read, changed) == (1, 1)
+    assert page.read_text(encoding="utf-8") == "Copyright (c) 2026 <user> Chen.\n"
+
+
+def test_a_documents_credentials_become_tokens(tmp_path):
+    """``make export``: what the scan would refuse is a placeholder, not a leak."""
+    # Built at run time: no literal in this file reads as a credential.
+    password, uri_password = "Zx9" + "RealPassw0rd", "S3cret" + "Pass"
+    bearer = "abcdefghijklmnopqrstuvwxyz" + "012345"
+    github = "ghp_" + "0123456789abcdefghijklmnopqrstuvwxyz"
+    sql_password = "Hx8" + "SqlPassw0rd"
+    root = tmp_path / "copy"
+    root.mkdir()
+    page = root / "run.md"
+    page.write_text(
+        'password = "' + password + '"\n'
+        "DATABASE_URL=postgresql://gaia:" + uri_password + "@127.0.0.1:5433/gaia\n"
+        "Authorization: Bearer " + bearer + "\n"
+        'API_KEY = "' + github + '"\n'
+        "CREATE ROLE app LOGIN PASSWORD '" + sql_password + "'\n"
+        'password = "<password>"\n', encoding="utf-8")
+
+    redact_tree(root, Redactor())
+
+    text = page.read_text(encoding="utf-8")
+    for gone in (password, uri_password, bearer, github, sql_password):
+        assert gone not in text, gone
+    assert text.count("<secret-") == 5  # one token per credential, quotes kept
+    assert "postgresql://gaia:<secret-" in text and "@127.0.0.1:5433/gaia" in text
+    assert "Bearer <secret-" in text and "PASSWORD '<secret-" in text
+    assert 'password = "<password>"' in text  # a placeholder names a credential
+
+
+def test_a_private_key_in_a_document_is_replaced(tmp_path):
+    begin, end = "-----BEGIN RSA " + "PRIVATE KEY-----", "-----END RSA " + "PRIVATE KEY-----"
+    root = tmp_path / "copy"
+    root.mkdir()
+    note = root / "note.txt"
+    note.write_text(f"before\n{begin}\nQUJD\n{end}\nafter\n", encoding="utf-8")
+
+    redact_tree(root, Redactor())
+
+    out = note.read_text(encoding="utf-8")
+    assert "PRIVATE KEY" not in out and "QUJD" not in out
+    assert out == "before\n<private-key-1>\nafter\n"
+
+
+def test_a_document_keeps_a_run_id_and_a_private_host(tmp_path):
+    """A tenant-scoped id and a routable host are traces; a run id is not."""
+    root = tmp_path / "copy"
+    root.mkdir()
+    page = root / "README.md"
+    page.write_text(
+        "issuer https://login.microsoftonline.com/0f1e2d3c-4b5a-4c6d-8e7f-112233445566/v2.0\n"
+        "host 93.184.216.34 and 10.1.2.3\n"
+        "run 0f1e2d3c-4b5a-4c6d-8e7f-112233445566\n", encoding="utf-8")
+
+    redact_tree(root, Redactor())
+
+    out = page.read_text(encoding="utf-8")
+    assert "login.microsoftonline.com/<id-1>" in out
+    assert "<ip-1>" in out and "93.184.216.34" not in out
+    assert "10.1.2.3" in out  # a private address is infrastructure
+    assert "run 0f1e2d3c-4b5a-4c6d-8e7f-112233445566" in out  # not tenant-scoped
 
 
 def test_the_tree_mode_reads_words_from_a_file_and_check_writes_nothing(tmp_path):

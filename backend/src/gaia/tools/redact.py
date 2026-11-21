@@ -21,12 +21,16 @@ Kept: logins of the test directory (akaya …), SHA-256 hashes, certificate fing
 table and column names, numbers.
 
 ``--tree DIR`` rewrites a whole copy in place, for delivery: documents and
-recorded outputs (``.md``, ``.txt``, ``.out`` …, ``.env.example``) lose only what is
-personal — a real address, a tenant, a home path, the OS user — and keep a run id or
-a masked shape, so the copy's instructions still work; source (``.py``, ``.ts`` … and
-anything under a ``src`` tree, prompts included), lock files, golden sets and fixtures
-get only the explicit ``--also`` words, because a replacement there would change what
-the copy builds or what its tests measure.
+recorded outputs (``.md``, ``.txt``, ``.out`` …, ``.env.example``) lose what is
+personal — a real address, a tenant, a home path, the OS user (in any case) — and
+a credential (a password or token assignment, a URI password, a bearer token, a
+private key, a known key) becomes ``<secret-N>``; a directory-scoped id or a
+routable host becomes ``<id-N>``/``<ip-N>``. A run id, a private address or a
+masked shape stays, so the copy's instructions still work and the scan accepts it.
+Source (``.py``, ``.ts`` … and anything under a ``src`` tree, prompts included),
+lock files, golden sets and fixtures get only the explicit ``--also`` words,
+because a replacement there would change what the copy builds or what its tests
+measure.
 ``--code`` lifts that for source too. ``--also-file`` reads more words to replace
 (a company, an internal host name) one per line. The key goes beside the tree
 unless ``--key`` says where.
@@ -48,7 +52,8 @@ __all__ = ["Redactor", "main", "redact_tree"]
 
 EMAIL = re.compile(r"[A-Za-z0-9._%+#-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")
 TENANT = re.compile(r"\b[a-z0-9-]+\.onmicrosoft\.com\b", re.I)
-UUID = re.compile(r"\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b", re.I)
+_UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+UUID = re.compile(rf"\b{_UUID}\b", re.I)
 IPV4 = re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b")
 HOME = re.compile(r"(/home/|/Users/)([^/\s<>]+)")
 CLI = re.compile(r"\bcli:([A-Za-z0-9._-]+)")
@@ -75,6 +80,116 @@ def _real_email(address: str) -> bool:
     if MASKED.fullmatch(address) or RESERVED.search(domain) or local.lower() in ROLE_LOCAL:
         return False
     return len(local) >= 2
+
+
+# --- credentials: the scan's rule, so what it would refuse becomes a token -----
+
+PRIVATE_KEY = re.compile(
+    r"-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----[\s\S]*?-----END (?:[A-Z0-9]+ )*PRIVATE KEY-----")
+# A key name ending in one of these holds a credential; ``max_output_tokens``,
+# ``token_endpoint`` and ``password_hash`` deliberately do not match.
+_CREDENTIAL_NAMES = (
+    r"(?:password|passwd|pwd|secret|api[_-]?key|access[_-]?key|private[_-]?key|"
+    r"master[_-]?key|secret[_-]?key|signing[_-]?key|client[_-]?secret|"
+    r"api[_-]?token|auth[_-]?token|access[_-]?token|refresh[_-]?token|"
+    r"bearer[_-]?token|token|credentials?)")
+ASSIGNMENT = re.compile(
+    rf"""(?P<key>["']?[A-Za-z0-9_.\-]*{_CREDENTIAL_NAMES}["']?)"""
+    rf"""(?P<sep>\s*[:=]\s*)(?P<value>"[^"\n]*"|'[^'\n]*'|[^\s,;}}]+)""",
+    re.I)
+# SQL has no ``=``: ``CREATE ROLE x LOGIN PASSWORD 'literal'``.
+SQL_PASSWORD = re.compile(
+    r"\b(?i:identified\s+by|encrypted\s+password|password)\s+(?P<value>'[^'\n]*')")
+# scheme://user:password@host — the password is the credential
+URI_CREDENTIALS = re.compile(
+    r"(?P<scheme>\b[a-z][a-z0-9+.\-]*://)(?P<user>[^/\s:@]+):(?P<pw>[^/\s@]+)@", re.I)
+AUTH_HEADER = re.compile(
+    r"\b(?P<head>bearer\s+)(?P<value>[A-Za-z0-9._~+/\-]{16,}=*)", re.I)
+KNOWN_KEY = re.compile(
+    r"\b(?:sk-[A-Za-z0-9_\-]{16,}"
+    r"|gh[pousr]_[A-Za-z0-9]{20,}"
+    r"|github_pat_[A-Za-z0-9_]{20,}"
+    r"|xox[baprs]-[A-Za-z0-9\-]{10,}"
+    r"|AKIA[0-9A-Z]{16}"
+    r"|AIza[0-9A-Za-z_\-]{30,}"
+    r"|eyJ[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,}\.[A-Za-z0-9_\-]{10,})")
+# A placeholder or a fixture names a credential instead of being one.
+PLACEHOLDER = re.compile(
+    r"""(?ix)^(?:
+        | change[-_ ]?me.* | replace[-_ ]?me.* | your[-_ ].* | example.* | placeholder.*
+        | xxx+ | \*+ | \.+ | todo | tbd | n?a | none | null | redacted | secret | password
+        | <.*> | \$\{.*\} | \$\(.*\) | \{\{.*\}\} | :.* | %.*
+    )$""")
+SYNTHETIC = re.compile(r"(?i)dummy|fake|sample|example|placeholder|changeme|xxx|\btest\b")
+FIXTURE_SEGMENT = re.compile(
+    r"(?i)(?:^|[-_.])(?:pass|passwd|password|pwd|secret|token)(?:[-_.]|$)")
+# A bare UUID in a document is a run id; only a directory's id is a trace.
+IDENTITY = re.compile(
+    rf"""(?xi)
+        login\.microsoftonline\.com/ (?P<tenant>{_UUID})
+      | \b(?:tenant|client|app|application|object|account|subscription|principal)
+          [_\-\s]?id ["']? \s*[:=] \s* ["']? (?P<keyed>{_UUID})
+      | \b(?:oid|objectid|appid|homeaccountid) ["']? \s*[:=] \s* ["']? (?P<short>{_UUID})
+    """)
+# An address is a host only with context; ``18.4.1.1`` is a driver version.
+IP_CONTEXT = re.compile(
+    r"(?i)(?:@|://|\b(?:host|hostname|server|address|addr|ip|url|dsn|target|proxy|"
+    r"gateway|nameserver|bind|listen|connect|from|to)\b\s*[=:(\[{]?\s*)$")
+
+
+def _is_fixture(value: str) -> bool:
+    """A value that names a credential instead of being one."""
+    if SYNTHETIC.search(value):
+        return True
+    return bool(re.search(r"[-_.]", value)) and bool(FIXTURE_SEGMENT.search(value))
+
+
+def _real_secret(value: str) -> bool:
+    """A credential, not a placeholder, a template or a fixture."""
+    v = value.strip().strip("\"'")
+    if not v or len(v) < 8 or re.search(r"\s", v):
+        return False
+    if PLACEHOLDER.match(v) or v.startswith(("<", "${", "$(", "{{", "%", ":")):
+        return False
+    if any(ch in v for ch in "{}()[]$%\\`<>"):
+        return False
+    if _is_fixture(v):
+        return False
+    if re.search(r"[0-9]", v) or re.search(r"[^A-Za-z0-9]", v):
+        return True
+    return len(v) >= 20 or bool(re.search(r"[a-z]", v) and re.search(r"[A-Z]", v))
+
+
+def _real_uuid(value: str) -> bool:
+    """A real UUID spreads over the alphabet; ``aabbccdd-…`` and the nil one do not."""
+    return len(set(value.replace("-", "").lower())) >= 8
+
+
+def _public_ip(address: str) -> bool:
+    """A routable address; private and loopback ranges are infrastructure."""
+    parts = address.split(".")
+    if any(len(part) > 1 and part.startswith("0") for part in parts):
+        return False
+    try:
+        octets = [int(part) for part in parts]
+    except ValueError:
+        return False
+    if any(octet > 255 for octet in octets):
+        return False
+    first, second = octets[0], octets[1]
+    if first in (0, 10, 127) or (first == 172 and 16 <= second <= 31):
+        return False
+    if (first == 192 and second == 168) or (first == 169 and second == 254):
+        return False
+    if first == 198 and second in (18, 19):  # benchmarking (RFC 2544)
+        return False
+    if first == 198 and second == 51 and octets[2] == 100:  # TEST-NET-2
+        return False
+    if first == 203 and second == 0 and octets[2] == 113:  # TEST-NET-3
+        return False
+    if first == 192 and second == 0 and octets[2] == 2:  # TEST-NET-1
+        return False
+    return not (first == 100 and 64 <= second <= 127) and first < 224
 
 # ``--tree``: what a copy for delivery must not carry, and what it must survive.
 TREE_SKIP_DIRS = {".git", ".hg", ".svn", "gaia-env", ".venv", "venv", "node_modules",
@@ -145,19 +260,83 @@ class Redactor:
             s = UUID.sub(lambda m: self._token("id", m.group(0).lower()), s)
             s = IPV4.sub(lambda m: m.group(0) if m.group(0) in KEEP_IPS
                          else self._token("ip", m.group(0)), s)
+        else:
+            s = self._document_ids(s)
         s = HOME.sub(lambda m: self._count("path", f"{m.group(1)}<user>"), s)
         s = CLI.sub(lambda m: self._count("user", "cli:<user>"), s)
+        s = self._credentials(s)
         if not document:
             s = TOKEN.sub(lambda m: self._token("secret", m.group(0))
                           if _random_looking(m.group(0)) else m.group(0), s)
         if self.os_user:
+            # The scan matches the login in any case (``Alice`` in a copyright
+            # line is the login ``alice``), so the replacement must too.
             s = re.sub(rf"\b{re.escape(self.os_user)}\b",
-                       lambda m: self._count("user", "<user>"), s)
+                       lambda m: self._count("user", "<user>"), s, flags=re.I)
         return s
 
     def _count(self, kind: str, replacement: str) -> str:
         self.counts[kind] = self.counts.get(kind, 0) + 1
         return replacement
+
+    def _swap(self, match: re.Match[str], group: str, kind: str, value: str) -> str:
+        """Replace one group of a match, keeping the text around it."""
+        start = match.start(group) - match.start(0)
+        end = match.end(group) - match.start(0)
+        return match.group(0)[:start] + self._token(kind, value) + match.group(0)[end:]
+
+    def _document_ids(self, s: str) -> str:
+        """A tenant-scoped id and a routable host are traces; a run id is not."""
+        def host(match: re.Match[str]) -> str:
+            address = match.group(0)
+            if address in KEEP_IPS or not _public_ip(address):
+                return address
+            line = s[s.rfind("\n", 0, match.start()) + 1: match.start()]
+            return self._token("ip", address) if IP_CONTEXT.search(line[-32:]) else address
+
+        def identity(match: re.Match[str]) -> str:
+            group = next(g for g in ("tenant", "keyed", "short") if match.group(g))
+            value = match.group(group)
+            return self._swap(match, group, "id", value.lower()) if _real_uuid(value) \
+                else match.group(0)
+
+        return IDENTITY.sub(identity, IPV4.sub(host, s))
+
+    def _credentials(self, s: str) -> str:
+        """What the scan would refuse becomes a token, so the copy can ship."""
+        s = PRIVATE_KEY.sub(lambda m: self._token("private-key", m.group(0)), s)
+        s = URI_CREDENTIALS.sub(self._uri_password, s)
+        s = AUTH_HEADER.sub(self._auth_value, s)
+        s = KNOWN_KEY.sub(lambda m: self._token("secret", m.group(0))
+                          if _real_secret(m.group(0)) else m.group(0), s)
+        s = ASSIGNMENT.sub(self._assignment, s)
+        return SQL_PASSWORD.sub(self._sql_password, s)
+
+    def _uri_password(self, match: re.Match[str]) -> str:
+        if not _real_secret(match.group("pw")):
+            return match.group(0)
+        return (match.group("scheme") + match.group("user") + ":"
+                + self._token("secret", match.group("pw")) + "@")
+
+    def _auth_value(self, match: re.Match[str]) -> str:
+        value = match.group("value")
+        return match.group("head") + (self._token("secret", value)
+                                      if _real_secret(value) else value)
+
+    def _assignment(self, match: re.Match[str]) -> str:
+        value = match.group("value")
+        if not _real_secret(value):
+            return match.group(0)
+        quote = value[0] if value[:1] in "\"'" else ""
+        return (match.group("key") + match.group("sep") + quote
+                + self._token("secret", value.strip("\"'")) + quote)
+
+    def _sql_password(self, match: re.Match[str]) -> str:
+        value = match.group("value")
+        if not _real_secret(value):
+            return match.group(0)
+        head = match.group(0)[: match.start("value") - match.start(0)]
+        return head + "'" + self._token("secret", value.strip("'")) + "'"
 
 
 def _is_code(path: Path, root: Path) -> bool:
